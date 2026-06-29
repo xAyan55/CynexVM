@@ -23,7 +23,8 @@ fi
 # 1. Install Dependencies
 echo -e "${YELLOW}[1/4] Installing package dependencies...${NC}"
 apt update -y
-apt install -y curl git snapd nodejs
+apt remove -y npm || true
+apt install -y curl git snapd || true
 
 # Install LXD (container engine)
 if ! command -v lxc &> /dev/null; then
@@ -37,17 +38,14 @@ echo -e "${YELLOW}[2/4] Initializing /var/www/cynexd...${NC}"
 mkdir -p /var/www/cynexd
 cd /var/www/cynexd
 
-# Write Express daemon index.js
+# Write zero-dependency Native Node daemon index.js
 cat << 'EOF' > index.js
-const express = require('express');
+const http = require('http');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
-const path = require('path');
 
 const execAsync = promisify(exec);
-const app = express();
-app.use(express.json());
 
 // Load config.json
 let config = {};
@@ -63,150 +61,132 @@ try {
 const PORT = config.port || 5050;
 const TOKEN = config.token || '';
 
-// Token authorization middleware
-app.use((req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!TOKEN) {
-    return next(); // Default to open access if no token is configured
-  }
-  if (!authHeader || authHeader !== `Bearer ${TOKEN}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-});
+const server = http.createServer(async (req, res) => {
+  const sendJson = (statusCode, body) => {
+    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(body));
+  };
 
-// Connection check endpoint
-app.get('/api/v1/test', async (req, res) => {
-  try {
-    const { stdout } = await execAsync('/snap/bin/lxc --version');
-    res.json({ success: true, version: stdout.trim() });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+  // Authorization check
+  const authHeader = req.headers['authorization'];
+  if (TOKEN && (!authHeader || authHeader !== `Bearer ${TOKEN}`)) {
+    return sendJson(401, { error: 'Unauthorized' });
   }
-});
 
-// Resource stats endpoint
-app.get('/api/v1/status', async (req, res) => {
-  try {
-    const { stdout: memOut } = await execAsync('free -b');
-    const lines = memOut.split('\n');
-    const memLine = lines[1].split(/\s+/);
-    const totalMem = parseInt(memLine[1], 10);
-    const usedMem = parseInt(memLine[2], 10);
-
-    const { stdout: cpuOut } = await execAsync("grep 'cpu ' /proc/stat");
-    const cpuFields = cpuOut.split(/\s+/);
-    const idle = parseInt(cpuFields[4], 10);
-    const total = cpuFields.slice(1).reduce((acc, val) => acc + parseInt(val, 10), 0);
-
-    res.json({
-      cpu: 1 - (idle / total),
-      memory: { total: totalMem, used: usedMem, free: totalMem - usedMem },
-      disk: { total: 100 * 1024 * 1024 * 1024, used: 25 * 1024 * 1024 * 1024 }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Container Status
-app.get('/api/v1/containers/:vmid/status', async (req, res) => {
-  const { vmid } = req.params;
-  try {
-    const containerName = `cynex-${vmid}`;
-    const { stdout } = await execAsync(`/snap/bin/lxc info ${containerName} --format=json`);
-    const info = JSON.parse(stdout);
-    res.json({
-      status: info.status?.toLowerCase() || 'stopped',
-      cpu: 0.05,
-      mem: info.state?.memory?.usage || 0,
-      maxmem: info.state?.memory?.usage_peak || 512 * 1024 * 1024,
-      uptime: info.state?.uptime || 0
-    });
-  } catch (err) {
-    res.json({ status: 'stopped', cpu: 0, mem: 0, maxmem: 512 * 1024 * 1024, uptime: 0 });
-  }
-});
-
-// Power actions
-app.post('/api/v1/containers/:vmid/start', async (req, res) => {
-  const { vmid } = req.params;
-  try {
-    await execAsync(`/snap/bin/lxc start cynex-${vmid}`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/v1/containers/:vmid/stop', async (req, res) => {
-  const { vmid } = req.params;
-  try {
-    await execAsync(`/snap/bin/lxc stop cynex-${vmid}`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/v1/containers/:vmid/reboot', async (req, res) => {
-  const { vmid } = req.params;
-  try {
-    await execAsync(`/snap/bin/lxc restart cynex-${vmid}`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Delete container
-app.delete('/api/v1/containers/:vmid', async (req, res) => {
-  const { vmid } = req.params;
-  try {
-    await execAsync(`/snap/bin/lxc delete cynex-${vmid} --force`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Deploy container
-app.post('/api/v1/containers', async (req, res) => {
-  const { vmid, ostemplate, cores, memory } = req.body;
-  const containerName = `cynex-${vmid}`;
-  let distro = 'ubuntu/22.04';
-  if (ostemplate.toLowerCase().includes('debian')) {
-    distro = 'debian/12';
-  } else if (ostemplate.toLowerCase().includes('alpine')) {
-    distro = 'alpine/3.19';
-  }
+  const url = req.url;
+  const method = req.method;
 
   try {
-    await execAsync(`/snap/bin/lxc launch images:${distro} ${containerName}`);
-    if (cores) {
-      await execAsync(`/snap/bin/lxc config set ${containerName} limits.cpu ${cores}`);
+    if (method === 'GET' && url === '/api/v1/test') {
+      const { stdout } = await execAsync('/snap/bin/lxc --version');
+      return sendJson(200, { success: true, version: stdout.trim() });
     }
-    if (memory) {
-      await execAsync(`/snap/bin/lxc config set ${containerName} limits.memory ${memory}MB`);
+
+    if (method === 'GET' && url === '/api/v1/status') {
+      const { stdout: memOut } = await execAsync('free -b');
+      const lines = memOut.split('\n');
+      const memLine = lines[1].split(/\s+/);
+      const totalMem = parseInt(memLine[1], 10);
+      const usedMem = parseInt(memLine[2], 10);
+
+      const { stdout: cpuOut } = await execAsync("grep 'cpu ' /proc/stat");
+      const cpuFields = cpuOut.split(/\s+/);
+      const idle = parseInt(cpuFields[4], 10);
+      const total = cpuFields.slice(1).reduce((acc, val) => acc + parseInt(val, 10), 0);
+
+      return sendJson(200, {
+        cpu: 1 - (idle / total),
+        memory: { total: totalMem, used: usedMem, free: totalMem - usedMem },
+        disk: { total: 100 * 1024 * 1024 * 1024, used: 25 * 1024 * 1024 * 1024 }
+      });
     }
-    res.json({ success: true });
+
+    // Match /api/v1/containers/:vmid/status
+    const statusMatch = url.match(/^\/api\/v1\/containers\/(\d+)\/status$/);
+    if (method === 'GET' && statusMatch) {
+      const vmid = statusMatch[1];
+      try {
+        const containerName = `cynex-${vmid}`;
+        const { stdout } = await execAsync(`/snap/bin/lxc info ${containerName} --format=json`);
+        const info = JSON.parse(stdout);
+        return sendJson(200, {
+          status: info.status?.toLowerCase() || 'stopped',
+          cpu: 0.05,
+          mem: info.state?.memory?.usage || 0,
+          maxmem: info.state?.memory?.usage_peak || 512 * 1024 * 1024,
+          uptime: info.state?.uptime || 0
+        });
+      } catch (_) {
+        return sendJson(200, { status: 'stopped', cpu: 0, mem: 0, maxmem: 512 * 1024 * 1024, uptime: 0 });
+      }
+    }
+
+    // Match power actions
+    const startMatch = url.match(/^\/api\/v1\/containers\/(\d+)\/start$/);
+    if (method === 'POST' && startMatch) {
+      await execAsync(`/snap/bin/lxc start cynex-${startMatch[1]}`);
+      return sendJson(200, { success: true });
+    }
+
+    const stopMatch = url.match(/^\/api\/v1\/containers\/(\d+)\/stop$/);
+    if (method === 'POST' && stopMatch) {
+      await execAsync(`/snap/bin/lxc stop cynex-${stopMatch[1]}`);
+      return sendJson(200, { success: true });
+    }
+
+    const rebootMatch = url.match(/^\/api\/v1\/containers\/(\d+)\/reboot$/);
+    if (method === 'POST' && rebootMatch) {
+      await execAsync(`/snap/bin/lxc restart cynex-${rebootMatch[1]}`);
+      return sendJson(200, { success: true });
+    }
+
+    // Match delete
+    const deleteMatch = url.match(/^\/api\/v1\/containers\/(\d+)$/);
+    if (method === 'DELETE' && deleteMatch) {
+      await execAsync(`/snap/bin/lxc delete cynex-${deleteMatch[1]} --force`);
+      return sendJson(200, { success: true });
+    }
+
+    // Match create container
+    if (method === 'POST' && url === '/api/v1/containers') {
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const { vmid, ostemplate, cores, memory } = body;
+          const containerName = `cynex-${vmid}`;
+          let distro = 'ubuntu/22.04';
+          if (ostemplate && ostemplate.toLowerCase().includes('debian')) {
+            distro = 'debian/12';
+          } else if (ostemplate && ostemplate.toLowerCase().includes('alpine')) {
+            distro = 'alpine/3.19';
+          }
+
+          await execAsync(`/snap/bin/lxc launch images:${distro} ${containerName}`);
+          if (cores) await execAsync(`/snap/bin/lxc config set ${containerName} limits.cpu ${cores}`);
+          if (memory) await execAsync(`/snap/bin/lxc config set ${containerName} limits.memory ${memory}MB`);
+          sendJson(200, { success: true });
+        } catch (err) {
+          sendJson(500, { error: err.message });
+        }
+      });
+      return;
+    }
+
+    sendJson(404, { error: 'Not Found' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendJson(500, { error: err.message });
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`CynexD Daemon listening on port ${PORT}`);
 });
 EOF
 
-# Install dependencies
-echo -e "${YELLOW}[3/4] Restoring npm dependencies...${NC}"
-npm init -y > /dev/null
-npm install express > /dev/null
-
 # 3. Setup Systemd Service
-echo -e "${YELLOW}[4/4] Creating systemd service file (/etc/systemd/system/cynexd.service)...${NC}"
+echo -e "${YELLOW}[3/4] Creating systemd service file (/etc/systemd/system/cynexd.service)...${NC}"
 cat <<EOF > /etc/systemd/system/cynexd.service
 [Unit]
 Description=CynexD Host Node daemon service
