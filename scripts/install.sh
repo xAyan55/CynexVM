@@ -82,11 +82,17 @@ fi
 
 # 2. Setup Workspaces
 if [ ! -f "package.json" ]; then
-  echo -e "${YELLOW}[Info] package.json not found in current working directory. Cloning repository to /var/www/cynexvm...${NC}"
-  rm -rf /var/www/cynexvm
-  mkdir -p /var/www
-  git clone https://github.com/xAyan55/CynexVM.git /var/www/cynexvm
-  cd /var/www/cynexvm
+  if [ -d "/var/www/cynexvm" ]; then
+    echo -e "${YELLOW}[Info] Upgrading existing CynexVM installation in /var/www/cynexvm...${NC}"
+    cd /var/www/cynexvm
+    git fetch --all
+    git reset --hard origin/main
+  else
+    echo -e "${YELLOW}[Info] Cloning repository to /var/www/cynexvm...${NC}"
+    mkdir -p /var/www
+    git clone https://github.com/xAyan55/CynexVM.git /var/www/cynexvm
+    cd /var/www/cynexvm
+  fi
 else
   echo -e "${YELLOW}[Info] package.json found. Installing in current directory: $(pwd)${NC}"
 fi
