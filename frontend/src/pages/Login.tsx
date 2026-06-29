@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Eye, EyeOff, Check } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -9,13 +10,25 @@ export const Login: React.FC = () => {
   // Form states
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // 2FA Challenge States
   const [requires2FA, setRequires2FA] = useState(false);
   const [tempToken, setTempToken] = useState('');
   const [totpCode, setTotpCode] = useState('');
+
+  // Page visible entrance animation class
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setVisible(true);
+      });
+    });
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +44,7 @@ export const Login: React.FC = () => {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Authentication failed');
+        throw new Error(data.error || 'Incorrect username or password.');
       }
 
       if (data.requires2FA) {
@@ -75,119 +88,126 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-[#09090B] text-white">
-      {/* Left Branding Split (55%) */}
-      <div className="hidden lg:flex lg:w-[55%] flex-col justify-between p-16 border-r border-borderSubtle bg-[#09090B]">
-        {/* Logo Branding */}
-        <div className="flex items-center gap-3">
-          <img src="/assets/logo.svg" alt="" className="w-8 h-8 rounded-lg object-contain" />
-          <span className="font-semibold text-base tracking-wide">CynexVM</span>
+    <div className="auth-split">
+      <div className={`auth-panel ${visible ? 'visible' : ''}`} id="authPanel">
+        <div className="mb-8">
+          <img src="/assets/logo.png" alt="" className="h-10 w-10 rounded-xl object-contain mb-5" />
+          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Sign in</h1>
+          <p className="text-sm text-neutral-500 mt-1">to CynexVM</p>
         </div>
 
-        {/* Small Description */}
-        <div className="space-y-3 max-w-sm">
-          <h1 className="text-xl font-medium tracking-tight text-white leading-tight">
-            LXC Virtualization Control Panel.
-          </h1>
-          <p className="text-gray-500 text-xs leading-relaxed">
-            Provision and manage containers directly inside Proxmox nodes. A clean, minimal layout designed exclusively for infrastructure management.
-          </p>
-        </div>
-
-        {/* Footer info */}
-        <div className="text-[10px] text-gray-600">
-          &copy; {new Date().getFullYear()} CynexVM.
-        </div>
-      </div>
-
-      {/* Right Form Split (45%) */}
-      <div className="w-full lg:w-[45%] flex items-center justify-center p-8 bg-[#09090B]">
-        <div className="w-full max-w-sm al-card p-8">
-          {/* Heading */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-white">
-              {requires2FA ? 'Two-Factor Challenge' : 'Sign in'}
-            </h2>
-            <p className="text-gray-500 text-xs mt-1">
-              {requires2FA 
-                ? 'Enter your authenticator token code.' 
-                : 'to access your container instances.'}
+        {error && (
+          <div className="rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 px-4 py-3 mb-5">
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">
+              {error}
             </p>
           </div>
+        )}
 
-          {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-btn text-xs">
-              {error}
-            </div>
-          )}
-
-          {/* Login Form */}
-          {!requires2FA ? (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs text-gray-400 font-medium block">Username or Email</label>
-                <input
-                  type="text"
+        {!requires2FA ? (
+          <form onSubmit={handleLogin} autoComplete="on" noValidate>
+            <div className="space-y-4">
+              <div>
+                <label className="auth-label" htmlFor="identifier">Username or email</label>
+                <input 
+                  id="identifier" 
+                  type="text" 
+                  autoComplete="username"
+                  required 
+                  spellCheck="false" 
+                  autoCapitalize="none"
+                  className="auth-input" 
                   placeholder="you@example.com"
-                  className="w-full al-input"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  required
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs text-gray-400 font-medium block">Password</label>
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  className="w-full al-input"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+              <div>
+                <label className="auth-label" htmlFor="password">Password</label>
+                <div className="pw-wrapper">
+                  <input 
+                    id="password" 
+                    type={showPassword ? 'text' : 'password'} 
+                    autoComplete="current-password"
+                    required 
+                    className="auth-input" 
+                    placeholder="••••••••" 
+                    style={{ paddingRight: '40px' }}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <button 
+                    type="button" 
+                    className="pw-toggle" 
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label="Show password"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
 
-              <button
-                type="submit"
+              <label className="cb-row" id="rememberLabel" onClick={() => setRemember(!remember)}>
+                <span 
+                  className="cb-box" 
+                  style={{
+                    backgroundColor: remember ? '#ffffff' : '',
+                    borderColor: remember ? '#ffffff' : ''
+                  }}
+                >
+                  {remember && <Check size={10} strokeWidth={2.5} className="text-neutral-900" />}
+                </span>
+                <span className="text-sm text-neutral-500 dark:text-neutral-400">Remember me</span>
+              </label>
+
+              <button 
+                type="submit" 
+                className={`auth-submit ${loading ? 'loading' : ''}`} 
                 disabled={loading}
-                className="w-full al-btn al-btn-primary py-2.5 mt-4"
               >
-                {loading ? 'Authenticating...' : 'Sign in'}
+                {!loading && <span className="btn-label">Sign in</span>}
+                {loading && <span className="spinner"></span>}
               </button>
-            </form>
-          ) : (
-            // 2FA Verification Form
-            <form onSubmit={handle2FAVerify} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs text-gray-400 font-medium block">Authenticator Token</label>
-                <input
-                  type="text"
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handle2FAVerify} autoComplete="off" noValidate>
+            <div className="space-y-4">
+              <div>
+                <label className="auth-label" htmlFor="totp">Authenticator Token</label>
+                <input 
+                  id="totp" 
+                  type="text" 
                   maxLength={6}
+                  required 
+                  className="auth-input text-center tracking-widest font-mono" 
                   placeholder="123456"
-                  className="w-full al-input text-center tracking-widest font-mono"
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value)}
-                  required
                 />
               </div>
 
-              <button
-                type="submit"
+              <button 
+                type="submit" 
+                className={`auth-submit ${loading ? 'loading' : ''}`} 
                 disabled={loading}
-                className="w-full al-btn al-btn-primary py-2.5 mt-4"
               >
-                {loading ? 'Verifying...' : 'Verify Code'}
+                {!loading && <span className="btn-label">Verify & Challenge</span>}
+                {loading && <span className="spinner"></span>}
               </button>
-            </form>
-          )}
+            </div>
+          </form>
+        )}
 
-          <div className="mt-6 text-center text-xs text-gray-500">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-blue-500 hover:underline">Create account</Link>
-          </div>
-        </div>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center mt-6">
+          Don't have an account?{' '}
+          <Link to="/register" className="font-medium text-neutral-850 dark:text-neutral-200 hover:underline">
+            Create one
+          </Link>
+        </p>
       </div>
+      <div className="auth-image"></div>
     </div>
   );
 };

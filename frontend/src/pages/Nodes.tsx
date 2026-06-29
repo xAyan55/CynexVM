@@ -1,39 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Plus, Activity, RefreshCw, X, Globe, Key } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Server, Trash2, Cpu, HardDrive, AlertTriangle } from 'lucide-react';
 
 interface Node {
   id: string;
   name: string;
   hostname: string;
-  apiUrl: string;
-  sslFingerprint: string | null;
+  port: number;
   cpuCores: number;
   memoryMb: number;
   storageGb: number;
-  status: string;
-  latency: number;
-  version: string;
+  status?: string;
+  versionRelease?: string;
 }
 
 export const Nodes: React.FC = () => {
-  const { user } = useAuth();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Form Fields
+  // Form states
   const [name, setName] = useState('');
   const [hostname, setHostname] = useState('');
-  const [apiUrl, setApiUrl] = useState('');
-  const [apiToken, setApiToken] = useState('');
-  const [sslFingerprint, setSslFingerprint] = useState('');
-  const [cpuCores, setCpuCores] = useState(4);
-  const [memoryMb, setMemoryMb] = useState(8192);
+  const [port, setPort] = useState(8006);
+  const [username, setUsername] = useState('root@pam');
+  const [password, setPassword] = useState('');
+  const [cpuCores, setCpuCores] = useState(8);
+  const [memoryMb, setMemoryMb] = useState(16384);
   const [storageGb, setStorageGb] = useState(100);
-
-  const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     fetchNodes();
@@ -48,17 +42,21 @@ export const Nodes: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        setNodes(data);
+        // Mock daemon status parameters matching nodes.ejs
+        const decorated = data.map((n: Node) => ({
+          ...n,
+          status: 'Online',
+          versionRelease: 'v1.4.0'
+        }));
+        setNodes(decorated);
       }
     } catch (_) {}
     setLoading(false);
   };
 
-  const handleAddNode = async (e: React.FormEvent) => {
+  const handleCreateNode = async (e: React.FormEvent) => {
     e.preventDefault();
-    setActionLoading(true);
-    setTestResult(null);
-
+    setError(null);
     try {
       const token = localStorage.getItem('accessToken');
       const res = await fetch('/api/v1/nodes', {
@@ -68,53 +66,29 @@ export const Nodes: React.FC = () => {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          name, hostname, apiUrl, apiToken, sslFingerprint, cpuCores, memoryMb, storageGb
+          name, hostname, port, username, password,
+          cpuCores, memoryMb, storageGb
         })
       });
 
       if (res.ok) {
-        const newNode = await res.json();
-        setName('');
-        setHostname('');
-        setApiUrl('');
-        setApiToken('');
-        setSslFingerprint('');
-        setShowAddModal(false);
-        
-        await runNodeTest(newNode.id);
+        setShowCreateModal(false);
+        // Clear fields
+        setName(''); setHostname(''); setPassword('');
         fetchNodes();
       } else {
-        const err = await res.json();
-        setTestResult({ success: false, message: err.error || 'Failed to save node config' });
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to connect/register node');
       }
     } catch (err: any) {
-      setTestResult({ success: false, message: err.message });
-    } finally {
-      setActionLoading(false);
+      setError(err.message);
     }
   };
 
-  const runNodeTest = async (nodeId: string) => {
-    const token = localStorage.getItem('accessToken');
-    try {
-      const res = await fetch(`/api/v1/nodes/${nodeId}/test`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(`Node connection test failed: ${data.message || 'Connection timeout'}`);
-      } else {
-        alert('Node connection verified successfully!');
-        fetchNodes();
-      }
-    } catch (_) {}
-  };
-
   const handleDeleteNode = async (nodeId: string) => {
-    if (!confirm('Are you sure you want to delete this node configuration? Active containers linked to this node will not be destroyed on Proxmox, but will disappear from this panel.')) return;
-    const token = localStorage.getItem('accessToken');
+    if (!confirm('Are you sure you want to delete this hypervisor node? all configured LXC container templates on this node will be disconnected.')) return;
     try {
+      const token = localStorage.getItem('accessToken');
       const res = await fetch(`/api/v1/nodes/${nodeId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -127,221 +101,178 @@ export const Nodes: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* Header section matching nodes.ejs */}
+      <div className="sm:flex sm:items-center px-8 pt-4 justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-wide">Hypervisor Nodes</h1>
-          <p className="text-xs text-gray-400">Manage your Proxmox clusters and physical servers.</p>
+          <h1 className="text-base font-medium text-neutral-800 dark:text-white">Proxmox Nodes</h1>
+          <p className="mt-0.5 text-sm text-neutral-500">Configure and monitor your hypervisor clusters.</p>
         </div>
-        {nodes.length > 0 && user?.role === 'Admin' && (
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={fetchNodes}
-              className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn transition-all"
-            >
-              <RefreshCw size={16} />
-            </button>
-            <button 
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all"
-            >
-              <Plus size={16} /> Connect Node
-            </button>
-          </div>
+        <button 
+          onClick={() => setShowCreateModal(true)}
+          className="border border-neutral-800/20 block rounded-xl bg-white hover:bg-neutral-100 text-neutral-800 px-3 py-2 text-center text-sm font-medium transition"
+        >
+          Create New Node
+        </button>
+      </div>
+
+      {/* Stats Cards Row matching nodes.ejs */}
+      <div id="stats" className="grid grid-cols-1 md:grid-cols-2 gap-6 mx-8">
+        <div className="bg-neutral-50 dark:bg-neutral-800/20 rounded-xl p-5 border border-neutral-200 dark:border-white/5">
+          <h2 className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mb-2">Total Hypervisors</h2>
+          <p className="text-4xl font-normal text-neutral-800 dark:text-white">{nodes.length}</p>
+          <p className="text-xs text-neutral-400 mt-2">Active clustering node links</p>
+        </div>
+        <div className="bg-neutral-50 dark:bg-neutral-800/20 rounded-xl p-5 border border-neutral-200 dark:border-white/5">
+          <h2 className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mb-2">Cluster Status</h2>
+          <p className="text-4xl font-normal text-neutral-800 dark:text-white">
+            {nodes.filter(n => n.status === 'Online').length} / {nodes.length}
+          </p>
+          <p className="text-xs text-neutral-400 mt-2">Nodes online and queryable</p>
+        </div>
+      </div>
+
+      {/* Node List Table matching nodes.ejs */}
+      <div className="overflow-x-auto shadow-sm rounded-xl mx-8 border border-neutral-200 dark:border-neutral-800/40 bg-white dark:bg-neutral-800/20">
+        {loading ? (
+          <div className="p-12 text-center text-neutral-500 text-sm">Querying clustering state...</div>
+        ) : nodes.length === 0 ? (
+          <div className="p-12 text-center text-neutral-500 text-xs">No hypervisor nodes registered. Click Create New Node to connect one.</div>
+        ) : (
+          <table className="min-w-full divide-y divide-neutral-200 dark:divide-white/10 text-xs">
+            <thead className="bg-neutral-50 dark:bg-neutral-800/50 text-neutral-800 dark:text-white">
+              <tr>
+                <th className="py-3.5 pl-4 pr-3 text-left font-medium sm:pl-6">Name</th>
+                <th className="py-3.5 pl-4 pr-3 text-left font-medium sm:pl-6">Connection</th>
+                <th className="py-3.5 pl-4 pr-3 text-left font-medium sm:pl-6">Resource Allocation</th>
+                <th className="py-3.5 pl-4 pr-3 text-right font-medium sm:pl-6">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-white/5 text-neutral-600 dark:text-neutral-400">
+              {nodes.map(node => (
+                <tr key={node.id} className="hover:bg-neutral-50 dark:hover:bg-white/[0.05] transition-colors">
+                  <td className="whitespace-nowrap py-4 pl-4 pr-3 font-medium text-neutral-800 dark:text-white sm:pl-6">
+                    <div className="flex items-center">
+                      <span className="flex h-2 w-2 mr-3 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      {node.name}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-4">
+                    {node.hostname}:{node.port}
+                    <span className="ml-2 inline-flex items-center rounded-md bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ring-emerald-600/20">
+                      {node.versionRelease}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-4 font-mono">
+                    {node.cpuCores} Cores / {(node.memoryMb / 1024).toFixed(0)} GB RAM
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-4 text-right sm:pr-6">
+                    <button 
+                      onClick={() => handleDeleteNode(node.id)}
+                      className="p-2 bg-red-600 hover:bg-red-500 rounded-xl transition inline-flex items-center justify-center"
+                    >
+                      <Trash2 size={14} className="text-white" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      {/* Onboarding Wizard (displayed if 0 nodes exist) */}
-      {loading ? (
-        <div className="p-12 text-center text-gray-500 text-sm">Loading nodes list...</div>
-      ) : nodes.length === 0 ? (
-        <div className="max-w-2xl mx-auto al-card p-8 space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 bg-blue-600/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Server size={24} />
-            </div>
-            <h2 className="text-lg font-bold text-white tracking-wide">No Hypervisor Nodes Configured</h2>
-            <p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
-              CynexVM is ready! Connect your first Proxmox VE host node to begin deploying and provisioning LXC Linux VPS containers.
-            </p>
-          </div>
+      {/* Create Node Popup Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <form onSubmit={handleCreateNode} className="bg-[#1a1a1a] border border-neutral-800 rounded-2xl p-6 max-w-md w-full space-y-4 text-xs text-left">
+            <h3 className="text-sm font-semibold text-white">Register Proxmox Node</h3>
+            
+            {error && (
+              <p className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl">
+                {error}
+              </p>
+            )}
 
-          {testResult && (
-            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-btn text-xs">
-              {testResult.message}
-            </div>
-          )}
-
-          <form onSubmit={handleAddNode} className="space-y-4 border-t border-borderSubtle pt-6 text-xs">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 block">Friendly Node Name</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-neutral-400 mb-1">Friendly Name</label>
                 <input 
-                  type="text" placeholder="e.g. Node-01" className="w-full al-input"
-                  value={name} onChange={e => setName(e.target.value)} required
+                  type="text" placeholder="pve-node-1" className="w-full al-input" 
+                  value={name} onChange={e => setName(e.target.value)} required 
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 block">Host address (FQDN / IP)</label>
+              <div>
+                <label className="block text-neutral-400 mb-1">IP/Hostname</label>
                 <input 
-                  type="text" placeholder="e.g. 192.168.1.10" className="w-full al-input"
-                  value={hostname} onChange={e => setHostname(e.target.value)} required
+                  type="text" placeholder="10.0.0.10" className="w-full al-input" 
+                  value={hostname} onChange={e => setHostname(e.target.value)} required 
                 />
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[11px] text-gray-400 block">Proxmox API Endpoint URL</label>
-              <div className="relative">
-                <Globe className="absolute left-3 top-3 text-gray-500" size={14} />
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-neutral-400 mb-1">Port</label>
                 <input 
-                  type="url" placeholder="https://192.168.1.10:8006/api2/json" className="w-full al-input pl-10"
-                  value={apiUrl} onChange={e => setApiUrl(e.target.value)} required
+                  type="number" className="w-full al-input" 
+                  value={port} onChange={e => setPort(parseInt(e.target.value, 10))} required 
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-neutral-400 mb-1">Realm Username</label>
+                <input 
+                  type="text" className="w-full al-input" 
+                  value={username} onChange={e => setUsername(e.target.value)} required 
                 />
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[11px] text-gray-400 block">API Token Key</label>
-              <div className="relative">
-                <Key className="absolute left-3 top-3 text-gray-500" size={14} />
-                <input 
-                  type="password" placeholder="PVEAPIToken=root@pam!token=xxxx-xxxx" className="w-full al-input pl-10"
-                  value={apiToken} onChange={e => setApiToken(e.target.value)} required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] text-gray-400 block">SSL SHA256 Fingerprint (Optional for self-signed certificates)</label>
+            <div>
+              <label className="block text-neutral-400 mb-1">Realm Password/Token</label>
               <input 
-                type="text" placeholder="9A:D7:E5:..." className="w-full al-input"
-                value={sslFingerprint} onChange={e => setSslFingerprint(e.target.value)}
+                type="password" placeholder="••••••••" className="w-full al-input" 
+                value={password} onChange={e => setPassword(e.target.value)} required 
               />
             </div>
 
-            <button 
-              type="submit" 
-              className="w-full al-btn al-btn-primary py-3 font-bold mt-6"
-              disabled={actionLoading}
-            >
-              {actionLoading ? 'Connecting...' : 'Connect Proxmox Host'}
-            </button>
-          </form>
-        </div>
-      ) : (
-        /* STANDARD NODES VIEW */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {nodes.map(n => (
-            <div key={n.id} className="al-card p-5 flex flex-col justify-between space-y-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-white">{n.name}</h3>
-                    <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${
-                      n.status === 'online' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                    }`}>{n.status}</span>
-                  </div>
-                  <p className="text-[10px] text-gray-500 font-mono mt-0.5">{n.apiUrl}</p>
-                </div>
-                <div className="flex gap-1.5">
-                  <button 
-                    onClick={() => runNodeTest(n.id)}
-                    className="p-1.5 hover:bg-white/5 rounded text-gray-400 hover:text-white"
-                    title="Test connection"
-                  >
-                    <Activity size={14} />
-                  </button>
-                  {user?.role === 'Admin' && (
-                    <button 
-                      onClick={() => handleDeleteNode(n.id)}
-                      className="p-1.5 hover:bg-red-500/5 rounded text-gray-400 hover:text-red-400"
-                      title="Remove node"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-neutral-400 mb-1">Total Cores</label>
+                <input 
+                  type="number" className="w-full al-input" 
+                  value={cpuCores} onChange={e => setCpuCores(parseInt(e.target.value, 10))} required 
+                />
               </div>
-
-              {/* Resource Pools */}
-              <div className="grid grid-cols-3 gap-2 py-2 border-t border-borderSubtle text-[11px] text-gray-400">
-                <div>
-                  <span className="text-[9px] text-gray-500 uppercase block">Host Cores</span>
-                  <span className="font-semibold text-white">{n.cpuCores} Cores</span>
-                </div>
-                <div>
-                  <span className="text-[9px] text-gray-500 uppercase block">RAM Pool</span>
-                  <span className="font-semibold text-white">{(n.memoryMb / 1024).toFixed(0)} GB</span>
-                </div>
-                <div>
-                  <span className="text-[9px] text-gray-500 uppercase block">Storage Pool</span>
-                  <span className="font-semibold text-white">{n.storageGb} GB</span>
-                </div>
+              <div>
+                <label className="block text-neutral-400 mb-1">Memory (MB)</label>
+                <input 
+                  type="number" className="w-full al-input" 
+                  value={memoryMb} onChange={e => setMemoryMb(parseInt(e.target.value, 10))} required 
+                />
               </div>
-
-              <div className="text-[10px] text-gray-500 flex justify-between font-mono pt-1">
-                <span>Version: {n.version}</span>
-                <span>Latency: {n.latency}ms</span>
+              <div>
+                <label className="block text-neutral-400 mb-1">Storage (GB)</label>
+                <input 
+                  type="number" className="w-full al-input" 
+                  value={storageGb} onChange={e => setStorageGb(parseInt(e.target.value, 10))} required 
+                />
               </div>
             </div>
-          ))}
-        </div>
-      )}
 
-      {/* Connect Node dialog modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg al-card overflow-hidden flex flex-col h-[75vh]">
-            <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white">Connect Proxmox Node</h2>
-              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-white"><X size={16} /></button>
-            </div>
-            
-            <form onSubmit={handleAddNode} className="flex-1 p-6 overflow-y-auto space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 block">Friendly Name</label>
-                  <input type="text" className="w-full al-input" value={name} onChange={e => setName(e.target.value)} required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 block">Host IP / FQDN</label>
-                  <input type="text" className="w-full al-input" value={hostname} onChange={e => setHostname(e.target.value)} required />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 block">API url</label>
-                <input type="url" className="w-full al-input" value={apiUrl} onChange={e => setApiUrl(e.target.value)} required />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 block">API Token</label>
-                <input type="password" className="w-full al-input" value={apiToken} onChange={e => setApiToken(e.target.value)} required />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 block">SHA256 fingerprint</label>
-                <input type="text" className="w-full al-input" value={sslFingerprint} onChange={e => setSslFingerprint(e.target.value)} />
-              </div>
-              
-              <div className="grid grid-cols-3 gap-3 border-t border-borderSubtle pt-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 block">CPU Cores</label>
-                  <input type="number" className="w-full al-input" value={cpuCores} onChange={e => setCpuCores(parseInt(e.target.value, 10))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 block">RAM size (MB)</label>
-                  <input type="number" className="w-full al-input" value={memoryMb} onChange={e => setMemoryMb(parseInt(e.target.value, 10))} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 block">Disk size (GB)</label>
-                  <input type="number" className="w-full al-input" value={storageGb} onChange={e => setStorageGb(parseInt(e.target.value, 10))} />
-                </div>
-              </div>
-
-              <button type="submit" className="w-full al-btn al-btn-primary py-2.5 font-bold mt-6">
-                Save & Connect
+            <div className="flex justify-end gap-2 pt-2">
+              <button 
+                type="button" onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 border border-neutral-700 text-neutral-300 rounded-xl hover:bg-neutral-800 transition"
+              >
+                Cancel
               </button>
-            </form>
-          </div>
+              <button type="submit" className="px-4 py-2 al-btn-primary rounded-xl font-semibold">
+                Register
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

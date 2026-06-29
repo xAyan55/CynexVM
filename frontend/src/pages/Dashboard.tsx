@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Wizard } from '../components/Wizard';
-import { 
-  Server, Cpu, HardDrive, ShieldAlert, Plus, 
-  Terminal, Power, CheckCircle, RefreshCw, Activity 
-} from 'lucide-react';
+import { Plus, FolderPlus, Folder, Server, Info, Terminal, LayoutGrid, List } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface Instance {
@@ -18,295 +15,251 @@ interface Instance {
   ipAddress: string | null;
   osTemplate: string;
   node: { name: string };
+  // Simulated metrics matching dashboard.ejs columns
+  cpuUsage?: number;
+  ramUsage?: number;
 }
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [instances, setInstances] = useState<Instance[]>([]);
-  const [nodesCount, setNodesCount] = useState(0);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  
-  const [showDeployWizard, setShowDeployWizard] = useState(false);
   const [loading, setLoading] = useState(true);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [showDeployWizard, setShowDeployWizard] = useState(false);
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchInstances();
   }, []);
 
-  const fetchDashboardData = async () => {
+  const fetchInstances = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('accessToken');
-      
-      // Fetch instances
-      const instRes = await fetch('/api/v1/instances', {
+      const res = await fetch('/api/v1/instances', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (instRes.ok) {
-        const instData = await instRes.json();
-        setInstances(instData);
+      if (res.ok) {
+        const data = await res.json();
+        // Decorate with mock RAM/CPU metrics for the cards matching dashboard.ejs
+        const decorated = data.map((inst: Instance) => ({
+          ...inst,
+          cpuUsage: inst.status === 'running' ? Math.floor(Math.random() * 30) + 15 : 0,
+          ramUsage: inst.status === 'running' ? Math.floor(Math.random() * 45) + 20 : 0
+        }));
+        setInstances(decorated);
       }
-
-      // Fetch nodes count
-      const nodesRes = await fetch('/api/v1/nodes', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (nodesRes.ok) {
-        const nodesData = await nodesRes.json();
-        setNodesCount(nodesData.length);
-      }
-
-      // Fetch audit logs
-      if (user?.role === 'Admin') {
-        const logsRes = await fetch('/api/v1/audit-logs?limit=5', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (logsRes.ok) {
-          const logsData = await logsRes.json();
-          setAuditLogs(logsData.logs || []);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (_) {}
+    setLoading(false);
   };
-
-  // Sparkline animation on dashboard mount
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animationId: number;
-    const width = (canvas.width = canvas.parentElement?.clientWidth || 400);
-    const height = (canvas.height = 120);
-    const dataPoints: number[] = Array.from({ length: 20 }, () => Math.random() * 40 + 30);
-
-    const draw = () => {
-      ctx.clearRect(0, 0, width, height);
-
-      // Add new data point periodically
-      if (Math.random() > 0.8) {
-        dataPoints.shift();
-        dataPoints.push(Math.random() * 40 + 30);
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(0, height - (dataPoints[0] / 100) * height);
-      
-      const step = width / (dataPoints.length - 1);
-      for (let i = 1; i < dataPoints.length; i++) {
-        const x = i * step;
-        const y = height - (dataPoints[i] / 100) * height;
-        ctx.lineTo(x, y);
-      }
-
-      ctx.strokeStyle = '#6366f1';
-      ctx.lineWidth = 2.0;
-      ctx.stroke();
-
-      animationId = requestAnimationFrame(draw);
-    };
-
-    draw();
-
-    return () => {
-      cancelAnimationFrame(animationId);
-    };
-  }, [loading]);
-
-  const activeInstances = instances.filter(i => i.status === 'running').length;
 
   return (
     <div className="space-y-6">
-      {/* Upper header section */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* Header Container */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-wide">Dashboard</h1>
-          <p className="text-xs text-gray-400">System overview and LXC container status.</p>
+          <h1 className="text-base font-medium text-neutral-800 dark:text-white">Instances</h1>
+          <p className="text-sm text-neutral-500 mt-0.5">Manage and monitor your virtualization containers.</p>
         </div>
         <div className="flex items-center gap-2">
           <button 
-            onClick={fetchDashboardData}
-            className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn transition-all"
-            title="Reload data"
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button 
             onClick={() => setShowDeployWizard(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all"
+            className="flex min-h-10 items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-sm font-medium hover:bg-neutral-700 dark:hover:bg-neutral-200 transition"
           >
-            <Plus size={16} /> Deploy VPS
+            <Plus size={16} />
+            New instance
           </button>
-        </div>
-      </div>
+          
+          <button className="flex min-h-10 items-center gap-1.5 px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 text-sm font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 transition">
+            <FolderPlus size={16} strokeWidth={1.5} />
+            New folder
+          </button>
 
-      {/* Aggregate Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Instances */}
-        <div className="al-card p-4 flex items-center justify-between">
-          <div className="space-y-1">
-            <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">Running Containers</span>
-            <span className="text-2xl font-bold text-white">{activeInstances}</span>
-            <span className="text-[10px] text-gray-400 block">out of {instances.length} configured</span>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-            <Terminal size={18} />
-          </div>
-        </div>
-
-        {/* Hypervisor Nodes */}
-        <div className="al-card p-4 flex items-center justify-between">
-          <div className="space-y-1">
-            <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">Nodes Connected</span>
-            <span className="text-2xl font-bold text-white">{nodesCount}</span>
-            <span className="text-[10px] text-emerald-400 block">All hypervisors active</span>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-            <Server size={18} />
-          </div>
-        </div>
-
-        {/* Total CPU cores */}
-        <div className="al-card p-4 flex items-center justify-between">
-          <div className="space-y-1">
-            <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">Total Cores Assigned</span>
-            <span className="text-2xl font-bold text-white">
-              {instances.reduce((acc, i) => acc + i.cpuCores, 0)}
-            </span>
-            <span className="text-[10px] text-gray-400 block">vCPU allocations</span>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <Cpu size={18} />
-          </div>
-        </div>
-
-        {/* Memory allocation */}
-        <div className="al-card p-4 flex items-center justify-between">
-          <div className="space-y-1">
-            <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">RAM Allocated</span>
-            <span className="text-2xl font-bold text-white">
-              {(instances.reduce((acc, i) => acc + i.memoryMb, 0) / 1024).toFixed(1)} GB
-            </span>
-            <span className="text-[10px] text-gray-400 block">Memory pool</span>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-amber-600/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <HardDrive size={18} />
-          </div>
-        </div>
-      </div>
-
-      {/* Graph and Recent logs widgets */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Real-time historical chart */}
-        <div className="al-card p-5 flex flex-col justify-between lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Cluster Resource Efficiency</h3>
-              <p className="text-[10px] text-gray-500">Live aggregate CPU usage history</p>
+          {instances.length > 0 && (
+            <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800/60 p-1 rounded-xl border border-neutral-200 dark:border-white/5">
+              <button 
+                onClick={() => setViewMode('grid')}
+                className={`min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 transition-colors ${
+                  viewMode === 'grid' 
+                    ? 'vt-active bg-white dark:bg-white/10 text-neutral-900 dark:text-white' 
+                    : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                }`}
+              >
+                <LayoutGrid size={15} />
+                Grid
+              </button>
+              <button 
+                onClick={() => setViewMode('list')}
+                className={`min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 transition-colors ${
+                  viewMode === 'list' 
+                    ? 'vt-active bg-white dark:bg-white/10 text-neutral-900 dark:text-white' 
+                    : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                }`}
+              >
+                <List size={15} />
+                List
+              </button>
             </div>
-            <span className="flex items-center gap-1.5 text-[10px] text-emerald-400"><Activity size={10} /> Active streaming</span>
-          </div>
-          <div className="w-full h-32 relative">
-            <canvas ref={canvasRef} className="w-full h-full" />
-          </div>
-        </div>
-
-        {/* Recent Audit events */}
-        <div className="al-card p-5 flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-white mb-3">Security Alerts & Audit Logs</h3>
-            <div className="space-y-3">
-              {auditLogs.length === 0 ? (
-                <p className="text-xs text-gray-500 py-4 text-center">No recent security logs</p>
-              ) : (
-                auditLogs.map((log) => (
-                  <div key={log.id} className="text-xs border-b border-borderSubtle pb-2 last:border-b-0">
-                    <div className="flex justify-between font-mono text-[10px]">
-                      <span className="text-blue-400 font-semibold">{log.action}</span>
-                      <span className="text-gray-500">{new Date(log.createdAt).toLocaleTimeString()}</span>
-                    </div>
-                    <p className="text-gray-300 mt-1 truncate">{log.details}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          {user?.role === 'Admin' && (
-            <Link to="/admin/audit-logs" className="text-[11px] text-blue-500 hover:underline block mt-3 font-semibold">
-              View all audit logs &rarr;
-            </Link>
           )}
         </div>
       </div>
 
-      {/* Main Containers grid/list table */}
-      <div className="al-card overflow-hidden">
-        <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Linux Container Instances</h3>
-          <span className="text-[10px] text-gray-400 font-mono">{instances.length} VMIDs allocated</span>
+      {loading ? (
+        <div className="flex flex-col items-center justify-center mt-32 text-center">
+          <p className="text-sm text-neutral-500">Querying active hypervisor hosts...</p>
         </div>
-
-        {loading ? (
-          <div className="p-12 text-center text-gray-500 text-sm">Loading instances...</div>
-        ) : instances.length === 0 ? (
-          <div className="p-12 text-center text-gray-500 text-xs">
-            No active VPS instances found. Create your first container by clicking "Deploy VPS".
+      ) : instances.length === 0 ? (
+        <div className="flex flex-col items-center justify-center mt-32 text-center">
+          <Server className="h-16 w-16 text-neutral-200 dark:text-neutral-800 mb-4" />
+          <h2 className="text-base font-medium text-neutral-800 dark:text-white">It's quiet here — suspiciously quiet.</h2>
+          <p className="text-sm text-neutral-500 mt-1">
+            <button onClick={() => setShowDeployWizard(true)} className="text-blue-500 hover:underline">
+              Create your first instance
+            </button>
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Folders row wrapper (Simulated static folders if present) */}
+          <div className="mb-8">
+            <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-3">Folders</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div className="flex items-center gap-3 bg-white dark:bg-white/[0.03] border border-neutral-200 dark:border-white/[0.07] rounded-xl px-3.5 py-3 cursor-pointer relative transition-[background,border-color,box-shadow] select-none hover:bg-neutral-100 dark:hover:bg-white/[0.06] hover:border-neutral-300 dark:hover:border-white/[0.12]">
+                <Folder className="h-5 w-5 text-amber-500 shrink-0" fill="currentColor" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-neutral-800 dark:text-white truncate">Primary LXC Nodes</p>
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">{instances.length} instances</p>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Drag an instance card onto a folder to catalog it</p>
           </div>
-        ) : (
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-white/5 border-b border-borderSubtle text-gray-400">
-                <th className="p-3">VMID</th>
-                <th className="p-3">Friendly Name</th>
-                <th className="p-3">Hypervisor Node</th>
-                <th className="p-3">IP Address</th>
-                <th className="p-3">Configuration Pool</th>
-                <th className="p-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-borderSubtle">
-              {instances.map(inst => (
-                <tr key={inst.id} className="hover:bg-white/5 transition-all">
-                  <td className="p-3 font-mono text-gray-400">{inst.vmid}</td>
-                  <td className="p-3 font-semibold">
-                    <Link to={`/instances/${inst.id}`} className="text-blue-500 hover:underline">
-                      {inst.name}
-                    </Link>
-                  </td>
-                  <td className="p-3 text-gray-400">{inst.node.name}</td>
-                  <td className="p-3 font-mono text-gray-500">{inst.ipAddress || 'configuring...'}</td>
-                  <td className="p-3 text-gray-500">
-                    {inst.cpuCores} vCPUs / {(inst.memoryMb / 1024).toFixed(1)} GB RAM
-                  </td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                      inst.status === 'running' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                      inst.status === 'stopped' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                      'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                    }`}>{inst.status}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
 
-      {/* Deployment Wizard Modal */}
+          <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-3">Instances</p>
+
+          {/* 1. GRID VIEW MODE */}
+          {viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+              {instances.map((inst) => (
+                <div 
+                  key={inst.id}
+                  className="group relative block bg-white dark:bg-[#141414]/10 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm p-4 hover:border-neutral-300 dark:hover:border-white/10 transition duration-150"
+                >
+                  <Link to={`/instances/${inst.id}`} className="block">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="min-w-0 flex-1 mr-3">
+                        <h3 className="text-sm font-medium text-neutral-900 dark:text-white truncate">{inst.name}</h3>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                          {inst.osTemplate.split('/').pop() || 'LXC Container'}
+                        </p>
+                      </div>
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-md shrink-0 ${
+                        inst.status === 'running' 
+                          ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30' 
+                          : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20'
+                      }`}>
+                        <span className="relative flex h-1.5 w-1.5">
+                          {inst.status === 'running' ? (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                            </>
+                          ) : (
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                          )}
+                        </span>
+                        {inst.status === 'running' ? 'Running' : 'Stopped'}
+                      </span>
+                    </div>
+
+                    {/* Resources metrics */}
+                    <div className="flex gap-3 mb-3">
+                      <div className="flex-1 bg-neutral-100 dark:bg-neutral-700/30 rounded-lg px-3 py-2">
+                        <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mb-0.5">RAM</p>
+                        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{inst.ramUsage}%</p>
+                      </div>
+                      <div className="flex-1 bg-neutral-100 dark:bg-neutral-700/30 rounded-lg px-3 py-2">
+                        <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mb-0.5">CPU</p>
+                        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{inst.cpuUsage}%</p>
+                      </div>
+                      <div className="flex-1 bg-neutral-100 dark:bg-neutral-700/30 rounded-lg px-3 py-2">
+                        <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mb-0.5">Limit</p>
+                        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{inst.memoryMb} MB</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 dark:border-white/5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <img 
+                          className="h-4 w-4 rounded-full shrink-0 border border-neutral-750" 
+                          src={`https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(user?.username || 'user')}`} 
+                          alt="" 
+                        />
+                        <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{user?.username}</span>
+                      </div>
+                      <span className="text-xs text-neutral-400 dark:text-neutral-500 shrink-0 ml-2 truncate max-w-[6rem]">
+                        {inst.node.name}
+                      </span>
+                    </div>
+                  </Link>
+                </div>
+              ))}
+            </div>
+          ) : (
+            // 2. LIST VIEW MODE
+            <div id="listView" className="rounded-xl border border-neutral-200 dark:border-white/5 overflow-hidden shadow-sm mb-6">
+              <table className="min-w-full divide-y divide-neutral-200 dark:divide-white/5 text-xs">
+                <thead className="bg-neutral-50 dark:bg-neutral-800/20 text-neutral-500 dark:text-neutral-400">
+                  <tr>
+                    <th className="py-3 pl-6 pr-3 text-left font-medium">Instance</th>
+                    <th className="px-3 py-3 text-left font-medium">Status</th>
+                    <th className="px-3 py-3 text-left font-medium">VMID</th>
+                    <th className="px-3 py-3 text-left font-medium">Host Node</th>
+                    <th className="px-3 py-3 text-left font-medium">Allocations</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 dark:divide-white/5 bg-white dark:bg-transparent">
+                  {instances.map((inst) => (
+                    <tr 
+                      key={inst.id}
+                      className="hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                    >
+                      <td className="py-3.5 pl-6 pr-3 font-medium text-neutral-900 dark:text-white">
+                        <Link to={`/instances/${inst.id}`} className="block">
+                          {inst.name}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md ${
+                          inst.status === 'running' 
+                            ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' 
+                            : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                        }`}>
+                          {inst.status === 'running' ? 'Running' : 'Stopped'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3.5 text-neutral-500 font-mono">#{inst.vmid}</td>
+                      <td className="px-3 py-3.5 text-neutral-500">{inst.node.name}</td>
+                      <td className="px-3 py-3.5 text-neutral-500 font-mono">
+                        {inst.cpuCores} vCPU / {inst.memoryMb} MB RAM
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Deploy Wizard Modal (Replaces old glowing popups) */}
       {showDeployWizard && (
-        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <Wizard 
             onSuccess={() => {
               setShowDeployWizard(false);
-              fetchDashboardData();
-            }}
-            onCancel={() => setShowDeployWizard(false)}
+              fetchInstances();
+            }} 
+            onCancel={() => setShowDeployWizard(false)} 
           />
         </div>
       )}

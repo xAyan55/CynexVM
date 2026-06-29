@@ -4,8 +4,8 @@ import { useSocket } from '../context/SocketContext';
 import { Console } from '../components/Console';
 import { FileManager } from '../components/FileManager';
 import { 
-  Server, Cpu, HardDrive, Network, FolderOpen, 
-  Key, ArrowLeft, Trash2
+  Terminal as TermIcon, Folder, Globe, ShieldCheck, Settings as SetIcon,
+  ArrowLeft, Trash2, Cpu, HardDrive
 } from 'lucide-react';
 
 export const InstanceDetails: React.FC = () => {
@@ -16,7 +16,7 @@ export const InstanceDetails: React.FC = () => {
   const [instance, setInstance] = useState<any | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('console');
 
   // Network tab inputs
   const [firewallRules, setFirewallRules] = useState<any[]>([]);
@@ -27,13 +27,17 @@ export const InstanceDetails: React.FC = () => {
   const [snapshots, setSnapshots] = useState<any[]>([]);
   const [newSnapshotName, setNewSnapshotName] = useState('');
 
+  // Settings inputs
+  const [settingsName, setSettingsName] = useState('');
+  const [settingsMemory, setSettingsMemory] = useState(512);
+
   useEffect(() => {
     fetchInstanceDetails();
   }, [id]);
 
-  // Subscribe to live socket metrics when Overview tab is active
+  // Subscribe to live socket metrics
   useEffect(() => {
-    if (!socket || !id || activeTab !== 'overview') return;
+    if (!socket || !id) return;
 
     socket.emit('metrics.subscribe', { instanceId: id });
     socket.on('metrics.data', (data) => {
@@ -44,7 +48,7 @@ export const InstanceDetails: React.FC = () => {
       socket.emit('metrics.unsubscribe');
       socket.off('metrics.data');
     };
-  }, [socket, id, activeTab]);
+  }, [socket, id]);
 
   const fetchInstanceDetails = async () => {
     setLoading(true);
@@ -56,8 +60,10 @@ export const InstanceDetails: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setInstance(data);
+        setSettingsName(data.name);
+        setSettingsMemory(data.memoryMb);
         setBackups([
-          { id: 'b1', name: 'vzdump-lxc-daily-backup', sizeBytes: 256214580, status: 'completed', type: 'scheduled', createdAt: new Date(Date.now() - 24 * 3600 * 1000) }
+          { id: 'b1', name: 'vzdump-lxc-daily-backup', sizeBytes: 256214580, status: 'completed', createdAt: new Date(Date.now() - 24 * 3600 * 1000) }
         ]);
         setSnapshots([
           { id: 's1', name: 'pre-upgrade-checkpoint', description: 'Snapshot prior to package upgrades', status: 'active', createdAt: new Date(Date.now() - 48 * 3600 * 1000) }
@@ -115,7 +121,7 @@ export const InstanceDetails: React.FC = () => {
 
   const handleDeleteInstance = async () => {
     if (!instance) return;
-    if (!confirm('CRITICAL WARNING: Are you sure you want to permanently delete this LXC container? All storage disks, snapshots, and local configurations will be destroyed.')) return;
+    if (!confirm('CRITICAL WARNING: Are you sure you want to permanently delete this LXC container? All storage disks and snapshot data will be destroyed.')) return;
     
     try {
       const token = localStorage.getItem('accessToken');
@@ -130,359 +136,295 @@ export const InstanceDetails: React.FC = () => {
   };
 
   if (loading || !instance) {
-    return <div className="p-12 text-center text-gray-500 text-sm">Loading instance configuration...</div>;
+    return <div className="p-12 text-center text-neutral-500 text-sm">Loading instance configuration...</div>;
   }
 
   return (
     <div className="space-y-6">
-      {/* Upper header */}
-      <div className="flex items-center justify-between">
+      {/* Upper Title Header */}
+      <div className="flex items-center justify-between pb-4 border-b border-neutral-200/30 dark:border-white/5">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => navigate('/')} 
-            className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn transition-colors"
+            className="p-2 text-neutral-500 hover:text-neutral-900 dark:hover:text-white bg-white/5 border border-neutral-300 dark:border-neutral-700/50 rounded-xl transition"
           >
             <ArrowLeft size={16} />
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-gray-400 font-mono">VMID: {instance.vmid}</span>
-              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-                instance.status === 'running' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                instance.status === 'stopped' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+              <span className="text-[10px] bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded text-neutral-700 dark:text-neutral-400 font-mono">ID: {instance.vmid}</span>
+              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${
+                instance.status === 'running' 
+                  ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' 
+                  : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
               }`}>{instance.status}</span>
             </div>
-            <h1 className="text-xl font-bold text-white mt-1.5">{instance.name}</h1>
+            <h1 className="text-xl font-medium text-neutral-850 dark:text-white mt-1">{instance.name}</h1>
           </div>
         </div>
 
         <button 
           onClick={handleDeleteInstance}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 hover:bg-red-600 text-red-400 hover:text-white rounded-btn text-xs font-semibold transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-semibold transition"
         >
           <Trash2 size={14} /> Destroy VPS
         </button>
       </div>
 
-      {/* Tabs navigation */}
-      <div className="flex border-b border-borderSubtle text-xs gap-4 overflow-x-auto pb-0.5">
-        {[
-          { id: 'overview', label: 'Overview', icon: Server },
-          { id: 'console', label: 'Console Terminal', icon: Key },
-          { id: 'files', label: 'File Manager', icon: FolderOpen },
-          { id: 'network', label: 'Networking', icon: Network },
-          { id: 'backups', label: 'Backups & Snapshots', icon: HardDrive }
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-1.5 pb-3 border-b-2 font-medium transition-all ${
-              activeTab === t.id ? 'border-blue-500 text-white font-semibold' : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            <t.icon size={14} /> {t.label}
-          </button>
-        ))}
+      {/* Tabs Navigation Bar (matching serverTemplate.ejs) */}
+      <div className="mt-6">
+        <nav className="flex relative">
+          <ul role="list" className="flex min-w-full mt-1.5 flex-none gap-x-2 text-sm font-normal leading-6 text-neutral-600 dark:text-neutral-400">
+            {[
+              { id: 'console', label: 'Console', icon: TermIcon },
+              { id: 'files', label: 'Files', icon: Folder },
+              { id: 'network', label: 'Networking', icon: Globe },
+              { id: 'backups', label: 'Backups', icon: ShieldCheck },
+              { id: 'settings', label: 'Settings', icon: SetIcon }
+            ].map((t) => (
+              <li key={t.id} className="transition">
+                <button
+                  onClick={() => setActiveTab(t.id)}
+                  data-active={activeTab === t.id ? 'true' : 'false'}
+                  className="nav-link2 py-2 px-3 transition border hover:bg-neutral-100 dark:hover:bg-white/5 border-transparent hover:text-neutral-900 dark:hover:text-white hover:shadow rounded-xl data-[active=true]:bg-neutral-200 data-[active=true]:border-neutral-300 dark:data-[active=true]:bg-white/10 dark:data-[active=true]:border-neutral-300/20 data-[active=true]:text-neutral-900 dark:data-[active=true]:text-white data-[active=true]:font-medium data-[active=true]:shadow-sm"
+                >
+                  <t.icon className="size-5 mb-0.5 inline-flex mr-1" />
+                  {t.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </div>
 
       {/* Tab Panels */}
       
-      {/* 1. OVERVIEW Tab */}
-      {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Static details specs */}
-          <div className="al-card p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-white">VPS Hardware Allocations</h3>
-            <div className="divide-y divide-borderSubtle text-xs">
-              <div className="py-2 flex justify-between">
-                <span className="text-gray-500">Node Location</span>
-                <span>{instance.node.name}</span>
-              </div>
-              <div className="py-2 flex justify-between">
-                <span className="text-gray-500">Hostname</span>
-                <span className="font-mono text-gray-400 truncate max-w-[150px]">{instance.hostname}</span>
-              </div>
-              <div className="py-2 flex justify-between">
-                <span className="text-gray-500">IP address</span>
-                <span className="font-mono text-gray-400">{instance.ipAddress || 'Not set'}</span>
-              </div>
-              <div className="py-2 flex justify-between">
-                <span className="text-gray-500">OS Template</span>
-                <span className="text-gray-500 truncate max-w-[120px] font-mono">{instance.osTemplate.split('/').pop()}</span>
-              </div>
-              <div className="py-2 flex justify-between">
-                <span className="text-gray-500">CPU allocation</span>
-                <span>{instance.cpuCores} Core(s)</span>
-              </div>
-              <div className="py-2 flex justify-between">
-                <span className="text-gray-500">RAM Memory</span>
-                <span>{instance.memoryMb} MB</span>
-              </div>
-              <div className="py-2 flex justify-between">
-                <span className="text-gray-500">Disk capacity</span>
-                <span>{instance.storageGb} GB</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Real-time metrics streaming gauges */}
-          <div className="al-card p-5 md:col-span-2 space-y-6">
-            <h3 className="text-sm font-semibold text-white">Live Resource Diagnostics</h3>
-            {liveMetrics ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
-                {/* CPU */}
-                <div className="space-y-2">
-                  <Cpu className="text-blue-500 mx-auto" size={32} />
-                  <div>
-                    <span className="text-[10px] text-gray-500 uppercase block font-semibold">CPU Utilization</span>
-                    <span className="text-xl font-bold text-white">{(liveMetrics.cpu * 100).toFixed(1)}%</span>
-                    <span className="text-[9px] text-gray-400 block">of {instance.cpuCores} cores</span>
-                  </div>
-                </div>
-
-                {/* RAM */}
-                <div className="space-y-2">
-                  <HardDrive className="text-blue-500 mx-auto" size={32} />
-                  <div>
-                    <span className="text-[10px] text-gray-500 uppercase block font-semibold">RAM Usage</span>
-                    <span className="text-xl font-bold text-white">{(liveMetrics.mem / (1024 * 1024)).toFixed(0)} MB</span>
-                    <span className="text-[9px] text-gray-400 block">of {liveMetrics.maxmem / (1024 * 1024)} MB</span>
-                  </div>
-                </div>
-
-                {/* Disk */}
-                <div className="space-y-2">
-                  <HardDrive className="text-blue-500 mx-auto" size={32} />
-                  <div>
-                    <span className="text-[10px] text-gray-500 uppercase block font-semibold">Disk Allocation</span>
-                    <span className="text-xl font-bold text-white">{(liveMetrics.disk / (1024 * 1024 * 1024)).toFixed(1)} GB</span>
-                    <span className="text-[9px] text-gray-400 block">of {liveMetrics.maxdisk / (1024 * 1024 * 1024)} GB</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="p-8 text-center text-gray-500 text-xs">Waiting for live diagnostic feed...</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 2. CONSOLE Tab */}
+      {/* 1. CONSOLE TAB */}
       {activeTab === 'console' && (
-        <Console 
-          instanceId={instance.id} 
-          status={instance.status} 
-          onPowerAction={handlePowerAction}
-        />
-      )}
+        <div className="space-y-6">
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white dark:bg-white/5 rounded-xl p-5 border border-neutral-300 dark:border-neutral-800/20 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs text-neutral-400">CPU Usage</p>
+                <p className="text-lg font-semibold text-neutral-900 dark:text-white">
+                  {liveMetrics ? `${(liveMetrics.cpu * 100).toFixed(1)}%` : '0%'}
+                </p>
+              </div>
+              <Cpu className="text-neutral-400" size={24} />
+            </div>
 
-      {/* 3. FILE MANAGER Tab */}
-      {activeTab === 'files' && (
-        <FileManager instanceId={instance.id} />
-      )}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-5 border border-neutral-300 dark:border-neutral-800/20 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs text-neutral-400">RAM Memory</p>
+                <p className="text-lg font-semibold text-neutral-900 dark:text-white">
+                  {liveMetrics ? `${(liveMetrics.mem / (1024 * 1024)).toFixed(0)} MB` : '0 MB'}
+                </p>
+              </div>
+              <HardDrive className="text-neutral-400" size={24} />
+            </div>
 
-      {/* 4. NETWORKING Tab */}
-      {activeTab === 'network' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Static Network Info */}
-          <div className="al-card p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-white">Interface Configuration</h3>
-            <div className="text-xs space-y-3">
+            <div className="bg-white dark:bg-white/5 rounded-xl p-5 border border-neutral-300 dark:border-neutral-800/20 shadow-sm flex items-center justify-between">
               <div>
-                <span className="text-gray-500 block mb-1">Bridge Mode</span>
-                <span className="font-semibold text-white">vmbr0 (dhcp client)</span>
+                <p className="text-xs text-neutral-400">Target Bridge</p>
+                <p className="text-lg font-semibold text-neutral-900 dark:text-white">vmbr0</p>
               </div>
-              <div>
-                <span className="text-gray-500 block mb-1">MAC Address</span>
-                <span className="font-mono text-gray-400">00:50:56:AB:CD:EF</span>
-              </div>
-              <div>
-                <span className="text-gray-500 block mb-1">Gateway Endpoint</span>
-                <span className="font-mono text-gray-400">10.0.0.1</span>
-              </div>
+              <Globe className="text-neutral-400" size={24} />
             </div>
           </div>
 
-          {/* Firewall configuration */}
-          <div className="al-card p-5 lg:col-span-2 space-y-6">
-            <div className="flex items-center justify-between border-b border-borderSubtle pb-3">
-              <h3 className="text-sm font-semibold text-white">Firewall Access Rules</h3>
-            </div>
-
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-white/5 border-b border-borderSubtle text-gray-400">
-                  <th className="p-2">Direction</th>
-                  <th className="p-2">Action</th>
-                  <th className="p-2">Protocol</th>
-                  <th className="p-2">Port Range</th>
-                  <th className="p-2">Source CIDR</th>
-                  <th className="p-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-borderSubtle">
-                {firewallRules.map(rule => (
-                  <tr key={rule.id} className="hover:bg-white/5">
-                    <td className="p-2 capitalize font-mono">{rule.direction}</td>
-                    <td className="p-2">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                        rule.action === 'ACCEPT' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                      }`}>{rule.action}</span>
-                    </td>
-                    <td className="p-2 font-mono uppercase">{rule.protocol}</td>
-                    <td className="p-2 font-mono">{rule.port || 'ALL'}</td>
-                    <td className="p-2 font-mono text-gray-500">{rule.sourceIp}</td>
-                    <td className="p-2 text-right">
-                      <button 
-                        onClick={() => handleRemoveFirewallRule(rule.id)}
-                        className="p-1 text-gray-450 hover:text-red-400"
-                        title="Delete rule"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Firewall addition form */}
-            <form onSubmit={handleAddFirewallRule} className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end border-t border-borderSubtle pt-4 text-xs">
-              <div>
-                <label className="text-[10px] text-gray-500 block mb-1">Direction</label>
-                <select 
-                  className="w-full al-input px-2 py-1.5"
-                  value={newRule.direction}
-                  onChange={e => setNewRule({...newRule, direction: e.target.value})}
-                >
-                  <option value="inbound">Inbound</option>
-                  <option value="outbound">Outbound</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-500 block mb-1">Action</label>
-                <select 
-                  className="w-full al-input px-2 py-1.5"
-                  value={newRule.action}
-                  onChange={e => setNewRule({...newRule, action: e.target.value})}
-                >
-                  <option value="ACCEPT">ACCEPT</option>
-                  <option value="DROP">DROP</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-500 block mb-1">Protocol</label>
-                <select 
-                  className="w-full al-input px-2 py-1.5"
-                  value={newRule.protocol}
-                  onChange={e => setNewRule({...newRule, protocol: e.target.value})}
-                >
-                  <option value="tcp">TCP</option>
-                  <option value="udp">UDP</option>
-                  <option value="icmp">ICMP</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-500 block mb-1">Port Range</label>
-                <input 
-                  type="text" placeholder="e.g. 80, 22:25" className="w-full al-input px-2 py-1.5"
-                  value={newRule.port}
-                  onChange={e => setNewRule({...newRule, port: e.target.value})}
-                />
-              </div>
-              <button type="submit" className="w-full al-btn al-btn-primary py-2.5 col-span-2 md:col-span-1">
-                Add Rule
-              </button>
-            </form>
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
+            <Console 
+              instanceId={instance.id} 
+              status={instance.status} 
+              onPowerAction={handlePowerAction} 
+            />
           </div>
         </div>
       )}
 
-      {/* 5. BACKUPS & SNAPSHOTS Tab */}
-      {activeTab === 'backups' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Snapshots segment */}
-          <div className="al-card p-5 space-y-6">
-            <h3 className="text-sm font-semibold text-white">Container Snapshots</h3>
-            
-            <form onSubmit={handleCreateSnapshot} className="flex gap-2 items-end text-xs">
-              <div className="flex-1">
-                <label className="text-[10px] text-gray-500 block mb-1">Snapshot Name</label>
-                <input 
-                  type="text" placeholder="e.g. state-pre-configure" className="w-full al-input"
-                  value={newSnapshotName}
-                  onChange={e => setNewSnapshotName(e.target.value)}
-                  required
-                />
+      {/* 2. FILES TAB */}
+      {activeTab === 'files' && (
+        <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
+          <FileManager instanceId={instance.id} />
+        </div>
+      )}
+
+      {/* 3. NETWORKING TAB */}
+      {activeTab === 'network' && (
+        <div className="space-y-6">
+          {/* Bridge spec details */}
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
+            <h2 className="text-base font-semibold mb-4 text-neutral-900 dark:text-white">Network Interfaces</h2>
+            <div className="grid grid-cols-2 gap-4 text-sm text-neutral-400">
+              <div>
+                <span className="block text-[10px] text-neutral-500">Bridge Interface</span>
+                <span className="text-neutral-800 dark:text-neutral-300 font-medium">vmbr0</span>
               </div>
-              <button type="submit" className="al-btn al-btn-primary px-4 py-2 font-semibold">
-                Create Snapshot
-              </button>
+              <div>
+                <span className="block text-[10px] text-neutral-500">Address IP/CIDR</span>
+                <span className="text-neutral-800 dark:text-neutral-300 font-mono font-medium">{instance.ipAddress || 'DHCP'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Firewall rules */}
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Firewall Rules</h2>
+            <form onSubmit={handleAddFirewallRule} className="grid grid-cols-5 gap-3">
+              <select 
+                className="al-input text-xs" 
+                value={newRule.direction} 
+                onChange={e => setNewRule({...newRule, direction: e.target.value})}
+              >
+                <option value="inbound">Inbound</option>
+                <option value="outbound">Outbound</option>
+              </select>
+              <select 
+                className="al-input text-xs" 
+                value={newRule.action} 
+                onChange={e => setNewRule({...newRule, action: e.target.value})}
+              >
+                <option value="ACCEPT">ACCEPT</option>
+                <option value="DROP">DROP</option>
+              </select>
+              <input 
+                type="text" placeholder="Port" className="al-input text-xs" 
+                value={newRule.port} onChange={e => setNewRule({...newRule, port: e.target.value})} required 
+              />
+              <input 
+                type="text" placeholder="Source IP" className="al-input text-xs" 
+                value={newRule.sourceIp} onChange={e => setNewRule({...newRule, sourceIp: e.target.value})} required 
+              />
+              <button type="submit" className="al-btn al-btn-primary py-2 text-xs">Add Rule</button>
             </form>
 
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-white/5 border-b border-borderSubtle text-gray-400">
-                  <th className="p-2">Name</th>
-                  <th className="p-2">Description</th>
-                  <th className="p-2">Created</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-borderSubtle">
-                {snapshots.map(snap => (
-                  <tr key={snap.id} className="hover:bg-white/5">
-                    <td className="p-2 font-semibold font-mono text-blue-400">{snap.name}</td>
-                    <td className="p-2 text-gray-400">{snap.description}</td>
-                    <td className="p-2 text-gray-550 font-mono">{new Date(snap.createdAt).toLocaleDateString()}</td>
+            <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden mt-4">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-100 dark:bg-neutral-800/20 text-neutral-400">
+                  <tr>
+                    <th className="p-3">Direction</th>
+                    <th className="p-3">Action</th>
+                    <th className="p-3">Protocol</th>
+                    <th className="p-3">Port</th>
+                    <th className="p-3">Source IP</th>
+                    <th className="p-3 text-right">Delete</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Backups segment */}
-          <div className="al-card p-5 space-y-6">
-            <div className="flex items-center justify-between border-b border-borderSubtle pb-3">
-              <h3 className="text-sm font-semibold text-white">Backups Archive</h3>
-              <button 
-                onClick={() => {
-                  setBackups([...backups, {
-                    id: Math.random().toString(),
-                    name: `manual-backup-${Date.now()}`,
-                    sizeBytes: 156320000,
-                    status: 'completed',
-                    type: 'manual',
-                    createdAt: new Date()
-                  }]);
-                }}
-                className="al-btn al-btn-primary px-3 py-1.5 text-xs font-semibold"
-              >
-                Trigger Backup
-              </button>
+                </thead>
+                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                  {firewallRules.map(r => (
+                    <tr key={r.id}>
+                      <td className="p-3 font-semibold uppercase">{r.direction}</td>
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${r.action === 'ACCEPT' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{r.action}</span>
+                      </td>
+                      <td className="p-3 uppercase">{r.protocol}</td>
+                      <td className="p-3 font-mono">{r.port}</td>
+                      <td className="p-3 font-mono">{r.sourceIp}</td>
+                      <td className="p-3 text-right">
+                        <button onClick={() => handleRemoveFirewallRule(r.id)} className="text-red-500 hover:text-red-400">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-white/5 border-b border-borderSubtle text-gray-400">
-                  <th className="p-2">Name</th>
-                  <th className="p-2">Size</th>
-                  <th className="p-2">Type</th>
-                  <th className="p-2">Created</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-borderSubtle">
-                {backups.map(bk => (
-                  <tr key={bk.id} className="hover:bg-white/5">
-                    <td className="p-2 font-mono text-gray-300 truncate max-w-[150px]">{bk.name}</td>
-                    <td className="p-2 text-gray-400">{(bk.sizeBytes / (1024 * 1024)).toFixed(1)} MB</td>
-                    <td className="p-2 capitalize text-gray-500">{bk.type}</td>
-                    <td className="p-2 text-gray-550 font-mono">{new Date(bk.createdAt).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
+        </div>
+      )}
+
+      {/* 4. BACKUPS & SNAPSHOTS TAB */}
+      {activeTab === 'backups' && (
+        <div className="space-y-6">
+          {/* Create snapshots */}
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Snapshots Checkpoints</h2>
+            <form onSubmit={handleCreateSnapshot} className="flex gap-3">
+              <input 
+                type="text" placeholder="Snapshot name" className="flex-1 al-input" 
+                value={newSnapshotName} onChange={e => setNewSnapshotName(e.target.value)} required 
+              />
+              <button type="submit" className="al-btn al-btn-primary">Create Snapshot</button>
+            </form>
+
+            <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden mt-4">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-100 dark:bg-neutral-800/20 text-neutral-400">
+                  <tr>
+                    <th className="p-3">Name</th>
+                    <th className="p-3">Description</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Created At</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                  {snapshots.map(s => (
+                    <tr key={s.id}>
+                      <td className="p-3 font-medium text-neutral-900 dark:text-white">{s.name}</td>
+                      <td className="p-3 text-neutral-400">{s.description}</td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">{s.status}</span>
+                      </td>
+                      <td className="p-3 text-neutral-500">{new Date(s.createdAt).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Backup Archives */}
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-white">LXC Backup Archives (vzdump)</h2>
+            <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden mt-4">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-100 dark:bg-neutral-800/20 text-neutral-400">
+                  <tr>
+                    <th className="p-3">Filename</th>
+                    <th className="p-3">Size</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Created At</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                  {backups.map(b => (
+                    <tr key={b.id}>
+                      <td className="p-3 font-mono text-neutral-900 dark:text-white">{b.name}</td>
+                      <td className="p-3 text-neutral-400">{(b.sizeBytes / (1024 * 1024)).toFixed(1)} MB</td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">{b.status}</span>
+                      </td>
+                      <td className="p-3 text-neutral-500">{new Date(b.createdAt).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. SETTINGS TAB */}
+      {activeTab === 'settings' && (
+        <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4 max-w-xl">
+          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Settings</h2>
+          <form className="space-y-4 text-xs">
+            <div>
+              <label className="text-[11px] text-neutral-400 block mb-1">Instance Display Name</label>
+              <input 
+                type="text" className="w-full al-input" 
+                value={settingsName} onChange={e => setSettingsName(e.target.value)} required 
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-neutral-400 block mb-1">Assigned Memory (MB)</label>
+              <input 
+                type="number" className="w-full al-input" 
+                value={settingsMemory} onChange={e => setSettingsMemory(parseInt(e.target.value, 10))} required 
+              />
+            </div>
+            <button type="button" className="al-btn al-btn-primary">Update Allocations</button>
+          </form>
         </div>
       )}
     </div>

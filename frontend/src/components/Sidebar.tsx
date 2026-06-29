@@ -1,23 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { 
-  LayoutDashboard, Server, Terminal, 
-  Settings, Users, ShieldAlert, LogOut, ChevronLeft, ChevronRight, Search
-} from 'lucide-react';
+import { LayoutDashboard, Server, Settings, ShieldAlert, LogOut } from 'lucide-react';
 
-interface SidebarProps {
-  onSearchOpen: () => void;
-}
-
-export const Sidebar: React.FC<SidebarProps> = ({ onSearchOpen }) => {
+export const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
 
   const userLinks = [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/instances', label: 'Instances', icon: Server },
-    { to: '/profile', label: 'Profile', icon: Users },
+    { to: '/', label: 'Instances', icon: LayoutDashboard },
   ];
 
   const adminLinks = [
@@ -27,108 +17,112 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSearchOpen }) => {
   ];
 
   return (
-    <aside className={`border-r border-borderSubtle bg-cardBg flex flex-col justify-between transition-all duration-200 ${collapsed ? 'w-16' : 'w-56'} h-screen sticky top-0 overflow-y-auto z-40`}>
-      {/* Top Branding Section */}
-      <div>
-        <div className="p-4 border-b border-borderSubtle flex items-center justify-between h-14">
-          {!collapsed && (
-            <div className="flex items-center gap-2">
-              <img src="/assets/logo.svg" alt="" className="w-5 h-5 object-contain" />
-              <span className="font-semibold text-sm tracking-wide text-white">CynexVM</span>
-            </div>
-          )}
-          {collapsed && (
-            <img src="/assets/logo.svg" alt="" className="w-5 h-5 object-contain mx-auto" />
-          )}
-          <button 
-            onClick={() => setCollapsed(!collapsed)} 
-            className="p-1 hover:bg-white/5 rounded text-gray-500 hover:text-white transition-colors"
-          >
-            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
+    <div id="pc-sidebar" className="sidebar transition fixed inset-y-0 z-50 flex w-56 flex-col left-0">
+      <div id="pc-sidebar2" className="flex flex-col h-full bg-white/8 dark:bg-[#141414]/8 border-r border-neutral-200/30 dark:border-white/5">
+        
+        {/* Top: Logo */}
+        <div className="pl-6 pt-4 pb-4 flex min-w-0 shrink-0">
+          <a href="/" className="flex items-center min-w-0">
+            <img src="/assets/logo.png" alt="Logo" className="logo-bg p-1 h-10 w-10 rounded-xl mr-3 shrink-0 inline-flex bg-neutral-950/90 dark:bg-transparent" />
+            <h1 className="text-neutral-700 dark:text-white font-medium tracking-tight text-lg truncate min-w-0">CynexVM</h1>
+          </a>
         </div>
 
-        {/* Global Search Button */}
-        <div className="p-2 border-b border-borderSubtle">
-          <button 
-            onClick={onSearchOpen}
-            className="w-full flex items-center gap-2 px-3 py-1.5 bg-[#111827] hover:bg-white/5 rounded text-gray-500 hover:text-gray-300 transition-all text-xs border border-borderSubtle"
-          >
-            <Search size={14} />
-            {!collapsed && <span>Search</span>}
-          </button>
-        </div>
-
-        {/* Nav Links */}
-        <nav className="py-2 space-y-0.5">
-          {userLinks.map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              className={({ isActive }) => 
-                `flex items-center gap-3 px-4 py-2.5 text-xs transition-all duration-150 border-l-2 ${
-                  isActive 
-                    ? 'border-accentBlue bg-white/5 text-white font-medium' 
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                }`
-              }
-            >
-              <link.icon size={15} />
-              {!collapsed && <span>{link.label}</span>}
-            </NavLink>
-          ))}
-
-          {/* Admin Control Links */}
-          {user?.role === 'Admin' && (
-            <div className="pt-2 space-y-0.5">
-              <span className="px-4 py-1 text-[10px] font-semibold text-gray-600 uppercase tracking-wider block">
-                {!collapsed && 'Admin'}
+        {/* User Card Link */}
+        <NavLink 
+          to="/profile" 
+          id="sidebar-account-link" 
+          className={({ isActive }) => 
+            `sidebar-special-link flex items-center space-x-4 py-4 px-4 border-y border-neutral-800/10 dark:border-white/5 shrink-0 transition-colors group ${
+              isActive ? 'bg-neutral-200/40 dark:bg-white/[0.08]' : 'hover:bg-neutral-100 dark:hover:bg-white/[0.05]'
+            }`
+          }
+        >
+          <img 
+            className="h-8 w-8 rounded-xl border border-neutral-700/10 shrink-0" 
+            src={`https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(user?.username || 'user')}`} 
+            alt="User avatar" 
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-neutral-700 dark:text-white truncate group-hover:text-neutral-900 dark:group-hover:text-white transition-colors">
+              <span id="sidebar-username">{user?.username}</span>
+              <span className="text-xs text-neutral-500">
+                <sup className="mt-1">#{(user?.id || 1).toString().padStart(4, '0')}</sup>
               </span>
-              {adminLinks.map((link) => (
-                <NavLink
-                  key={link.to}
-                  to={link.to}
-                  className={({ isActive }) => 
-                    `flex items-center gap-3 px-4 py-2.5 text-xs transition-all duration-150 border-l-2 ${
-                      isActive 
-                        ? 'border-accentBlue bg-white/5 text-white font-medium' 
-                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                    }`
-                  }
-                >
-                  <link.icon size={15} />
-                  {!collapsed && <span>{link.label}</span>}
-                </NavLink>
-              ))}
-            </div>
-          )}
-        </nav>
-      </div>
+            </p>
+            <p id="sidebar-description" className="text-xs text-neutral-600 dark:text-neutral-400 truncate">
+              {user?.role === 'Admin' ? 'Administrator' : 'Customer Account'}
+            </p>
+          </div>
+        </NavLink>
 
-      {/* Footer Profile Section */}
-      <div className="p-3 border-t border-borderSubtle">
-        <div className="flex items-center justify-between gap-2">
-          {!collapsed && (
-            <div className="flex items-center gap-2 overflow-hidden">
-              <div className="w-7 h-7 rounded bg-white/5 border border-borderSubtle flex items-center justify-center font-semibold text-[11px] text-white uppercase shrink-0">
-                {user?.username.slice(0, 2)}
-              </div>
-              <div className="overflow-hidden">
-                <p className="text-[10px] font-medium text-white truncate">{user?.username}</p>
-                <p className="text-[9px] text-gray-500 truncate capitalize">{user?.role}</p>
-              </div>
-            </div>
-          )}
+        {/* Scrollable Nav */}
+        <nav className="flex-1 overflow-y-auto">
+          <ul role="list" className="py-2">
+            <li>
+              <ul role="list" className="-mx-2 space-y-1 relative">
+                {userLinks.map((item) => (
+                  <li key={item.to} className="nav-item">
+                    <NavLink
+                      to={item.to}
+                      end
+                      className={({ isActive }) =>
+                        `nav-link mt-1 px-4 mx-4 group flex gap-x-3 py-1.5 rounded-xl text-sm leading-6 font-normal transition-all duration-200 ${
+                          isActive
+                            ? 'bg-neutral-200 border border-neutral-350 dark:bg-white/5 dark:border-white/5 text-neutral-950 dark:text-white font-medium'
+                            : 'text-neutral-600 hover:text-neutral-950 dark:text-neutral-400 dark:hover:text-white'
+                        }`
+                      }
+                    >
+                      <item.icon className="w-5 h-5 mt-0.5" />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  </li>
+                ))}
+
+                {user?.role === 'Admin' && (
+                  <>
+                    <p className="pl-8 text-neutral-600 dark:text-neutral-400 text-xs font-medium pt-6 pb-2">
+                      <span>Admin Panel</span>
+                    </p>
+                    {adminLinks.map((item) => (
+                      <li key={item.to} className="nav-item">
+                        <NavLink
+                          to={item.to}
+                          className={({ isActive }) =>
+                            `nav-link mt-1 px-4 mx-4 group flex gap-x-3 py-1.5 rounded-xl text-sm leading-6 font-normal transition-all duration-200 ${
+                              isActive
+                                ? 'bg-neutral-200 border border-neutral-350 dark:bg-white/5 dark:border-white/5 text-neutral-950 dark:text-white font-medium'
+                                : 'text-neutral-600 hover:text-neutral-950 dark:text-neutral-400 dark:hover:text-white'
+                            }`
+                          }
+                        >
+                          <item.icon className="w-5 h-5 mt-0.5" />
+                          <span>{item.label}</span>
+                        </NavLink>
+                      </li>
+                    ))}
+                  </>
+                )}
+              </ul>
+            </li>
+          </ul>
+        </nav>
+
+        {/* Static bottom: logout */}
+        <div className="shrink-0 border-t border-neutral-800/10 dark:border-white/5">
           <button 
             onClick={logout} 
-            className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/5 rounded transition-all mx-auto lg:mx-0"
-            title="Log out"
+            id="sidebar-logout-link" 
+            className="w-full sidebar-special-link group flex gap-x-3 pl-6 py-4 text-sm font-medium leading-6 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500 transition-colors duration-200"
           >
-            <LogOut size={14} />
+            <LogOut className="w-5 h-5 mt-0.5 shrink-0" />
+            <span>Logout</span>
           </button>
         </div>
+
       </div>
-    </aside>
+    </div>
   );
 };
 export default Sidebar;
