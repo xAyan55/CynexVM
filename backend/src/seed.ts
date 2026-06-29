@@ -180,6 +180,30 @@ async function seed() {
     });
   }
 
+  // Seed default Local LXD Node
+  await db.node.upsert({
+    where: { id: 'default-lxd-node' },
+    update: {
+      name: 'localhost',
+      hostname: 'localhost',
+      apiUrl: 'http://localhost:5000',
+      apiToken: 'local-token',
+      status: 'online'
+    },
+    create: {
+      id: 'default-lxd-node',
+      name: 'localhost',
+      hostname: 'localhost',
+      apiUrl: 'http://localhost:5000',
+      apiToken: 'local-token',
+      cpuCores: 8,
+      memoryMb: 16384,
+      storageGb: 100,
+      status: 'online',
+      version: 'v1.0.0'
+    }
+  });
+
   console.log('Database seeding finished successfully.');
 }
 
