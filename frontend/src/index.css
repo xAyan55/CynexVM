@@ -2,28 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base Overrides */
+/* Base overrides matching custom dark theme */
 html, body {
-  background-color: #09090B;
-  color: #F3F4F6;
+  background-color: #0f0f0f;
+  color: #a3a3a3;
   font-family: 'Inter', sans-serif;
   margin: 0;
   padding: 0;
 }
 
-/* Flat Card & Panel classes */
+/* Page titles */
+h1, h2, h3, h4, h5, h6 {
+  color: #f0f0f0;
+}
+
+/* Custom Card panel */
 .al-card {
-  background-color: #18181B; /* Zinc 900 */
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background-color: #1a1a1a;
+  border: 1px solid #2a2a2a;
   border-radius: 16px;
-  box-shadow: 0 4px 12px -10px rgba(0, 0, 0, 0.5);
 }
 
 /* Flat Inputs */
 .al-input {
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #F3F4F6;
+  background-color: #141414;
+  border: 1px solid #333333;
+  color: #f0f0f0;
   border-radius: 10px;
   padding: 10px 14px;
   font-size: 13px;
@@ -32,8 +36,12 @@ html, body {
 }
 
 .al-input:focus {
-  border-color: #2563EB;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.al-input::placeholder {
+  color: #555555;
 }
 
 /* Flat Buttons */
@@ -49,6 +57,7 @@ html, body {
   transition: all 150ms ease;
   cursor: pointer;
   border: 1px solid transparent;
+  font-family: inherit;
 }
 
 .al-btn:disabled {
@@ -57,59 +66,60 @@ html, body {
 }
 
 .al-btn-primary {
-  background-color: #2563EB;
-  color: #FFFFFF;
+  background-color: #6366f1;
+  color: #ffffff;
 }
 
 .al-btn-primary:hover:not(:disabled) {
-  background-color: #1D4ED8;
+  background-color: #818cf8;
 }
 
 .al-btn-secondary {
-  background-color: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.08);
-  color: #E5E7EB;
+  background-color: #1a1a1a;
+  border-color: #2a2a2a;
+  color: #a3a3a3;
 }
 
 .al-btn-secondary:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.15);
+  background-color: #252525;
+  border-color: #333333;
+  color: #f0f0f0;
 }
 
 .al-btn-danger {
   background-color: rgba(239, 68, 68, 0.1);
   border-color: rgba(239, 68, 68, 0.2);
-  color: #F87171;
+  color: #ef4444;
 }
 
 .al-btn-danger:hover:not(:disabled) {
-  background-color: #EF4444;
-  color: #FFFFFF;
+  background-color: #ef4444;
+  color: #ffffff;
 }
 
-/* Custom Scrollbars */
+/* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #09090B;
+  background: #0f0f0f;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: #2a2a2a;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: #333333;
 }
 
-/* Table overrides */
+/* Table styles */
 .al-table-header {
-  background-color: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: #9CA3AF;
+  background-color: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+  color: #666666;
   font-weight: 500;
 }

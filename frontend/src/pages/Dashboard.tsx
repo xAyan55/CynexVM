@@ -105,7 +105,7 @@ export const Dashboard: React.FC = () => {
         ctx.lineTo(x, y);
       }
 
-      ctx.strokeStyle = '#2563EB';
+      ctx.strokeStyle = '#6366f1';
       ctx.lineWidth = 2.0;
       ctx.stroke();
 

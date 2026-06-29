@@ -7,11 +7,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        pageBg: '#09090B',       // Zinc 950
-        secondaryBg: '#111827',  // Gray 900
-        cardBg: '#18181B',       // Zinc 900
-        accentBlue: '#2563EB',   // Solid Blue
-        borderSubtle: 'rgba(255, 255, 255, 0.06)'
+        pageBg: '#0f0f0f',         // Base background canvas
+        secondaryBg: '#111111',    // Sidebar background
+        cardBg: '#1a1a1a',         // Card panel background
+        inputBg: '#141414',        // Input background
+        accentBlue: '#6366f1',     // Active brand accent (Indigo)
+        accentHover: '#818cf8',    // Active brand accent hover
+        borderSubtle: '#2a2a2a',   // Standard border line
+        borderLessSubtle: 'rgba(255, 255, 255, 0.05)',
+        textResting: '#a3a3a3',    // Default body text
+        textStrong: '#f0f0f0',     // Bold headings and nav active text
+        textMuted: '#666666',      // Subdued metadata
+        blue: {
+          50: '#eef2ff',
+          100: '#e0e7ff',
+          200: '#c7d2fe',
+          300: '#a5b4fc',
+          400: '#818cf8',
+          500: '#6366f1', // Main Indigo Brand
+          600: '#4f46e5', // Hover/Active Indigo
+          700: '#4338ca',
+          800: '#3730a3',
+          900: '#312e81',
+          950: '#1e1b4b',
+        }
       },
       borderRadius: {
         btn: '10px',
