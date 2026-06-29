@@ -36,8 +36,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .al-input:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
 }
 
 .al-input::placeholder {

@@ -11,25 +11,25 @@ export default {
         secondaryBg: '#111111',    // Sidebar background
         cardBg: '#1a1a1a',         // Card panel background
         inputBg: '#141414',        // Input background
-        accentBlue: '#6366f1',     // Active brand accent (Indigo)
-        accentHover: '#818cf8',    // Active brand accent hover
+        accentBlue: '#e5e5e5',     // Active brand accent (neutral light)
+        accentHover: '#ffffff',    // Active brand accent hover
         borderSubtle: '#2a2a2a',   // Standard border line
         borderLessSubtle: 'rgba(255, 255, 255, 0.05)',
         textResting: '#a3a3a3',    // Default body text
         textStrong: '#f0f0f0',     // Bold headings and nav active text
         textMuted: '#666666',      // Subdued metadata
         blue: {
-          50: '#eef2ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1', // Main Indigo Brand
-          600: '#4f46e5', // Hover/Active Indigo
-          700: '#4338ca',
-          800: '#3730a3',
-          900: '#312e81',
-          950: '#1e1b4b',
+          50: '#f5f5f5',
+          100: '#e5e5e5',
+          200: '#d4d4d4',
+          300: '#a3a3a3',
+          400: '#737373',
+          500: '#525252',
+          600: '#404040',
+          700: '#262626',
+          800: '#171717',
+          900: '#0a0a0a',
+          950: '#050505',
         }
       },
       borderRadius: {

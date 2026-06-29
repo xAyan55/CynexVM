@@ -36,7 +36,33 @@ fi
 echo -e "${YELLOW}[1/5] Installing package dependencies...${NC}"
 if [ "$PKG_MANAGER" = "apt" ]; then
   apt update -y
-  apt install -y curl git redis-server nginx sqlite3 build-essential
+  apt install -y curl git redis-server nginx sqlite3 build-essential snapd
+  
+  # Install LXD (container engine)
+  snap install lxd
+  
+  # Initialize LXD (auto config)
+  lxd init --auto || true
+  
+  # Create default network bridge (fallback if init fails)
+  /snap/bin/lxc network create lxdbr0 ipv4.address=10.99.0.1/24 ipv4.nat=true || true
+  
+  # Ensure default profile uses bridge
+  /snap/bin/lxc profile device add default eth0 nic network=lxdbr0 name=eth0 || true
+  
+  # Enable container forwarding
+  iptables -I FORWARD -i lxdbr0 -j ACCEPT || true
+  iptables -I FORWARD -o lxdbr0 -j ACCEPT || true
+  
+  # If UFW is enabled
+  ufw route allow in on lxdbr0 || true
+  ufw route allow out on lxdbr0 || true
+  
+  # Set official LXD image server
+  /snap/bin/lxc remote set-url images https://images.lxd.canonical.com/ || true
+  
+  # Add current user to lxd group (if not root)
+  usermod -aG lxd "$USER" || true
 elif [ "$PKG_MANAGER" = "dnf" ]; then
   dnf check-update || true
   dnf install -y curl git redis nginx sqlite make gcc-c++
