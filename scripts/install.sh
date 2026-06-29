@@ -54,9 +54,17 @@ if ! command -v node &> /dev/null || [ $(node -v | cut -d. -f1 | tr -d v) -lt 20
   fi
 fi
 
-echo -e "${GREEN}[Success] Dependencies successfully configured.${NC}"
-
 # 2. Setup Workspaces
+if [ ! -f "package.json" ]; then
+  echo -e "${YELLOW}[Info] package.json not found in current working directory. Cloning repository to /var/www/cynexvm...${NC}"
+  rm -rf /var/www/cynexvm
+  mkdir -p /var/www
+  git clone https://github.com/xAyan55/CynexVM.git /var/www/cynexvm
+  cd /var/www/cynexvm
+else
+  echo -e "${YELLOW}[Info] package.json found. Installing in current directory: $(pwd)${NC}"
+fi
+
 echo -e "${YELLOW}[2/5] Restoring npm dependencies...${NC}"
 npm install --workspaces --include=dev
 
