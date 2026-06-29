@@ -1,19 +1,27 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LayoutDashboard, Server, Settings, ShieldAlert, LogOut } from 'lucide-react';
+import { 
+  LayoutDashboard, Server, Settings, ShieldAlert, LogOut, 
+  Users, HardDrive, RotateCw, MonitorPlay
+} from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
 
   const userLinks = [
-    { to: '/', label: 'Instances', icon: LayoutDashboard },
+    { to: '/', label: 'Instances', icon: MonitorPlay },
   ];
 
   const adminLinks = [
-    { to: '/admin/nodes', label: 'Nodes', icon: Server },
+    { to: '/admin/dashboard', label: 'Overview', icon: LayoutDashboard },
+    { to: '/admin/users', label: 'Users', icon: Users },
+    { to: '/admin/instances', label: 'Global Instances', icon: MonitorPlay },
+    { to: '/admin/nodes', label: 'Proxmox Nodes', icon: Server },
+    { to: '/admin/templates', label: 'OS Templates', icon: HardDrive },
     { to: '/admin/audit-logs', label: 'Audit Logs', icon: ShieldAlert },
     { to: '/admin/settings', label: 'Settings', icon: Settings },
+    { to: '/admin/jobs', label: 'Queue Tasks', icon: RotateCw },
   ];
 
   return (

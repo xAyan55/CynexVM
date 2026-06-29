@@ -44,7 +44,7 @@ h1, h2, h3, h4, h5, h6 {
   color: #555555;
 }
 
-/* Flat Buttons */
+/* Flat Buttons matching Airlink's neutral theme layout (no restricted Indigo) */
 .al-btn {
   display: inline-flex;
   align-items: center;
@@ -65,15 +65,27 @@ h1, h2, h3, h4, h5, h6 {
   cursor: not-allowed;
 }
 
+/* Dark mode primary (default) - white bg with dark text */
 .al-btn-primary {
-  background-color: #6366f1;
-  color: #ffffff;
+  background-color: #ffffff;
+  color: #0f0f0f;
 }
 
 .al-btn-primary:hover:not(:disabled) {
-  background-color: #818cf8;
+  background-color: #e5e5e5;
 }
 
+/* Light mode primary - black bg with white text */
+html:not(.dark) .al-btn-primary {
+  background-color: #171717;
+  color: #ffffff;
+}
+
+html:not(.dark) .al-btn-primary:hover:not(:disabled) {
+  background-color: #404040;
+}
+
+/* Dark mode secondary - dark card bg with borders */
 .al-btn-secondary {
   background-color: #1a1a1a;
   border-color: #2a2a2a;
@@ -84,6 +96,19 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #252525;
   border-color: #333333;
   color: #f0f0f0;
+}
+
+/* Light mode secondary */
+html:not(.dark) .al-btn-secondary {
+  background-color: #ffffff;
+  border-color: #d4d4d4;
+  color: #525252;
+}
+
+html:not(.dark) .al-btn-secondary:hover:not(:disabled) {
+  background-color: #f5f5f5;
+  border-color: #a3a3a3;
+  color: #171717;
 }
 
 .al-btn-danger {
@@ -204,6 +229,7 @@ html, body, * {
   margin-bottom: 6px;
 }
 
+/* Auth submits are standard neutral buttons */
 .auth-submit {
   width: 100%;
   padding: 11px;
@@ -229,3 +255,36 @@ html, body, * {
   opacity: 0.6;
   cursor: default;
 }
+
+/* Eye show password button alignments */
+.pw-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.pw-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: #a3a3a3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.08);
+  border-top-color: #0f0f0f;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  display: block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

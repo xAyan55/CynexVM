@@ -112,7 +112,7 @@ export const Dashboard: React.FC = () => {
           <Server className="h-16 w-16 text-neutral-200 dark:text-neutral-800 mb-4" />
           <h2 className="text-base font-medium text-neutral-800 dark:text-white">It's quiet here — suspiciously quiet.</h2>
           <p className="text-sm text-neutral-500 mt-1">
-            <button onClick={() => setShowDeployWizard(true)} className="text-blue-500 hover:underline">
+            <button onClick={() => setShowDeployWizard(true)} className="text-neutral-900 dark:text-white font-medium hover:underline">
               Create your first instance
             </button>
           </p>

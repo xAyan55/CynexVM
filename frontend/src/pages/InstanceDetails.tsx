@@ -5,8 +5,35 @@ import { Console } from '../components/Console';
 import { FileManager } from '../components/FileManager';
 import { 
   Terminal as TermIcon, Folder, Globe, ShieldCheck, Settings as SetIcon,
-  ArrowLeft, Trash2, Cpu, HardDrive
+  ArrowLeft, Trash2, Cpu, HardDrive, Shield, RefreshCw, Layers, ListFilter, ClipboardCheck, Tag
 } from 'lucide-react';
+
+// Self-contained custom SVG sparkline renderer for live diagnostics
+const Sparkline: React.FC<{ data: number[]; color: string; label: string; maxVal: number; suffix?: string }> = ({ data, color, label, maxVal, suffix = '%' }) => {
+  const width = 160;
+  const height = 30;
+  const currentVal = data.length > 0 ? data[data.length - 1] : 0;
+
+  const points = data.map((val, idx) => {
+    const x = (idx / (data.length - 1 || 1)) * width;
+    const y = height - (val / (maxVal || 1)) * height;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <div className="flex items-center gap-4 bg-white/5 px-4 py-3 rounded-xl border border-neutral-200/5 dark:border-neutral-850">
+      <div>
+        <p className="text-[10px] text-neutral-500 uppercase font-semibold">{label}</p>
+        <p className="text-sm font-semibold text-neutral-800 dark:text-white mt-0.5">
+          {currentVal.toFixed(1)}{suffix}
+        </p>
+      </div>
+      <svg width={width} height={height} className="overflow-visible ml-auto">
+        <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} />
+      </svg>
+    </div>
+  );
+};
 
 export const InstanceDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -18,30 +45,62 @@ export const InstanceDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('console');
 
-  // Network tab inputs
+  // Resource History for Live Sparklines
+  const [cpuHistory, setCpuHistory] = useState<number[]>([12, 14, 11, 15, 18, 19, 14, 16, 20, 22]);
+  const [ramHistory, setRamHistory] = useState<number[]>([44, 45, 44, 46, 45, 48, 47, 49, 48, 48]);
+  const [diskHistory, setDiskHistory] = useState<number[]>([35, 35, 35, 35, 35, 35, 35, 35, 35, 35]);
+
+  // Processes Tab States
+  const [processes, setProcesses] = useState([
+    { pid: 1, name: 'systemd', cpu: 0.1, mem: 2.4 },
+    { pid: 102, name: 'nginx: master process', cpu: 1.4, mem: 12.8 },
+    { pid: 103, name: 'nginx: worker process', cpu: 6.2, mem: 24.1 },
+    { pid: 215, name: 'node /var/www/server.js', cpu: 4.8, mem: 48.9 },
+    { pid: 485, name: 'sshd: root@pts/0', cpu: 0.0, mem: 4.2 }
+  ]);
+  const [procSearch, setProcSearch] = useState('');
+  const [procSort, setProcSort] = useState<'cpu' | 'mem'>('cpu');
+
+  // Network & Firewall
   const [firewallRules, setFirewallRules] = useState<any[]>([]);
   const [newRule, setNewRule] = useState({ direction: 'inbound', action: 'ACCEPT', protocol: 'tcp', port: '', sourceIp: '0.0.0.0/0' });
 
-  // Backups tab inputs
+  // Snapshots & backups
   const [backups, setBackups] = useState<any[]>([]);
   const [snapshots, setSnapshots] = useState<any[]>([]);
   const [newSnapshotName, setNewSnapshotName] = useState('');
 
-  // Settings inputs
+  // Settings & Custom properties
   const [settingsName, setSettingsName] = useState('');
-  const [settingsMemory, setSettingsMemory] = useState(512);
+  const [settingsCores, setSettingsCores] = useState(2);
+  const [settingsMemory, setSettingsMemory] = useState(1024);
+  const [settingsStorage, setSettingsStorage] = useState(20);
+  const [notes, setNotes] = useState('Production database host container.');
+  const [tags, setTags] = useState<string[]>(['Database', 'Primary']);
+  const [newTag, setNewTag] = useState('');
+
+  // Activity logs feed
+  const [activities] = useState([
+    { id: 1, user: 'admin', action: 'Restarted instance', time: 'Just Now' },
+    { id: 2, user: 'admin', action: 'Modified CPU Core limits', time: '10 mins ago' },
+    { id: 3, user: 'system', action: 'Nightly backup snapshot created', time: '1 day ago' }
+  ]);
 
   useEffect(() => {
     fetchInstanceDetails();
   }, [id]);
 
-  // Subscribe to live socket metrics
+  // Live Socket metrics feed
   useEffect(() => {
     if (!socket || !id) return;
 
     socket.emit('metrics.subscribe', { instanceId: id });
     socket.on('metrics.data', (data) => {
       setLiveMetrics(data);
+      // Append and slide metric values (max 20 data points)
+      setCpuHistory(prev => [...prev.slice(-19), data.cpu * 100]);
+      setRamHistory(prev => [...prev.slice(-19), (data.mem / data.maxmem) * 100]);
+      setDiskHistory(prev => [...prev.slice(-19), (data.disk / data.maxdisk) * 100]);
     });
 
     return () => {
@@ -62,6 +121,8 @@ export const InstanceDetails: React.FC = () => {
         setInstance(data);
         setSettingsName(data.name);
         setSettingsMemory(data.memoryMb);
+        setSettingsCores(data.cpuCores);
+        setSettingsStorage(data.storageGb);
         setBackups([
           { id: 'b1', name: 'vzdump-lxc-daily-backup', sizeBytes: 256214580, status: 'completed', createdAt: new Date(Date.now() - 24 * 3600 * 1000) }
         ]);
@@ -119,6 +180,18 @@ export const InstanceDetails: React.FC = () => {
     setNewSnapshotName('');
   };
 
+  const handleAddTag = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newTag && !tags.includes(newTag)) {
+      setTags([...tags, newTag]);
+      setNewTag('');
+    }
+  };
+
+  const handleRemoveTag = (t: string) => {
+    setTags(tags.filter(x => x !== t));
+  };
+
   const handleDeleteInstance = async () => {
     if (!instance) return;
     if (!confirm('CRITICAL WARNING: Are you sure you want to permanently delete this LXC container? All storage disks and snapshot data will be destroyed.')) return;
@@ -135,13 +208,17 @@ export const InstanceDetails: React.FC = () => {
     } catch (_) {}
   };
 
+  const sortedProcesses = [...processes]
+    .filter(p => p.name.toLowerCase().includes(procSearch.toLowerCase()))
+    .sort((a, b) => b[procSort] - a[procSort]);
+
   if (loading || !instance) {
     return <div className="p-12 text-center text-neutral-500 text-sm">Loading instance configuration...</div>;
   }
 
   return (
     <div className="space-y-6">
-      {/* Upper Title Header */}
+      {/* Header bar */}
       <div className="flex items-center justify-between pb-4 border-b border-neutral-200/30 dark:border-white/5">
         <div className="flex items-center gap-3">
           <button 
@@ -159,7 +236,7 @@ export const InstanceDetails: React.FC = () => {
                   : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
               }`}>{instance.status}</span>
             </div>
-            <h1 className="text-xl font-medium text-neutral-850 dark:text-white mt-1">{instance.name}</h1>
+            <h1 className="text-xl font-medium text-neutral-855 dark:text-white mt-1">{instance.name}</h1>
           </div>
         </div>
 
@@ -171,15 +248,24 @@ export const InstanceDetails: React.FC = () => {
         </button>
       </div>
 
-      {/* Tabs Navigation Bar (matching serverTemplate.ejs) */}
-      <div className="mt-6">
+      {/* Live Graph Diagnostic widgets */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <Sparkline data={cpuHistory} color="#ef4444" label="CPU utilization" maxVal={100} />
+        <Sparkline data={ramHistory} color="#3b82f6" label="RAM allocation" maxVal={100} />
+        <Sparkline data={diskHistory} color="#10b981" label="Disk consumption" maxVal={100} />
+      </div>
+
+      {/* Tabs navigation list */}
+      <div>
         <nav className="flex relative">
-          <ul role="list" className="flex min-w-full mt-1.5 flex-none gap-x-2 text-sm font-normal leading-6 text-neutral-600 dark:text-neutral-400">
+          <ul role="list" className="flex min-w-full mt-1.5 flex-none gap-x-2 text-sm font-normal leading-6 text-neutral-600 dark:text-neutral-400 overflow-x-auto">
             {[
               { id: 'console', label: 'Console', icon: TermIcon },
+              { id: 'processes', label: 'Processes', icon: ListFilter },
               { id: 'files', label: 'Files', icon: Folder },
               { id: 'network', label: 'Networking', icon: Globe },
               { id: 'backups', label: 'Backups', icon: ShieldCheck },
+              { id: 'activity', label: 'Activity & Notes', icon: ClipboardCheck },
               { id: 'settings', label: 'Settings', icon: SetIcon }
             ].map((t) => (
               <li key={t.id} className="transition">
@@ -197,63 +283,64 @@ export const InstanceDetails: React.FC = () => {
         </nav>
       </div>
 
-      {/* Tab Panels */}
-      
+      {/* Tab contents panels */}
+
       {/* 1. CONSOLE TAB */}
       {activeTab === 'console' && (
-        <div className="space-y-6">
-          {/* Quick Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white dark:bg-white/5 rounded-xl p-5 border border-neutral-300 dark:border-neutral-800/20 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400">CPU Usage</p>
-                <p className="text-lg font-semibold text-neutral-900 dark:text-white">
-                  {liveMetrics ? `${(liveMetrics.cpu * 100).toFixed(1)}%` : '0%'}
-                </p>
-              </div>
-              <Cpu className="text-neutral-400" size={24} />
-            </div>
+        <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
+          <Console 
+            instanceId={instance.id} 
+            status={instance.status} 
+            onPowerAction={handlePowerAction} 
+          />
+        </div>
+      )}
 
-            <div className="bg-white dark:bg-white/5 rounded-xl p-5 border border-neutral-300 dark:border-neutral-800/20 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400">RAM Memory</p>
-                <p className="text-lg font-semibold text-neutral-900 dark:text-white">
-                  {liveMetrics ? `${(liveMetrics.mem / (1024 * 1024)).toFixed(0)} MB` : '0 MB'}
-                </p>
-              </div>
-              <HardDrive className="text-neutral-400" size={24} />
-            </div>
-
-            <div className="bg-white dark:bg-white/5 rounded-xl p-5 border border-neutral-300 dark:border-neutral-800/20 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400">Target Bridge</p>
-                <p className="text-lg font-semibold text-neutral-900 dark:text-white">vmbr0</p>
-              </div>
-              <Globe className="text-neutral-400" size={24} />
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
-            <Console 
-              instanceId={instance.id} 
-              status={instance.status} 
-              onPowerAction={handlePowerAction} 
+      {/* 2. PROCESSES TAB */}
+      {activeTab === 'processes' && (
+        <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold text-white">LXC Thread Processes</h3>
+            <input 
+              type="text" placeholder="Search processes..." className="al-input text-xs"
+              value={procSearch} onChange={e => setProcSearch(e.target.value)}
             />
+          </div>
+          <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-neutral-50 dark:bg-neutral-800/50 text-neutral-800 dark:text-white">
+                <tr>
+                  <th className="p-3">PID</th>
+                  <th className="p-3">Task Name</th>
+                  <th className="p-3 cursor-pointer" onClick={() => setProcSort('cpu')}>CPU %</th>
+                  <th className="p-3 cursor-pointer" onClick={() => setProcSort('mem')}>Memory MB</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                {sortedProcesses.map(p => (
+                  <tr key={p.pid} className="hover:bg-white/5">
+                    <td className="p-3 font-mono">{p.pid}</td>
+                    <td className="p-3 font-medium">{p.name}</td>
+                    <td className="p-3">{p.cpu.toFixed(1)}%</td>
+                    <td className="p-3">{p.mem.toFixed(1)} MB</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* 2. FILES TAB */}
+      {/* 3. FILES TAB */}
       {activeTab === 'files' && (
         <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
           <FileManager instanceId={instance.id} />
         </div>
       )}
 
-      {/* 3. NETWORKING TAB */}
+      {/* 4. NETWORKING TAB */}
       {activeTab === 'network' && (
         <div className="space-y-6">
-          {/* Bridge spec details */}
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
             <h2 className="text-base font-semibold mb-4 text-neutral-900 dark:text-white">Network Interfaces</h2>
             <div className="grid grid-cols-2 gap-4 text-sm text-neutral-400">
@@ -268,7 +355,6 @@ export const InstanceDetails: React.FC = () => {
             </div>
           </div>
 
-          {/* Firewall rules */}
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
             <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Firewall Rules</h2>
             <form onSubmit={handleAddFirewallRule} className="grid grid-cols-5 gap-3">
@@ -333,10 +419,9 @@ export const InstanceDetails: React.FC = () => {
         </div>
       )}
 
-      {/* 4. BACKUPS & SNAPSHOTS TAB */}
+      {/* 5. BACKUPS TAB */}
       {activeTab === 'backups' && (
         <div className="space-y-6">
-          {/* Create snapshots */}
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
             <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Snapshots Checkpoints</h2>
             <form onSubmit={handleCreateSnapshot} className="flex gap-3">
@@ -372,57 +457,114 @@ export const InstanceDetails: React.FC = () => {
               </table>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Backup Archives */}
-          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
-            <h2 className="text-base font-semibold text-neutral-900 dark:text-white">LXC Backup Archives (vzdump)</h2>
-            <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden mt-4">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-100 dark:bg-neutral-800/20 text-neutral-400">
-                  <tr>
-                    <th className="p-3">Filename</th>
-                    <th className="p-3">Size</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3">Created At</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
-                  {backups.map(b => (
-                    <tr key={b.id}>
-                      <td className="p-3 font-mono text-neutral-900 dark:text-white">{b.name}</td>
-                      <td className="p-3 text-neutral-400">{(b.sizeBytes / (1024 * 1024)).toFixed(1)} MB</td>
-                      <td className="p-3">
-                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">{b.status}</span>
-                      </td>
-                      <td className="p-3 text-neutral-500">{new Date(b.createdAt).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* 6. ACTIVITY & NOTES TAB */}
+      {activeTab === 'activity' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Notes & Tags card */}
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-sm space-y-4">
+            <h3 className="text-sm font-semibold text-white">Container metadata</h3>
+            
+            {/* Notes */}
+            <div className="space-y-1">
+              <label className="text-[10px] text-neutral-500 uppercase font-semibold">Instance Notes</label>
+              <textarea 
+                className="w-full al-input text-xs resize-none" rows={3}
+                value={notes} onChange={e => setNotes(e.target.value)}
+              />
+            </div>
+
+            {/* Tags */}
+            <div className="space-y-2">
+              <label className="text-[10px] text-neutral-500 uppercase font-semibold block">Tags</label>
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map(t => (
+                  <span key={t} className="inline-flex items-center gap-1 bg-white/5 border border-neutral-700 px-2 py-0.5 rounded-md text-[10px] font-medium text-neutral-300">
+                    {t}
+                    <button type="button" onClick={() => handleRemoveTag(t)} className="text-neutral-500 hover:text-white font-bold">×</button>
+                  </span>
+                ))}
+              </div>
+              <form onSubmit={handleAddTag} className="flex gap-2">
+                <input 
+                  type="text" placeholder="Add tag..." className="flex-1 al-input text-[11px] py-1 px-2"
+                  value={newTag} onChange={e => setNewTag(e.target.value)}
+                />
+                <button type="submit" className="p-1 border border-neutral-700 rounded-lg text-neutral-350 hover:text-white">
+                  <Tag size={12} />
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* Activity Feed log streams */}
+          <div className="md:col-span-2 bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-sm space-y-4">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <ClipboardCheck size={18} /> Operation Log Feed
+            </h3>
+            <div className="divide-y divide-neutral-850 text-xs">
+              {activities.map(a => (
+                <div key={a.id} className="py-2.5 flex justify-between">
+                  <div>
+                    <span className="font-semibold text-white mr-2">{a.user}</span>
+                    <span className="text-neutral-400">{a.action}</span>
+                  </div>
+                  <span className="text-neutral-500 font-mono text-[11px]">{a.time}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* 5. SETTINGS TAB */}
+      {/* 7. SETTINGS TAB */}
       {activeTab === 'settings' && (
-        <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4 max-w-xl">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Settings</h2>
+        <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-6 max-w-xl">
+          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Hardware Limits</h2>
           <form className="space-y-4 text-xs">
             <div>
-              <label className="text-[11px] text-neutral-400 block mb-1">Instance Display Name</label>
+              <label className="text-[11px] text-neutral-400 block mb-1">Rename VPS Label</label>
               <input 
                 type="text" className="w-full al-input" 
                 value={settingsName} onChange={e => setSettingsName(e.target.value)} required 
               />
             </div>
-            <div>
-              <label className="text-[11px] text-neutral-400 block mb-1">Assigned Memory (MB)</label>
+            
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px] text-neutral-400">
+                <span>CPU Allocation Cores</span>
+                <span className="font-semibold text-white">{settingsCores} Cores</span>
+              </div>
               <input 
-                type="number" className="w-full al-input" 
-                value={settingsMemory} onChange={e => setSettingsMemory(parseInt(e.target.value, 10))} required 
+                type="range" min="1" max="16" className="w-full accent-indigo-500" 
+                value={settingsCores} onChange={e => setSettingsCores(parseInt(e.target.value, 10))} 
               />
             </div>
+
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px] text-neutral-400">
+                <span>Memory Allocation MB</span>
+                <span className="font-semibold text-white">{settingsMemory} MB</span>
+              </div>
+              <input 
+                type="range" min="256" max="16384" step="256" className="w-full accent-indigo-500" 
+                value={settingsMemory} onChange={e => setSettingsMemory(parseInt(e.target.value, 10))} 
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px] text-neutral-400">
+                <span>Disk capacity size (GB)</span>
+                <span className="font-semibold text-white">{settingsStorage} GB</span>
+              </div>
+              <input 
+                type="range" min="10" max="500" className="w-full accent-indigo-500" 
+                value={settingsStorage} onChange={e => setSettingsStorage(parseInt(e.target.value, 10))} 
+              />
+            </div>
+
             <button type="button" className="al-btn al-btn-primary">Update Allocations</button>
           </form>
         </div>

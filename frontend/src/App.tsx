@@ -6,15 +6,27 @@ import { Sidebar } from './components/Sidebar';
 import { CommandPalette } from './components/CommandPalette';
 import { Search } from 'lucide-react';
 
-// Pages
+// Public/Auth Pages
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
+import { EmailVerification } from './pages/EmailVerification';
+
+// User Panel Pages
 import { Dashboard } from './pages/Dashboard';
 import { InstanceDetails } from './pages/InstanceDetails';
+import { Profile } from './pages/Profile';
+
+// Admin Panel Pages
 import { Nodes } from './pages/Nodes';
 import { AuditLogs } from './pages/AuditLogs';
-import { Settings } from './pages/Settings';
-import { Profile } from './pages/Profile';
+import { AdminDashboard } from './pages/AdminDashboard';
+import { AdminUsers } from './pages/AdminUsers';
+import { AdminInstances } from './pages/AdminInstances';
+import { TemplatesImages } from './pages/TemplatesImages';
+import { AdminSettings } from './pages/AdminSettings';
+import { JobsQueues } from './pages/JobsQueues';
 
 // Page loading spinner matching Airlink's preparing experience screen
 const LoadingScreen: React.FC = () => {
@@ -114,6 +126,9 @@ export const App: React.FC = () => {
           {/* Public Auth routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify-email" element={<EmailVerification />} />
 
           {/* Secure Panel routes */}
           <Route element={<AppLayout />}>
@@ -122,9 +137,14 @@ export const App: React.FC = () => {
             <Route path="/profile" element={<Profile />} />
             
             {/* Admin only subroutes */}
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/instances" element={<AdminInstances />} />
             <Route path="/admin/nodes" element={<Nodes />} />
+            <Route path="/admin/templates" element={<TemplatesImages />} />
             <Route path="/admin/audit-logs" element={<AuditLogs />} />
-            <Route path="/admin/settings" element={<Settings />} />
+            <Route path="/admin/settings" element={<AdminSettings />} />
+            <Route path="/admin/jobs" element={<JobsQueues />} />
           </Route>
 
           {/* Catch-all redirects */}
