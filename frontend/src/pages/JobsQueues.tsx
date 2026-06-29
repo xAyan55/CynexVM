@@ -12,7 +12,7 @@ export const JobsQueues: React.FC = () => {
     <div className="space-y-6">
       <div className="px-8 pt-5">
         <h1 className="text-base font-medium text-neutral-800 dark:text-white">Jobs & Tasks Queue</h1>
-        <p className="mt-0.5 text-sm text-neutral-500">Monitor clustering tasks, vzdump background backups, and Proxmox execution queues.</p>
+        <p className="mt-0.5 text-sm text-neutral-500">Monitor clustering tasks, vzdump background backups, and LXD execution queues.</p>
       </div>
 
       <div className="mx-8 grid grid-cols-1 lg:grid-cols-3 gap-6">

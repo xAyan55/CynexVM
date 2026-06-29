@@ -17,7 +17,7 @@ export const Sidebar: React.FC = () => {
     { to: '/admin/dashboard', label: 'Overview', icon: LayoutDashboard },
     { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/admin/instances', label: 'Global Instances', icon: MonitorPlay },
-    { to: '/admin/nodes', label: 'Proxmox Nodes', icon: Server },
+    { to: '/admin/nodes', label: 'Host Nodes', icon: Server },
     { to: '/admin/templates', label: 'OS Templates', icon: HardDrive },
     { to: '/admin/audit-logs', label: 'Audit Logs', icon: ShieldAlert },
     { to: '/admin/settings', label: 'Settings', icon: Settings },

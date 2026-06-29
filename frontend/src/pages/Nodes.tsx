@@ -104,7 +104,7 @@ export const Nodes: React.FC = () => {
       {/* Header section matching nodes.ejs */}
       <div className="sm:flex sm:items-center px-8 pt-4 justify-between">
         <div>
-          <h1 className="text-base font-medium text-neutral-800 dark:text-white">Proxmox Nodes</h1>
+          <h1 className="text-base font-medium text-neutral-800 dark:text-white">Host Nodes</h1>
           <p className="mt-0.5 text-sm text-neutral-500">Configure and monitor your hypervisor clusters.</p>
         </div>
         <button 
@@ -187,7 +187,7 @@ export const Nodes: React.FC = () => {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <form onSubmit={handleCreateNode} className="bg-[#1a1a1a] border border-neutral-800 rounded-2xl p-6 max-w-md w-full space-y-4 text-xs text-left">
-            <h3 className="text-sm font-semibold text-white">Register Proxmox Node</h3>
+            <h3 className="text-sm font-semibold text-white">Register Host Node</h3>
             
             {error && (
               <p className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl">

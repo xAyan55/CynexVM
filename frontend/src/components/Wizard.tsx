@@ -277,7 +277,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                     />
                   </div>
                   <div>
-                    <label className="text-[11px] text-gray-400 block mb-1">Proxmox VMID</label>
+                    <label className="text-[11px] text-gray-400 block mb-1">Container ID</label>
                     <input 
                       type="number" className="w-full al-input"
                       value={vmid}

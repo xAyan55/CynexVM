@@ -61,23 +61,6 @@ export const Dashboard: React.FC = () => {
           <p className="text-sm text-neutral-500 mt-0.5">Manage and monitor your virtualization containers.</p>
         </div>
         <div className="flex items-center gap-2">
-          {user?.role === 'Admin' && (
-            <>
-              <button 
-                onClick={() => setShowDeployWizard(true)}
-                className="flex min-h-10 items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-sm font-medium hover:bg-neutral-700 dark:hover:bg-neutral-200 transition"
-              >
-                <Plus size={16} />
-                New instance
-              </button>
-              
-              <button className="flex min-h-10 items-center gap-1.5 px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 text-sm font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 transition">
-                <FolderPlus size={16} strokeWidth={1.5} />
-                New folder
-              </button>
-            </>
-          )}
-
           {instances.length > 0 && (
             <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800/60 p-1 rounded-xl border border-neutral-200 dark:border-white/5">
               <button 
@@ -115,13 +98,6 @@ export const Dashboard: React.FC = () => {
         <div className="flex flex-col items-center justify-center mt-32 text-center">
           <Server className="h-16 w-16 text-neutral-200 dark:text-neutral-800 mb-4" />
           <h2 className="text-base font-medium text-neutral-800 dark:text-white">It's quiet here — suspiciously quiet.</h2>
-          {user?.role === 'Admin' && (
-            <p className="text-sm text-neutral-500 mt-1">
-              <button onClick={() => setShowDeployWizard(true)} className="text-neutral-900 dark:text-white font-medium hover:underline">
-                Create your first instance
-              </button>
-            </p>
-          )}
         </div>
       ) : (
         <>
