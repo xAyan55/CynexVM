@@ -3,6 +3,7 @@ import { db } from '../db';
 import { authenticate, requirePermission } from '../middleware/auth';
 import { CryptoService } from '../services/cryptoService';
 import { LxdService } from '../services/lxdService';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -69,30 +70,31 @@ router.get('/:id', authenticate, requirePermission('node.read'), async (req, res
 
 /**
  * @route   POST /api/v1/nodes
- * @desc    Adds a new hypervisor node
+ * @desc    Adds a new hypervisor node (generates daemon config.json)
  */
 router.post('/', authenticate, requirePermission('node.create'), async (req, res) => {
-  const { name, hostname, apiUrl, apiToken, sslFingerprint, cpuCores, memoryMb, storageGb } = req.body;
+  const { name, hostname, location, description, cpuCores, memoryMb, storageGb } = req.body;
   if (!name || !hostname) {
-    return res.status(400).json({ error: 'Name and Hostname are required' });
+    return res.status(400).json({ error: 'Name and Hostname (CF Tunnel URL) are required' });
   }
 
   try {
-    // Encrypt SSH credentials if provided
-    const encryptedToken = apiToken ? CryptoService.encrypt(apiToken) : 'local-placeholder';
+    // Generate secure random node daemon token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const encryptedToken = CryptoService.encrypt(rawToken);
 
     // Save node configurations
     const node = await db.node.create({
       data: {
         name,
         hostname,
-        apiUrl: apiUrl || '22', // Port field
+        apiUrl: location || 'Local', // Mapping location to apiUrl
         apiToken: encryptedToken,
-        sslFingerprint: sslFingerprint || null,
+        clusterName: description || 'LXD Daemon node', // Mapping description to clusterName
         cpuCores: parseInt(cpuCores || '0', 10),
         memoryMb: parseInt(memoryMb || '0', 10),
         storageGb: parseInt(storageGb || '0', 10),
-        status: 'online'
+        status: 'offline'
       }
     });
 
@@ -102,12 +104,22 @@ router.post('/', authenticate, requirePermission('node.create'), async (req, res
         action: 'node.create',
         targetResourceId: node.id,
         targetResourceType: 'Node',
-        details: `Node ${name} configured`,
+        details: `Node ${name} registered. Tunnel URL: ${hostname}`,
         severity: 'info'
       }
     });
 
-    return res.status(201).json(node);
+    // Generate config.json format
+    const configJson = {
+      nodeId: node.id,
+      token: rawToken,
+      port: 5050
+    };
+
+    return res.status(201).json({
+      node,
+      configJson
+    });
   } catch (err: any) {
     console.error('Node create error:', err);
     return res.status(500).json({ error: 'Failed to register node' });
@@ -119,7 +131,7 @@ router.post('/', authenticate, requirePermission('node.create'), async (req, res
  * @desc    Updates configuration for a hypervisor node
  */
 router.put('/:id', authenticate, requirePermission('node.write'), async (req, res) => {
-  const { name, hostname, apiUrl, apiToken, sslFingerprint, cpuCores, memoryMb, storageGb, maintenanceMode } = req.body;
+  const { name, hostname, location, description, cpuCores, memoryMb, storageGb, maintenanceMode } = req.body;
 
   try {
     const node = await db.node.findUnique({ where: { id: req.params.id } });
@@ -128,16 +140,12 @@ router.put('/:id', authenticate, requirePermission('node.write'), async (req, re
     const updateData: any = {};
     if (name) updateData.name = name;
     if (hostname) updateData.hostname = hostname;
-    if (apiUrl) updateData.apiUrl = apiUrl;
-    if (sslFingerprint !== undefined) updateData.sslFingerprint = sslFingerprint;
+    if (location) updateData.apiUrl = location;
+    if (description) updateData.clusterName = description;
     if (cpuCores) updateData.cpuCores = parseInt(cpuCores, 10);
     if (memoryMb) updateData.memoryMb = parseInt(memoryMb, 10);
     if (storageGb) updateData.storageGb = parseInt(storageGb, 10);
     if (maintenanceMode !== undefined) updateData.maintenanceMode = maintenanceMode;
-
-    if (apiToken) {
-      updateData.apiToken = CryptoService.encrypt(apiToken);
-    }
 
     const updatedNode = await db.node.update({
       where: { id: req.params.id },
@@ -179,14 +187,14 @@ router.delete('/:id', authenticate, requirePermission('node.delete'), async (req
 
 /**
  * @route   POST /api/v1/nodes/:id/test
- * @desc    Tests live connection to the local LXD container engine
+ * @desc    Tests live connection to the local/remote LXD container engine
  */
 router.post('/:id/test', authenticate, requirePermission('node.write'), async (req, res) => {
   try {
     const node = await db.node.findUnique({ where: { id: req.params.id } });
     if (!node) return res.status(404).json({ error: 'Node not found' });
 
-    const test = await LxdService.testConnection();
+    const test = await LxdService.testConnection(node);
 
     if (test.success) {
       await db.node.update({

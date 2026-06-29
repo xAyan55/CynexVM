@@ -1,13 +1,48 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import axios from 'axios';
+import { CryptoService } from './cryptoService';
 
 const execAsync = promisify(exec);
 
 export class LxdService {
   /**
-   * Checks the status of the local LXD container daemon.
+   * Helper to execute remote node HTTP requests or fallback to local command execution.
    */
-  public static async testConnection(): Promise<{ success: boolean; version?: string; message?: string }> {
+  private static async request(node: any, path: string, method: 'GET' | 'POST' | 'DELETE', data?: any): Promise<any> {
+    if (!node || node.id === 'default-lxd-node' || node.hostname === 'localhost') {
+      return null; // Signals local execution
+    }
+
+    try {
+      const token = CryptoService.decrypt(node.apiToken);
+      const baseUrl = node.hostname.endsWith('/') ? node.hostname.slice(0, -1) : node.hostname;
+      const res = await axios({
+        url: `${baseUrl}${path}`,
+        method,
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        data,
+        timeout: 15000
+      });
+      return res.data;
+    } catch (err: any) {
+      console.error(`Remote node request failed: ${node.hostname}${path}`, err.message);
+      throw new Error(`Remote node connection failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Checks the status of the local LXD container daemon or a remote node.
+   */
+  public static async testConnection(node?: any): Promise<{ success: boolean; version?: string; message?: string }> {
+    const remote = await this.request(node, '/api/v1/test', 'GET');
+    if (remote) {
+      return { success: true, version: remote.version };
+    }
+
     try {
       const { stdout } = await execAsync('/snap/bin/lxc --version');
       return {
@@ -23,9 +58,14 @@ export class LxdService {
   }
 
   /**
-   * Retrieves local host stats (CPU, RAM).
+   * Retrieves host stats (CPU, RAM).
    */
-  public static async getNodeStatus(nodeName: string): Promise<any> {
+  public static async getNodeStatus(node?: any): Promise<any> {
+    const remote = await this.request(node, '/api/v1/status', 'GET');
+    if (remote) {
+      return remote;
+    }
+
     try {
       const { stdout: memOut } = await execAsync('free -b');
       const lines = memOut.split('\n');
@@ -60,9 +100,15 @@ export class LxdService {
   }
 
   /**
-   * Lists all LXC containers running locally via lxc list.
+   * Lists all LXC containers running on the node.
    */
-  public static async listContainers(nodeName: string): Promise<any[]> {
+  public static async listContainers(node?: any): Promise<any[]> {
+    const remote = await this.request(node, '/api/v1/status', 'GET'); // Daemon returns resource usage
+    if (remote) {
+      // In daemon mode, container details are fetched dynamically
+      return [];
+    }
+
     try {
       const { stdout } = await execAsync('/snap/bin/lxc list --format=json');
       const list = JSON.parse(stdout);
@@ -89,7 +135,12 @@ export class LxdService {
   /**
    * Gets details and status of a specific container.
    */
-  public static async getContainerStatus(vmid: number): Promise<any> {
+  public static async getContainerStatus(vmid: number, node?: any): Promise<any> {
+    const remote = await this.request(node, `/api/v1/containers/${vmid}/status`, 'GET');
+    if (remote) {
+      return remote;
+    }
+
     try {
       const containerName = `cynex-${vmid}`;
       const { stdout } = await execAsync(`/snap/bin/lxc info ${containerName} --format=json`);
@@ -107,27 +158,42 @@ export class LxdService {
   }
 
   /**
-   * Starts a local LXC container.
+   * Starts a local or remote LXC container.
    */
-  public static async startContainer(vmid: number): Promise<string> {
+  public static async startContainer(vmid: number, node?: any): Promise<string> {
+    const remote = await this.request(node, `/api/v1/containers/${vmid}/start`, 'POST');
+    if (remote) {
+      return `remote-start-${vmid}`;
+    }
+
     const containerName = `cynex-${vmid}`;
     await execAsync(`/snap/bin/lxc start ${containerName}`);
     return `task-start-${vmid}`;
   }
 
   /**
-   * Stops a local LXC container.
+   * Stops a local or remote LXC container.
    */
-  public static async stopContainer(vmid: number): Promise<string> {
+  public static async stopContainer(vmid: number, node?: any): Promise<string> {
+    const remote = await this.request(node, `/api/v1/containers/${vmid}/stop`, 'POST');
+    if (remote) {
+      return `remote-stop-${vmid}`;
+    }
+
     const containerName = `cynex-${vmid}`;
     await execAsync(`/snap/bin/lxc stop ${containerName}`);
     return `task-stop-${vmid}`;
   }
 
   /**
-   * Reboots a local LXC container.
+   * Reboots a local or remote LXC container.
    */
-  public static async rebootContainer(vmid: number): Promise<string> {
+  public static async rebootContainer(vmid: number, node?: any): Promise<string> {
+    const remote = await this.request(node, `/api/v1/containers/${vmid}/reboot`, 'POST');
+    if (remote) {
+      return `remote-reboot-${vmid}`;
+    }
+
     const containerName = `cynex-${vmid}`;
     await execAsync(`/snap/bin/lxc restart ${containerName}`);
     return `task-reboot-${vmid}`;
@@ -136,14 +202,19 @@ export class LxdService {
   /**
    * Shutdown helper.
    */
-  public static async shutdownContainer(vmid: number): Promise<string> {
-    return this.stopContainer(vmid);
+  public static async shutdownContainer(vmid: number, node?: any): Promise<string> {
+    return this.stopContainer(vmid, node);
   }
 
   /**
-   * Deletes a local LXC container.
+   * Deletes a local or remote LXC container.
    */
-  public static async deleteContainer(vmid: number): Promise<string> {
+  public static async deleteContainer(vmid: number, node?: any): Promise<string> {
+    const remote = await this.request(node, `/api/v1/containers/${vmid}`, 'DELETE');
+    if (remote) {
+      return `remote-delete-${vmid}`;
+    }
+
     const containerName = `cynex-${vmid}`;
     await execAsync(`/snap/bin/lxc delete ${containerName} --force`);
     return `task-delete-${vmid}`;
@@ -164,8 +235,19 @@ export class LxdService {
       diskSizeGb?: number;
       net0?: string;
       password?: string;
-    }
+    },
+    node?: any
   ): Promise<string> {
+    const remote = await this.request(node, '/api/v1/containers', 'POST', {
+      vmid: params.vmid,
+      ostemplate: params.ostemplate,
+      cores: params.cores,
+      memory: params.memory
+    });
+    if (remote) {
+      return `remote-create-${params.vmid}`;
+    }
+
     const containerName = `cynex-${params.vmid}`;
     
     let distro = 'ubuntu/22.04';
@@ -191,7 +273,8 @@ export class LxdService {
   public static async cloneContainer(
     vmid: number,
     newId: number,
-    newName?: string
+    newName?: string,
+    node?: any
   ): Promise<string> {
     const sourceName = `cynex-${vmid}`;
     const targetName = `cynex-${newId}`;
@@ -199,17 +282,17 @@ export class LxdService {
     return `task-clone-${newId}`;
   }
 
-  public static async getContainerRRD(vmid: number, timeframe = 'hour'): Promise<any[]> {
+  public static async getContainerRRD(vmid: number, timeframe = 'hour', node?: any): Promise<any[]> {
     return [];
   }
 
-  public static async getFirewallRules(vmid: number): Promise<any[]> {
+  public static async getFirewallRules(vmid: number, node?: any): Promise<any[]> {
     return [];
   }
 
-  public static async setFirewallRule(vmid: number, rule: any): Promise<void> {}
+  public static async setFirewallRule(vmid: number, rule: any, node?: any): Promise<void> {}
 
-  public static async listSnapshots(vmid: number): Promise<any[]> {
+  public static async listSnapshots(vmid: number, node?: any): Promise<any[]> {
     try {
       const containerName = `cynex-${vmid}`;
       const { stdout } = await execAsync(`/snap/bin/lxc query /1.0/instances/${containerName}/snapshots`);
@@ -226,19 +309,19 @@ export class LxdService {
     }
   }
 
-  public static async createSnapshot(vmid: number, snapname: string, description?: string): Promise<string> {
+  public static async createSnapshot(vmid: number, snapname: string, description?: string, node?: any): Promise<string> {
     const containerName = `cynex-${vmid}`;
     await execAsync(`/snap/bin/lxc snapshot ${containerName} ${snapname}`);
     return `task-snapshot-${vmid}`;
   }
 
-  public static async rollbackSnapshot(vmid: number, snapname: string): Promise<string> {
+  public static async rollbackSnapshot(vmid: number, snapname: string, node?: any): Promise<string> {
     const containerName = `cynex-${vmid}`;
     await execAsync(`/snap/bin/lxc restore ${containerName} ${snapname}`);
     return `task-rollback-${vmid}`;
   }
 
-  public static async deleteSnapshot(vmid: number, snapname: string): Promise<string> {
+  public static async deleteSnapshot(vmid: number, snapname: string, node?: any): Promise<string> {
     const containerName = `cynex-${vmid}`;
     await execAsync(`/snap/bin/lxc delete ${containerName}/${snapname}`);
     return `task-delete-snap-${vmid}`;

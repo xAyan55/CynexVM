@@ -36,9 +36,9 @@ router.get('/:id', authenticate, requirePermission('instance.read'), async (req,
 
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
-    // Fetch real-time status from local LXD
+    // Fetch real-time status from local/remote LXD
     try {
-      const liveStatus = await LxdService.getContainerStatus(instance.vmid);
+      const liveStatus = await LxdService.getContainerStatus(instance.vmid, instance.node);
       
       // Sync DB status if changed
       if (liveStatus.status && liveStatus.status !== instance.status) {
@@ -137,10 +137,13 @@ router.post('/', authenticate, requirePermission('instance.create'), async (req,
  */
 router.post('/:id/start', authenticate, requirePermission('instance.start'), async (req, res) => {
   try {
-    const instance = await db.instance.findUnique({ where: { id: req.params.id } });
+    const instance = await db.instance.findUnique({ 
+      where: { id: req.params.id },
+      include: { node: true }
+    });
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
-    await LxdService.startContainer(instance.vmid);
+    await LxdService.startContainer(instance.vmid, instance.node);
 
     await db.instance.update({
       where: { id: instance.id },
@@ -159,10 +162,13 @@ router.post('/:id/start', authenticate, requirePermission('instance.start'), asy
  */
 router.post('/:id/stop', authenticate, requirePermission('instance.stop'), async (req, res) => {
   try {
-    const instance = await db.instance.findUnique({ where: { id: req.params.id } });
+    const instance = await db.instance.findUnique({ 
+      where: { id: req.params.id },
+      include: { node: true }
+    });
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
-    await LxdService.stopContainer(instance.vmid);
+    await LxdService.stopContainer(instance.vmid, instance.node);
 
     await db.instance.update({
       where: { id: instance.id },
@@ -181,10 +187,13 @@ router.post('/:id/stop', authenticate, requirePermission('instance.stop'), async
  */
 router.post('/:id/reboot', authenticate, requirePermission('instance.reboot'), async (req, res) => {
   try {
-    const instance = await db.instance.findUnique({ where: { id: req.params.id } });
+    const instance = await db.instance.findUnique({ 
+      where: { id: req.params.id },
+      include: { node: true }
+    });
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
-    await LxdService.rebootContainer(instance.vmid);
+    await LxdService.rebootContainer(instance.vmid, instance.node);
 
     return res.status(200).json({ message: 'Container reboot command dispatched.' });
   } catch (err: any) {
@@ -198,16 +207,19 @@ router.post('/:id/reboot', authenticate, requirePermission('instance.reboot'), a
  */
 router.delete('/:id', authenticate, requirePermission('instance.delete'), async (req, res) => {
   try {
-    const instance = await db.instance.findUnique({ where: { id: req.params.id } });
+    const instance = await db.instance.findUnique({ 
+      where: { id: req.params.id },
+      include: { node: true }
+    });
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
     // Attempt stop before deletion
     try {
-      await LxdService.stopContainer(instance.vmid);
+      await LxdService.stopContainer(instance.vmid, instance.node);
       await new Promise(r => setTimeout(r, 2000));
     } catch (_) {}
 
-    await LxdService.deleteContainer(instance.vmid);
+    await LxdService.deleteContainer(instance.vmid, instance.node);
     await db.instance.delete({ where: { id: instance.id } });
 
     await db.auditLog.create({
@@ -228,9 +240,12 @@ router.delete('/:id', authenticate, requirePermission('instance.delete'), async 
 
 // --- Register Background Workers for Container Deployments ---
 JobService.registerWorker('instance.deploy', async (job) => {
-  const { name, vmid, osTemplate, cpuCores, memoryMb, storageGb, hostname, password } = job.data;
+  const { nodeId, name, vmid, osTemplate, cpuCores, memoryMb, storageGb, hostname, password } = job.data;
   
-  console.log(`[Worker] Starting deployment for VMID ${vmid}...`);
+  const node = await db.node.findUnique({ where: { id: nodeId } });
+  if (!node) throw new Error('Target node not found');
+
+  console.log(`[Worker] Starting deployment for VMID ${vmid} on node ${node.name}...`);
   
   await LxdService.createContainer({
     vmid,
@@ -240,7 +255,7 @@ JobService.registerWorker('instance.deploy', async (job) => {
     memory: memoryMb,
     diskSizeGb: storageGb,
     password
-  });
+  }, node);
 
   console.log(`[Worker] Deployment success for VMID ${vmid}`);
   return { status: 'deployed', vmid };
