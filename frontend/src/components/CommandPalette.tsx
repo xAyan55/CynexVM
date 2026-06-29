@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Terminal, Server, Shield, Settings, FileCode } from 'lucide-react';
+import { Search, Terminal, Server, Shield, Settings } from 'lucide-react';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -69,32 +69,32 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center pt-24 px-4">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center pt-24 px-4">
       <div 
-        className="w-full max-w-lg glass-panel rounded-card overflow-hidden shadow-2xl animate-float"
+        className="w-full max-w-lg al-card overflow-hidden"
         onKeyDown={handleKeyDown}
       >
         {/* Search Bar Input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-borderSubtle bg-white/5">
-          <Search className="text-gray-400" size={18} />
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-borderSubtle bg-secondaryBg/20">
+          <Search className="text-gray-400" size={16} />
           <input
             ref={inputRef}
             type="text"
             placeholder="Type a command or page name..."
-            className="w-full bg-transparent border-0 outline-none text-white text-sm placeholder-gray-500"
+            className="w-full bg-transparent border-0 outline-none text-white text-xs placeholder-gray-500 font-sans"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setSelectedIndex(0);
             }}
           />
-          <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-gray-400">ESC</span>
+          <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400">ESC</span>
         </div>
 
         {/* Filtered Search Results */}
-        <div className="max-h-80 overflow-y-auto p-2">
+        <div className="max-h-80 overflow-y-auto p-1.5 bg-cardBg">
           {filtered.length === 0 ? (
-            <div className="p-4 text-center text-sm text-gray-500">No commands found</div>
+            <div className="p-4 text-center text-xs text-gray-500">No commands found</div>
           ) : (
             filtered.map((cmd, idx) => {
               const Icon = cmd.icon;
@@ -105,17 +105,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
                     cmd.action();
                     onClose();
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-btn text-left text-sm transition-colors ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-btn text-left text-xs transition-colors ${
                     idx === selectedIndex 
-                      ? 'bg-blue-600 text-white' 
+                      ? 'bg-blue-600 text-white font-medium' 
                       : 'text-gray-400 hover:bg-white/5 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon size={16} />
+                    <Icon size={14} />
                     <span>{cmd.name}</span>
                   </div>
-                  <span className="text-[10px] text-gray-500 uppercase">{cmd.category}</span>
+                  <span className="text-[9px] text-gray-500 uppercase">{cmd.category}</span>
                 </button>
               );
             })

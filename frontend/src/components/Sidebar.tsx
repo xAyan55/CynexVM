@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   LayoutDashboard, Server, Terminal, 
-  Settings, Users, ShieldAlert, LogOut, ChevronLeft, ChevronRight, Activity, Search
+  Settings, Users, ShieldAlert, LogOut, ChevronLeft, ChevronRight, Search
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -27,79 +27,76 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSearchOpen }) => {
   ];
 
   return (
-    <aside className={`glass-panel m-4 rounded-card flex flex-col justify-between transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'} h-[calc(100vh-2rem)] sticky top-4 overflow-y-auto z-40`}>
+    <aside className={`border-r border-borderSubtle bg-cardBg flex flex-col justify-between transition-all duration-200 ${collapsed ? 'w-16' : 'w-56'} h-screen sticky top-0 overflow-y-auto z-40`}>
       {/* Top Branding Section */}
       <div>
-        <div className="p-4 border-b border-borderSubtle flex items-center justify-between">
+        <div className="p-4 border-b border-borderSubtle flex items-center justify-between h-14">
           {!collapsed && (
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-lg text-white shadow-glow">C</div>
-              <span className="font-semibold text-lg tracking-wide text-white">CynexVM</span>
+              <img src="/assets/logo.svg" alt="" className="w-5 h-5 object-contain" />
+              <span className="font-semibold text-sm tracking-wide text-white">CynexVM</span>
             </div>
           )}
           {collapsed && (
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-lg text-white shadow-glow mx-auto">C</div>
+            <img src="/assets/logo.svg" alt="" className="w-5 h-5 object-contain mx-auto" />
           )}
           <button 
             onClick={() => setCollapsed(!collapsed)} 
-            className="p-1 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+            className="p-1 hover:bg-white/5 rounded text-gray-500 hover:text-white transition-colors"
           >
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
           </button>
         </div>
 
         {/* Global Search Button */}
-        <div className="p-3">
+        <div className="p-2 border-b border-borderSubtle">
           <button 
             onClick={onSearchOpen}
-            className="w-full flex items-center gap-3 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-btn text-gray-400 hover:text-white transition-all text-sm border border-borderSubtle hover:scale-[1.02]"
+            className="w-full flex items-center gap-2 px-3 py-1.5 bg-[#111827] hover:bg-white/5 rounded text-gray-500 hover:text-gray-300 transition-all text-xs border border-borderSubtle"
           >
-            <Search size={16} />
-            {!collapsed && <span>Search (Ctrl+K)</span>}
+            <Search size={14} />
+            {!collapsed && <span>Search</span>}
           </button>
         </div>
 
         {/* Nav Links */}
-        <nav className="p-3 space-y-1">
-          <span className="px-3 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">
-            {collapsed ? '•' : 'Navigation'}
-          </span>
+        <nav className="py-2 space-y-0.5">
           {userLinks.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) => 
-                `flex items-center gap-3 px-3 py-2.5 rounded-btn text-sm transition-all duration-200 ${
+                `flex items-center gap-3 px-4 py-2.5 text-xs transition-all duration-150 border-l-2 ${
                   isActive 
-                    ? 'bg-blue-600 text-white shadow-glow hover:scale-[1.02]' 
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    ? 'border-accentBlue bg-white/5 text-white font-medium' 
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-white/5'
                 }`
               }
             >
-              <link.icon size={18} />
+              <link.icon size={15} />
               {!collapsed && <span>{link.label}</span>}
             </NavLink>
           ))}
 
           {/* Admin Control Links */}
           {user?.role === 'Admin' && (
-            <div className="pt-4 space-y-1">
-              <span className="px-3 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">
-                {collapsed ? '•' : 'Administration'}
+            <div className="pt-2 space-y-0.5">
+              <span className="px-4 py-1 text-[10px] font-semibold text-gray-600 uppercase tracking-wider block">
+                {!collapsed && 'Admin'}
               </span>
               {adminLinks.map((link) => (
                 <NavLink
                   key={link.to}
                   to={link.to}
                   className={({ isActive }) => 
-                    `flex items-center gap-3 px-3 py-2.5 rounded-btn text-sm transition-all duration-200 ${
+                    `flex items-center gap-3 px-4 py-2.5 text-xs transition-all duration-150 border-l-2 ${
                       isActive 
-                        ? 'bg-blue-600 text-white shadow-glow hover:scale-[1.02]' 
-                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        ? 'border-accentBlue bg-white/5 text-white font-medium' 
+                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-white/5'
                     }`
                   }
                 >
-                  <link.icon size={18} />
+                  <link.icon size={15} />
                   {!collapsed && <span>{link.label}</span>}
                 </NavLink>
               ))}
@@ -110,24 +107,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSearchOpen }) => {
 
       {/* Footer Profile Section */}
       <div className="p-3 border-t border-borderSubtle">
-        <div className="flex items-center justify-between gap-3 p-1">
+        <div className="flex items-center justify-between gap-2">
           {!collapsed && (
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center font-semibold text-white uppercase border border-borderSubtle">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="w-7 h-7 rounded bg-white/5 border border-borderSubtle flex items-center justify-center font-semibold text-[11px] text-white uppercase shrink-0">
                 {user?.username.slice(0, 2)}
               </div>
               <div className="overflow-hidden">
-                <p className="text-xs font-medium text-white truncate">{user?.username}</p>
-                <p className="text-[10px] text-gray-500 truncate">{user?.role}</p>
+                <p className="text-[10px] font-medium text-white truncate">{user?.username}</p>
+                <p className="text-[9px] text-gray-500 truncate capitalize">{user?.role}</p>
               </div>
             </div>
           )}
           <button 
             onClick={logout} 
-            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+            className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/5 rounded transition-all mx-auto lg:mx-0"
             title="Log out"
           >
-            <LogOut size={16} />
+            <LogOut size={14} />
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Search, ShieldAlert } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 
 export const AuditLogs: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
@@ -52,7 +52,7 @@ export const AuditLogs: React.FC = () => {
         </div>
         <button 
           onClick={fetchLogs}
-          className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn transition-all"
+          className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn transition-colors"
         >
           <RefreshCw size={16} />
         </button>
@@ -61,16 +61,16 @@ export const AuditLogs: React.FC = () => {
       {/* Filter and search bar */}
       <form onSubmit={handleSearchSubmit} className="flex flex-wrap gap-3 items-end text-xs max-w-2xl">
         <div className="flex-1 relative min-w-[200px]">
-          <Search className="absolute left-3 top-2.5 text-gray-500" size={14} />
+          <Search className="absolute left-3 top-3 text-gray-500" size={14} />
           <input 
             type="text" placeholder="Search by username, action or details..."
-            className="w-full bg-white/5 border border-borderSubtle rounded-btn pl-9 pr-4 py-2 text-white focus:outline-none focus:border-blue-600"
+            className="w-full al-input pl-9"
             value={search} onChange={e => setSearch(e.target.value)}
           />
         </div>
         <div>
           <select 
-            className="bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-white focus:outline-none focus:border-blue-600"
+            className="al-input"
             value={severity} onChange={e => setSeverity(e.target.value)}
           >
             <option value="">All Severities</option>
@@ -79,13 +79,13 @@ export const AuditLogs: React.FC = () => {
             <option value="critical">Critical</option>
           </select>
         </div>
-        <button type="submit" className="glass-button-primary px-4 py-2 text-white font-semibold">
+        <button type="submit" className="al-btn al-btn-primary px-4 py-2">
           Search
         </button>
       </form>
 
       {/* Audit table */}
-      <div className="glass-panel rounded-card border border-borderSubtle overflow-hidden">
+      <div className="al-card overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-500 text-sm">Loading security logs...</div>
         ) : logs.length === 0 ? (
@@ -104,7 +104,7 @@ export const AuditLogs: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-borderSubtle font-mono text-gray-300">
               {logs.map(log => (
-                <tr key={log.id} className="hover:bg-white/5">
+                <tr key={log.id} className="hover:bg-white/5 transition-colors">
                   <td className="p-3 text-[10px] text-gray-500 whitespace-nowrap">
                     {new Date(log.createdAt).toLocaleString()}
                   </td>
@@ -116,8 +116,8 @@ export const AuditLogs: React.FC = () => {
                       'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                     }`}>{log.severity}</span>
                   </td>
-                  <td className="p-3 text-gray-400">{log.username}</td>
-                  <td className="p-3 text-gray-550">{log.ipAddress || 'system'}</td>
+                  <td className="p-3 text-gray-400 font-sans">{log.username}</td>
+                  <td className="p-3 text-gray-500">{log.ipAddress || 'system'}</td>
                   <td className="p-3 text-gray-400 font-sans truncate max-w-xs" title={log.details}>
                     {log.details}
                   </td>
@@ -133,14 +133,14 @@ export const AuditLogs: React.FC = () => {
         <div className="flex justify-end gap-2 text-xs">
           <button 
             disabled={page === 1} onClick={() => setPage(page - 1)}
-            className="px-3 py-1.5 bg-white/5 border border-borderSubtle rounded-btn text-gray-300 disabled:opacity-50"
+            className="al-btn al-btn-secondary"
           >
             Prev
           </button>
-          <span className="px-3 py-1.5 text-gray-500">Page {page} of {totalPages}</span>
+          <span className="px-3 py-2 text-gray-500">Page {page} of {totalPages}</span>
           <button 
             disabled={page === totalPages} onClick={() => setPage(page + 1)}
-            className="px-3 py-1.5 bg-white/5 border border-borderSubtle rounded-btn text-gray-300 disabled:opacity-50"
+            className="al-btn al-btn-secondary"
           >
             Next
           </button>

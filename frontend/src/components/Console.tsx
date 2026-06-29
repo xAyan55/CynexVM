@@ -76,14 +76,12 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     socket.on('terminal.data', handleData);
     socket.on('terminal.log', handleLog);
 
-    // Pipe keyboard keystrokes to websocket
     term.onData((data) => {
       if (connected) {
         socket.emit('terminal.input', data);
       }
     });
 
-    // Resize notifications
     term.onResize((size) => {
       if (connected) {
         socket.emit('terminal.resize', size);
@@ -111,7 +109,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
   return (
     <div className="space-y-4">
       {/* Power Control Ribbon */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-white/5 border border-borderSubtle rounded-btn">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-secondaryBg/20 border border-borderSubtle rounded-btn">
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-400">VM State:</span>
           <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase ${
@@ -124,21 +122,21 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
         <div className="flex items-center gap-2">
           <button 
             onClick={() => onPowerAction('start')} 
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-btn text-xs font-medium transition-all hover:scale-[1.02]"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-btn text-xs font-medium transition-colors"
             disabled={status === 'running'}
           >
             <Play size={14} /> Start
           </button>
           <button 
             onClick={() => onPowerAction('stop')} 
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-btn text-xs font-medium transition-all hover:scale-[1.02]"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-btn text-xs font-medium transition-colors"
             disabled={status === 'stopped'}
           >
             <Square size={14} /> Stop
           </button>
           <button 
             onClick={() => onPowerAction('reboot')} 
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-medium transition-all hover:scale-[1.02]"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-medium transition-colors"
             disabled={status !== 'running'}
           >
             <RotateCcw size={14} /> Reboot
@@ -148,15 +146,15 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
 
       {/* Connection Credentials Form */}
       {!connected && (
-        <form onSubmit={handleConnect} className="glass-panel p-4 rounded-btn border border-borderSubtle space-y-4 max-w-md mx-auto">
-          <h3 className="text-sm font-semibold text-white">Establish SSH Console session</h3>
+        <form onSubmit={handleConnect} className="al-card p-4 space-y-4 max-w-md mx-auto">
+          <h3 className="text-sm font-semibold text-white">Establish SSH Console Session</h3>
           <div className="space-y-3">
             <div>
-              <label className="text-[11px] text-gray-400 block mb-1">Target Host IP (optional, overrides default)</label>
+              <label className="text-[11px] text-gray-400 block mb-1">Target Host IP (optional)</label>
               <input 
                 type="text" 
                 placeholder="10.0.0.x" 
-                className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+                className="w-full al-input"
                 value={credentials.host}
                 onChange={e => setCredentials({...credentials, host: e.target.value})}
               />
@@ -166,7 +164,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
                 <label className="text-[11px] text-gray-400 block mb-1">Username</label>
                 <input 
                   type="text" 
-                  className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+                  className="w-full al-input"
                   value={credentials.username}
                   onChange={e => setCredentials({...credentials, username: e.target.value})}
                   required
@@ -176,21 +174,21 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
                 <label className="text-[11px] text-gray-400 block mb-1">Password</label>
                 <input 
                   type="password" 
-                  className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+                  className="w-full al-input"
                   value={credentials.password}
                   onChange={e => setCredentials({...credentials, password: e.target.value})}
                 />
               </div>
             </div>
           </div>
-          <button type="submit" className="w-full glass-button-primary py-2 text-xs text-white font-semibold">
+          <button type="submit" className="w-full al-btn al-btn-primary py-2 text-xs font-semibold">
             Connect Console
           </button>
         </form>
       )}
 
       {/* Terminal Viewport */}
-      <div className={`glass-panel p-2 rounded-card border border-borderSubtle bg-[#09090B] ${connected ? 'block' : 'hidden'}`}>
+      <div className={`al-card p-2 bg-[#09090B] ${connected ? 'block' : 'hidden'}`}>
         <div ref={terminalRef} className="h-96 min-h-[380px]" />
       </div>
     </div>

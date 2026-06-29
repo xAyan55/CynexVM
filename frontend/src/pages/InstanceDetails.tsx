@@ -5,7 +5,7 @@ import { Console } from '../components/Console';
 import { FileManager } from '../components/FileManager';
 import { 
   Server, Cpu, HardDrive, Network, FolderOpen, 
-  Settings, Key, AlertTriangle, ArrowLeft, Trash2
+  Key, ArrowLeft, Trash2
 } from 'lucide-react';
 
 export const InstanceDetails: React.FC = () => {
@@ -56,7 +56,6 @@ export const InstanceDetails: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setInstance(data);
-        // Pre-fill backups/firewalls placeholders
         setBackups([
           { id: 'b1', name: 'vzdump-lxc-daily-backup', sizeBytes: 256214580, status: 'completed', type: 'scheduled', createdAt: new Date(Date.now() - 24 * 3600 * 1000) }
         ]);
@@ -141,7 +140,7 @@ export const InstanceDetails: React.FC = () => {
         <div className="flex items-center gap-3">
           <button 
             onClick={() => navigate('/')} 
-            className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn"
+            className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn transition-colors"
           >
             <ArrowLeft size={16} />
           </button>
@@ -160,7 +159,7 @@ export const InstanceDetails: React.FC = () => {
 
         <button 
           onClick={handleDeleteInstance}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 hover:bg-red-600 text-red-400 hover:text-white rounded-btn text-xs font-semibold transition-all hover:scale-[1.02]"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 hover:bg-red-600 text-red-400 hover:text-white rounded-btn text-xs font-semibold transition-colors"
         >
           <Trash2 size={14} /> Destroy VPS
         </button>
@@ -193,7 +192,7 @@ export const InstanceDetails: React.FC = () => {
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Static details specs */}
-          <div className="glass-panel p-5 rounded-card border border-borderSubtle space-y-4">
+          <div className="al-card p-5 space-y-4">
             <h3 className="text-sm font-semibold text-white">VPS Hardware Allocations</h3>
             <div className="divide-y divide-borderSubtle text-xs">
               <div className="py-2 flex justify-between">
@@ -228,7 +227,7 @@ export const InstanceDetails: React.FC = () => {
           </div>
 
           {/* Real-time metrics streaming gauges */}
-          <div className="glass-panel p-5 rounded-card border border-borderSubtle md:col-span-2 space-y-6">
+          <div className="al-card p-5 md:col-span-2 space-y-6">
             <h3 className="text-sm font-semibold text-white">Live Resource Diagnostics</h3>
             {liveMetrics ? (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
@@ -287,7 +286,7 @@ export const InstanceDetails: React.FC = () => {
       {activeTab === 'network' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Static Network Info */}
-          <div className="glass-panel p-5 rounded-card border border-borderSubtle space-y-4">
+          <div className="al-card p-5 space-y-4">
             <h3 className="text-sm font-semibold text-white">Interface Configuration</h3>
             <div className="text-xs space-y-3">
               <div>
@@ -306,7 +305,7 @@ export const InstanceDetails: React.FC = () => {
           </div>
 
           {/* Firewall configuration */}
-          <div className="glass-panel p-5 rounded-card border border-borderSubtle lg:col-span-2 space-y-6">
+          <div className="al-card p-5 lg:col-span-2 space-y-6">
             <div className="flex items-center justify-between border-b border-borderSubtle pb-3">
               <h3 className="text-sm font-semibold text-white">Firewall Access Rules</h3>
             </div>
@@ -353,7 +352,7 @@ export const InstanceDetails: React.FC = () => {
               <div>
                 <label className="text-[10px] text-gray-500 block mb-1">Direction</label>
                 <select 
-                  className="w-full bg-white/5 border border-borderSubtle rounded-btn px-2 py-1.5 text-white"
+                  className="w-full al-input px-2 py-1.5"
                   value={newRule.direction}
                   onChange={e => setNewRule({...newRule, direction: e.target.value})}
                 >
@@ -364,7 +363,7 @@ export const InstanceDetails: React.FC = () => {
               <div>
                 <label className="text-[10px] text-gray-500 block mb-1">Action</label>
                 <select 
-                  className="w-full bg-white/5 border border-borderSubtle rounded-btn px-2 py-1.5 text-white"
+                  className="w-full al-input px-2 py-1.5"
                   value={newRule.action}
                   onChange={e => setNewRule({...newRule, action: e.target.value})}
                 >
@@ -375,7 +374,7 @@ export const InstanceDetails: React.FC = () => {
               <div>
                 <label className="text-[10px] text-gray-500 block mb-1">Protocol</label>
                 <select 
-                  className="w-full bg-white/5 border border-borderSubtle rounded-btn px-2 py-1.5 text-white"
+                  className="w-full al-input px-2 py-1.5"
                   value={newRule.protocol}
                   onChange={e => setNewRule({...newRule, protocol: e.target.value})}
                 >
@@ -387,12 +386,12 @@ export const InstanceDetails: React.FC = () => {
               <div>
                 <label className="text-[10px] text-gray-500 block mb-1">Port Range</label>
                 <input 
-                  type="text" placeholder="e.g. 80, 22:25" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-2 py-1.5 text-white"
+                  type="text" placeholder="e.g. 80, 22:25" className="w-full al-input px-2 py-1.5"
                   value={newRule.port}
                   onChange={e => setNewRule({...newRule, port: e.target.value})}
                 />
               </div>
-              <button type="submit" className="w-full glass-button-primary py-2 text-white font-semibold col-span-2 md:col-span-1">
+              <button type="submit" className="w-full al-btn al-btn-primary py-2.5 col-span-2 md:col-span-1">
                 Add Rule
               </button>
             </form>
@@ -404,20 +403,20 @@ export const InstanceDetails: React.FC = () => {
       {activeTab === 'backups' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Snapshots segment */}
-          <div className="glass-panel p-5 rounded-card border border-borderSubtle space-y-6">
+          <div className="al-card p-5 space-y-6">
             <h3 className="text-sm font-semibold text-white">Container Snapshots</h3>
             
             <form onSubmit={handleCreateSnapshot} className="flex gap-2 items-end text-xs">
               <div className="flex-1">
                 <label className="text-[10px] text-gray-500 block mb-1">Snapshot Name</label>
                 <input 
-                  type="text" placeholder="e.g. state-pre-configure" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white focus:outline-none focus:border-blue-600"
+                  type="text" placeholder="e.g. state-pre-configure" className="w-full al-input"
                   value={newSnapshotName}
                   onChange={e => setNewSnapshotName(e.target.value)}
                   required
                 />
               </div>
-              <button type="submit" className="glass-button-primary px-4 py-2 text-white font-semibold">
+              <button type="submit" className="al-btn al-btn-primary px-4 py-2 font-semibold">
                 Create Snapshot
               </button>
             </form>
@@ -435,7 +434,7 @@ export const InstanceDetails: React.FC = () => {
                   <tr key={snap.id} className="hover:bg-white/5">
                     <td className="p-2 font-semibold font-mono text-blue-400">{snap.name}</td>
                     <td className="p-2 text-gray-400">{snap.description}</td>
-                    <td className="p-2 text-gray-500 font-mono">{new Date(snap.createdAt).toLocaleDateString()}</td>
+                    <td className="p-2 text-gray-550 font-mono">{new Date(snap.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -443,7 +442,7 @@ export const InstanceDetails: React.FC = () => {
           </div>
 
           {/* Backups segment */}
-          <div className="glass-panel p-5 rounded-card border border-borderSubtle space-y-6">
+          <div className="al-card p-5 space-y-6">
             <div className="flex items-center justify-between border-b border-borderSubtle pb-3">
               <h3 className="text-sm font-semibold text-white">Backups Archive</h3>
               <button 
@@ -457,7 +456,7 @@ export const InstanceDetails: React.FC = () => {
                     createdAt: new Date()
                   }]);
                 }}
-                className="glass-button-primary px-3 py-1.5 text-xs text-white font-semibold"
+                className="al-btn al-btn-primary px-3 py-1.5 text-xs font-semibold"
               >
                 Trigger Backup
               </button>

@@ -95,11 +95,6 @@ export const Dashboard: React.FC = () => {
         dataPoints.push(Math.random() * 40 + 30);
       }
 
-      // Gradient under graph line
-      const grad = ctx.createLinearGradient(0, 0, 0, height);
-      grad.addColorStop(0, 'rgba(37, 99, 235, 0.25)');
-      grad.addColorStop(1, 'rgba(37, 99, 235, 0)');
-
       ctx.beginPath();
       ctx.moveTo(0, height - (dataPoints[0] / 100) * height);
       
@@ -111,14 +106,8 @@ export const Dashboard: React.FC = () => {
       }
 
       ctx.strokeStyle = '#2563EB';
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2.0;
       ctx.stroke();
-
-      // Complete path to draw gradient
-      ctx.lineTo(width, height);
-      ctx.lineTo(0, height);
-      ctx.fillStyle = grad;
-      ctx.fill();
 
       animationId = requestAnimationFrame(draw);
     };
@@ -143,14 +132,14 @@ export const Dashboard: React.FC = () => {
         <div className="flex items-center gap-2">
           <button 
             onClick={fetchDashboardData}
-            className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn hover:scale-[1.02] transition-all"
+            className="p-2 text-gray-400 hover:text-white bg-white/5 border border-borderSubtle rounded-btn transition-all"
             title="Reload data"
           >
             <RefreshCw size={16} />
           </button>
           <button 
             onClick={() => setShowDeployWizard(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all hover:scale-[1.02] shadow-glow"
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all"
           >
             <Plus size={16} /> Deploy VPS
           </button>
@@ -160,7 +149,7 @@ export const Dashboard: React.FC = () => {
       {/* Aggregate Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Instances */}
-        <div className="glass-panel p-4 rounded-card border border-borderSubtle flex items-center justify-between">
+        <div className="al-card p-4 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">Running Containers</span>
             <span className="text-2xl font-bold text-white">{activeInstances}</span>
@@ -172,7 +161,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Hypervisor Nodes */}
-        <div className="glass-panel p-4 rounded-card border border-borderSubtle flex items-center justify-between">
+        <div className="al-card p-4 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">Nodes Connected</span>
             <span className="text-2xl font-bold text-white">{nodesCount}</span>
@@ -184,7 +173,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Total CPU cores */}
-        <div className="glass-panel p-4 rounded-card border border-borderSubtle flex items-center justify-between">
+        <div className="al-card p-4 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">Total Cores Assigned</span>
             <span className="text-2xl font-bold text-white">
@@ -198,7 +187,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Memory allocation */}
-        <div className="glass-panel p-4 rounded-card border border-borderSubtle flex items-center justify-between">
+        <div className="al-card p-4 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider block">RAM Allocated</span>
             <span className="text-2xl font-bold text-white">
@@ -215,7 +204,7 @@ export const Dashboard: React.FC = () => {
       {/* Graph and Recent logs widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Real-time historical chart */}
-        <div className="glass-panel p-5 rounded-card border border-borderSubtle lg:col-span-2 flex flex-col justify-between">
+        <div className="al-card p-5 flex flex-col justify-between lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold text-white">Cluster Resource Efficiency</h3>
@@ -229,7 +218,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Recent Audit events */}
-        <div className="glass-panel p-5 rounded-card border border-borderSubtle flex flex-col justify-between">
+        <div className="al-card p-5 flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-semibold text-white mb-3">Security Alerts & Audit Logs</h3>
             <div className="space-y-3">
@@ -257,7 +246,7 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Main Containers grid/list table */}
-      <div className="glass-panel rounded-card border border-borderSubtle overflow-hidden">
+      <div className="al-card overflow-hidden">
         <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-white">Linux Container Instances</h3>
           <span className="text-[10px] text-gray-400 font-mono">{instances.length} VMIDs allocated</span>

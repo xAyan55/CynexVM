@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const [panelName, setPanelName] = useState('CynexVM');
@@ -64,7 +63,7 @@ export const Settings: React.FC = () => {
         <p className="text-xs text-gray-400">Configure global panel configurations and branding defaults.</p>
       </div>
 
-      <form onSubmit={handleSave} className="glass-panel p-6 rounded-card border border-borderSubtle space-y-4 text-xs">
+      <form onSubmit={handleSave} className="al-card p-6 space-y-4 text-xs">
         {success && (
           <p className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-btn font-semibold">
             Settings saved successfully!
@@ -74,7 +73,7 @@ export const Settings: React.FC = () => {
         <div className="space-y-1">
           <label className="text-[11px] text-gray-400 block font-medium">Panel Display Name</label>
           <input 
-            type="text" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-600"
+            type="text" className="w-full al-input"
             value={panelName} onChange={e => setPanelName(e.target.value)} required
           />
         </div>
@@ -82,7 +81,7 @@ export const Settings: React.FC = () => {
         <div className="space-y-1">
           <label className="text-[11px] text-gray-400 block font-medium">Welcome Banner Message</label>
           <input 
-            type="text" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-600"
+            type="text" className="w-full al-input"
             value={welcomeMessage} onChange={e => setWelcomeMessage(e.target.value)} required
           />
         </div>
@@ -90,7 +89,7 @@ export const Settings: React.FC = () => {
         <div className="space-y-1">
           <label className="text-[11px] text-gray-400 block font-medium">Maintenance Mode</label>
           <select 
-            className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-600"
+            className="w-full al-input"
             value={maintenanceMode} onChange={e => setMaintenanceMode(e.target.value)}
           >
             <option value="false">Active (Online)</option>
@@ -100,10 +99,10 @@ export const Settings: React.FC = () => {
 
         <button 
           type="submit" 
-          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn font-bold transition-all hover:scale-[1.02] shadow-glow pt-2"
           disabled={loading}
+          className="al-btn al-btn-primary px-4 py-2 font-bold mt-4"
         >
-          <Save size={14} /> {loading ? 'Saving...' : 'Save Settings'}
+          {loading ? 'Saving...' : 'Save Settings'}
         </button>
       </form>
     </div>

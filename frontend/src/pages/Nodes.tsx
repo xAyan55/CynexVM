@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Plus, Activity, CheckCircle, RefreshCw, X, ShieldAlert, Key, Globe } from 'lucide-react';
+import { Server, Plus, Activity, RefreshCw, X, Globe, Key } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface Node {
@@ -74,7 +74,6 @@ export const Nodes: React.FC = () => {
 
       if (res.ok) {
         const newNode = await res.json();
-        // Clear fields
         setName('');
         setHostname('');
         setApiUrl('');
@@ -82,7 +81,6 @@ export const Nodes: React.FC = () => {
         setSslFingerprint('');
         setShowAddModal(false);
         
-        // Immediately run connection test on the new node
         await runNodeTest(newNode.id);
         fetchNodes();
       } else {
@@ -105,7 +103,10 @@ export const Nodes: React.FC = () => {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(`Node test failed: ${data.message || 'Connection timeout'}`);
+        alert(`Node connection test failed: ${data.message || 'Connection timeout'}`);
+      } else {
+        alert('Node connection verified successfully!');
+        fetchNodes();
       }
     } catch (_) {}
   };
@@ -142,7 +143,7 @@ export const Nodes: React.FC = () => {
             </button>
             <button 
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all hover:scale-[1.02] shadow-glow"
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all"
             >
               <Plus size={16} /> Connect Node
             </button>
@@ -150,13 +151,11 @@ export const Nodes: React.FC = () => {
         )}
       </div>
 
-      {/* 1. ONBOARDING WIZARD (Displayed if 0 nodes exist) */}
+      {/* Onboarding Wizard (displayed if 0 nodes exist) */}
       {loading ? (
         <div className="p-12 text-center text-gray-500 text-sm">Loading nodes list...</div>
       ) : nodes.length === 0 ? (
-        <div className="max-w-2xl mx-auto glass-panel p-8 rounded-card border border-borderSubtle space-y-6 relative overflow-hidden animate-float">
-          <div className="absolute -top-10 -left-10 w-40 h-40 bg-blue-600/5 rounded-full blur-3xl" />
-          
+        <div className="max-w-2xl mx-auto al-card p-8 space-y-6">
           <div className="text-center space-y-2">
             <div className="w-12 h-12 bg-blue-600/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4">
               <Server size={24} />
@@ -167,19 +166,25 @@ export const Nodes: React.FC = () => {
             </p>
           </div>
 
+          {testResult && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-btn text-xs">
+              {testResult.message}
+            </div>
+          )}
+
           <form onSubmit={handleAddNode} className="space-y-4 border-t border-borderSubtle pt-6 text-xs">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-400 block">Friendly Node Name</label>
                 <input 
-                  type="text" placeholder="e.g. Node-01" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2.5 text-white focus:outline-none focus:border-blue-600"
+                  type="text" placeholder="e.g. Node-01" className="w-full al-input"
                   value={name} onChange={e => setName(e.target.value)} required
                 />
               </div>
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-400 block">Host address (FQDN / IP)</label>
                 <input 
-                  type="text" placeholder="e.g. 192.168.1.10" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2.5 text-white focus:outline-none focus:border-blue-600"
+                  type="text" placeholder="e.g. 192.168.1.10" className="w-full al-input"
                   value={hostname} onChange={e => setHostname(e.target.value)} required
                 />
               </div>
@@ -190,18 +195,18 @@ export const Nodes: React.FC = () => {
               <div className="relative">
                 <Globe className="absolute left-3 top-3 text-gray-500" size={14} />
                 <input 
-                  type="url" placeholder="https://192.168.1.10:8006/api2/json" className="w-full bg-white/5 border border-borderSubtle rounded-btn pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-600"
+                  type="url" placeholder="https://192.168.1.10:8006/api2/json" className="w-full al-input pl-10"
                   value={apiUrl} onChange={e => setApiUrl(e.target.value)} required
                 />
               </div>
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] text-gray-400 block">API Token Key (Stateless authentication)</label>
+              <label className="text-[11px] text-gray-400 block">API Token Key</label>
               <div className="relative">
                 <Key className="absolute left-3 top-3 text-gray-500" size={14} />
                 <input 
-                  type="password" placeholder="PVEAPIToken=root@pam!token=xxxx-xxxx" className="w-full bg-white/5 border border-borderSubtle rounded-btn pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-600"
+                  type="password" placeholder="PVEAPIToken=root@pam!token=xxxx-xxxx" className="w-full al-input pl-10"
                   value={apiToken} onChange={e => setApiToken(e.target.value)} required
                 />
               </div>
@@ -210,14 +215,14 @@ export const Nodes: React.FC = () => {
             <div className="space-y-1">
               <label className="text-[11px] text-gray-400 block">SSL SHA256 Fingerprint (Optional for self-signed certificates)</label>
               <input 
-                type="text" placeholder="9A:D7:E5:..." className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2.5 text-white focus:outline-none focus:border-blue-600"
+                type="text" placeholder="9A:D7:E5:..." className="w-full al-input"
                 value={sslFingerprint} onChange={e => setSslFingerprint(e.target.value)}
               />
             </div>
 
             <button 
               type="submit" 
-              className="w-full glass-button-primary py-3 text-white font-bold rounded-btn mt-6"
+              className="w-full al-btn al-btn-primary py-3 font-bold mt-6"
               disabled={actionLoading}
             >
               {actionLoading ? 'Connecting...' : 'Connect Proxmox Host'}
@@ -225,10 +230,10 @@ export const Nodes: React.FC = () => {
           </form>
         </div>
       ) : (
-        // 2. STANDARD NODES VIEW
+        /* STANDARD NODES VIEW */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {nodes.map(n => (
-            <div key={n.id} className="glass-panel p-5 rounded-card border border-borderSubtle flex flex-col justify-between space-y-4">
+            <div key={n.id} className="al-card p-5 flex flex-col justify-between space-y-4">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2">
@@ -250,7 +255,7 @@ export const Nodes: React.FC = () => {
                   {user?.role === 'Admin' && (
                     <button 
                       onClick={() => handleDeleteNode(n.id)}
-                      className="p-1.5 hover:bg-red-500/10 rounded text-gray-400 hover:text-red-400"
+                      className="p-1.5 hover:bg-red-500/5 rounded text-gray-400 hover:text-red-400"
                       title="Remove node"
                     >
                       <X size={14} />
@@ -287,7 +292,7 @@ export const Nodes: React.FC = () => {
       {/* Connect Node dialog modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg glass-panel rounded-card border border-borderSubtle overflow-hidden flex flex-col h-[75vh]">
+          <div className="w-full max-w-lg al-card overflow-hidden flex flex-col h-[75vh]">
             <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-white">Connect Proxmox Node</h2>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-white"><X size={16} /></button>
@@ -297,42 +302,42 @@ export const Nodes: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] text-gray-400 block">Friendly Name</label>
-                  <input type="text" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white" value={name} onChange={e => setName(e.target.value)} required />
+                  <input type="text" className="w-full al-input" value={name} onChange={e => setName(e.target.value)} required />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-gray-400 block">Host IP / FQDN</label>
-                  <input type="text" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white" value={hostname} onChange={e => setHostname(e.target.value)} required />
+                  <input type="text" className="w-full al-input" value={hostname} onChange={e => setHostname(e.target.value)} required />
                 </div>
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] text-gray-400 block">API url</label>
-                <input type="url" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white" value={apiUrl} onChange={e => setApiUrl(e.target.value)} required />
+                <input type="url" className="w-full al-input" value={apiUrl} onChange={e => setApiUrl(e.target.value)} required />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] text-gray-400 block">API Token</label>
-                <input type="password" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white" value={apiToken} onChange={e => setApiToken(e.target.value)} required />
+                <input type="password" className="w-full al-input" value={apiToken} onChange={e => setApiToken(e.target.value)} required />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] text-gray-400 block">SHA256 fingerprint</label>
-                <input type="text" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white" value={sslFingerprint} onChange={e => setSslFingerprint(e.target.value)} />
+                <input type="text" className="w-full al-input" value={sslFingerprint} onChange={e => setSslFingerprint(e.target.value)} />
               </div>
               
               <div className="grid grid-cols-3 gap-3 border-t border-borderSubtle pt-4">
                 <div className="space-y-1">
                   <label className="text-[10px] text-gray-400 block">CPU Cores</label>
-                  <input type="number" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white" value={cpuCores} onChange={e => setCpuCores(parseInt(e.target.value, 10))} />
+                  <input type="number" className="w-full al-input" value={cpuCores} onChange={e => setCpuCores(parseInt(e.target.value, 10))} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-gray-400 block">RAM size (MB)</label>
-                  <input type="number" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white" value={memoryMb} onChange={e => setMemoryMb(parseInt(e.target.value, 10))} />
+                  <input type="number" className="w-full al-input" value={memoryMb} onChange={e => setMemoryMb(parseInt(e.target.value, 10))} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-gray-400 block">Disk size (GB)</label>
-                  <input type="number" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-1.5 text-white" value={storageGb} onChange={e => setStorageGb(parseInt(e.target.value, 10))} />
+                  <input type="number" className="w-full al-input" value={storageGb} onChange={e => setStorageGb(parseInt(e.target.value, 10))} />
                 </div>
               </div>
 
-              <button type="submit" className="w-full glass-button-primary py-2 text-white font-bold rounded-btn mt-6">
+              <button type="submit" className="w-full al-btn al-btn-primary py-2.5 font-bold mt-6">
                 Save & Connect
               </button>
             </form>

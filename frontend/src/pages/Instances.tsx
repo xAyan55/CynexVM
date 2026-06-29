@@ -89,7 +89,7 @@ export const Instances: React.FC = () => {
           </button>
           <button 
             onClick={() => setShowDeployWizard(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all hover:scale-[1.02] shadow-glow"
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all"
           >
             <Plus size={16} /> Deploy VPS
           </button>
@@ -98,11 +98,11 @@ export const Instances: React.FC = () => {
 
       {/* Filter search box */}
       <div className="relative max-w-md">
-        <Search className="absolute left-3.5 top-3 text-gray-500" size={16} />
+        <Search className="absolute left-3 top-3 text-gray-500" size={14} />
         <input 
           type="text" 
           placeholder="Filter by VMID, name, or template..."
-          className="w-full bg-white/5 border border-borderSubtle rounded-btn pl-11 pr-4 py-2.5 text-xs text-white placeholder-gray-500 focus:border-blue-600 focus:outline-none"
+          className="w-full al-input pl-9"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -120,7 +120,7 @@ export const Instances: React.FC = () => {
           {filtered.map(inst => (
             <div 
               key={inst.id} 
-              className="glass-panel p-5 rounded-card border border-borderSubtle flex flex-col justify-between space-y-4 hover:scale-[1.01] transition-all duration-200"
+              className="al-card p-5 flex flex-col justify-between space-y-4 transition-all duration-150"
             >
               {/* Header inside Card */}
               <div className="flex items-start justify-between">

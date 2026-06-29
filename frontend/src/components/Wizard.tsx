@@ -41,7 +41,6 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Fetch nodes for selection
     const fetchNodes = async () => {
       try {
         const token = localStorage.getItem('accessToken');
@@ -106,7 +105,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   ];
 
   return (
-    <div className="w-full max-w-4xl glass-panel rounded-card border border-borderSubtle overflow-hidden flex flex-col h-[75vh]">
+    <div className="w-full max-w-4xl al-card overflow-hidden flex flex-col h-[75vh]">
       {/* Header and Step Stepper indicator */}
       <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-white">Create LXC VPS Wizard</h2>
@@ -139,7 +138,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           {/* STEP 1: Choose Node */}
           {step === 1 && (
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold">Select Hypervisor Node</h3>
+              <h3 className="text-sm font-semibold text-white">Select Hypervisor Node</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {nodes.length === 0 ? (
                   <div className="p-6 border border-borderSubtle rounded-card text-center text-gray-500 text-xs col-span-2">
@@ -150,8 +149,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                     <button
                       key={n.id}
                       onClick={() => setSelectedNodeId(n.id)}
-                      className={`p-4 border rounded-card text-left transition-all hover:scale-[1.02] flex items-start gap-3 ${
-                        selectedNodeId === n.id ? 'border-blue-600 bg-blue-600/5 shadow-glow' : 'border-borderSubtle bg-white/5'
+                      className={`p-4 border rounded-card text-left transition-all flex items-start gap-3 ${
+                        selectedNodeId === n.id ? 'border-blue-600 bg-blue-600/5' : 'border-borderSubtle bg-white/5'
                       }`}
                     >
                       <Server className="text-blue-500 mt-1 shrink-0" />
@@ -174,14 +173,14 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           {/* STEP 2: Choose Template */}
           {step === 2 && (
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold">Select Container OS Template</h3>
+              <h3 className="text-sm font-semibold text-white">Select Container OS Template</h3>
               <div className="space-y-2">
                 {templates.map(t => (
                   <button
                     key={t.path}
                     onClick={() => setSelectedTemplate(t.path)}
                     className={`w-full p-4 border rounded-card text-left transition-all flex items-center justify-between ${
-                      selectedTemplate === t.path ? 'border-blue-600 bg-blue-600/5 shadow-glow' : 'border-borderSubtle bg-white/5'
+                      selectedTemplate === t.path ? 'border-blue-600 bg-blue-600/5' : 'border-borderSubtle bg-white/5'
                     }`}
                   >
                     <div>
@@ -197,7 +196,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           {/* STEP 3: Resources */}
           {step === 3 && (
             <div className="space-y-4 max-w-md">
-              <h3 className="text-sm font-semibold">Configure CPU and Memory</h3>
+              <h3 className="text-sm font-semibold text-white">Configure CPU and Memory</h3>
               <div className="space-y-4 text-xs">
                 <div>
                   <label className="text-[11px] text-gray-400 block mb-1">CPU Cores ({cpuCores})</label>
@@ -224,7 +223,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           {/* STEP 4: Disk Storage */}
           {step === 4 && (
             <div className="space-y-4 max-w-md">
-              <h3 className="text-sm font-semibold">Container Virtual Disk Allocation</h3>
+              <h3 className="text-sm font-semibold text-white">Container Virtual Disk Allocation</h3>
               <div>
                 <label className="text-[11px] text-gray-400 block mb-1">Storage space ({storageGb} GB)</label>
                 <input 
@@ -240,12 +239,12 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           {/* STEP 5: Network bridge and IP */}
           {step === 5 && (
             <div className="space-y-4 max-w-md">
-              <h3 className="text-sm font-semibold">Configure Networking Interfaces</h3>
+              <h3 className="text-sm font-semibold text-white">Configure Networking Interfaces</h3>
               <div className="space-y-3 text-xs">
                 <div>
                   <label className="text-[11px] text-gray-400 block mb-1">Bridge Interface</label>
                   <input 
-                    type="text" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-white"
+                    type="text" className="w-full al-input"
                     value={netBridge}
                     onChange={e => setNetBridge(e.target.value)}
                   />
@@ -253,7 +252,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                 <div>
                   <label className="text-[11px] text-gray-400 block mb-1">IP Allocation (DHCP or static IP/CIDR)</label>
                   <input 
-                    type="text" placeholder="dhcp or 10.0.0.100/24" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-white"
+                    type="text" placeholder="dhcp or 10.0.0.100/24" className="w-full al-input"
                     value={netIp}
                     onChange={e => setNetIp(e.target.value)}
                   />
@@ -265,13 +264,13 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           {/* STEP 6: Hostname, VMID & Password */}
           {step === 6 && (
             <div className="space-y-4 max-w-md">
-              <h3 className="text-sm font-semibold">Configure Container credentials</h3>
+              <h3 className="text-sm font-semibold text-white">Configure Container Credentials</h3>
               <div className="space-y-3 text-xs">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[11px] text-gray-400 block mb-1">VPS Friendly Name</label>
                     <input 
-                      type="text" placeholder="my-webserver" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-white"
+                      type="text" placeholder="my-webserver" className="w-full al-input"
                       value={name}
                       onChange={e => setName(e.target.value)}
                       required
@@ -280,7 +279,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                   <div>
                     <label className="text-[11px] text-gray-400 block mb-1">Proxmox VMID</label>
                     <input 
-                      type="number" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-white"
+                      type="number" className="w-full al-input"
                       value={vmid}
                       onChange={e => setVmid(parseInt(e.target.value, 10))}
                       required
@@ -290,7 +289,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                 <div>
                   <label className="text-[11px] text-gray-400 block mb-1">Hostname (FQDN)</label>
                   <input 
-                    type="text" placeholder="web.cynexvm.local" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-white"
+                    type="text" placeholder="web.cynexvm.local" className="w-full al-input"
                     value={hostname}
                     onChange={e => setHostname(e.target.value)}
                     required
@@ -299,7 +298,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                 <div>
                   <label className="text-[11px] text-gray-400 block mb-1">Root SSH Password</label>
                   <input 
-                    type="password" placeholder="••••••••" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-white"
+                    type="password" placeholder="••••••••" className="w-full al-input"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     required
@@ -313,7 +312,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           {step === 7 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Review Configuration Allocations</h3>
-              <div className="glass-panel p-4 rounded-card border border-borderSubtle divide-y divide-borderSubtle text-xs">
+              <div className="al-card p-4 divide-y divide-borderSubtle text-xs">
                 <div className="py-2 flex justify-between">
                   <span className="text-gray-500">Node ID</span>
                   <span className="font-mono">{selectedNodeId}</span>
@@ -331,7 +330,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                   <span className="font-semibold">{memoryMb} MB</span>
                 </div>
                 <div className="py-2 flex justify-between">
-                  <span className="text-gray-500">Disk space</span>
+                  <span className="text-gray-500">Disk Space</span>
                   <span className="font-semibold">{storageGb} GB</span>
                 </div>
                 <div className="py-2 flex justify-between">
@@ -352,7 +351,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
       <div className="p-4 border-t border-borderSubtle bg-white/5 flex items-center justify-between">
         <button 
           onClick={step === 1 ? onCancel : () => setStep(step - 1)}
-          className="flex items-center gap-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-btn text-xs font-semibold transition-all"
+          className="flex items-center gap-1 al-btn al-btn-secondary"
         >
           <ChevronLeft size={16} /> Back
         </button>
@@ -360,14 +359,14 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
         {step < 7 ? (
           <button 
             onClick={() => setStep(step + 1)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-semibold transition-all hover:scale-[1.02] shadow-glow"
+            className="flex items-center gap-1.5 al-btn al-btn-primary"
           >
             Next <ChevronRight size={16} />
           </button>
         ) : (
           <button 
             onClick={handleDeploy}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all hover:scale-[1.02] shadow-glow"
+            className="al-btn al-btn-primary px-6"
             disabled={loading}
           >
             {loading ? 'Queueing Deploy...' : 'Deploy VPS'}

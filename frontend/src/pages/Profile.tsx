@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Key, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { Shield, AlertTriangle, CheckCircle, X } from 'lucide-react';
 
 export const Profile: React.FC = () => {
   const { user, fetchProfile } = useAuth();
@@ -91,7 +91,7 @@ export const Profile: React.FC = () => {
       )}
 
       {/* Account Info Card */}
-      <div className="glass-panel p-6 rounded-card border border-borderSubtle space-y-4 text-xs">
+      <div className="al-card p-6 space-y-4 text-xs">
         <h3 className="text-sm font-semibold text-white">General Information</h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -110,7 +110,7 @@ export const Profile: React.FC = () => {
       </div>
 
       {/* Security Policies 2FA */}
-      <div className="glass-panel p-6 rounded-card border border-borderSubtle space-y-4 text-xs">
+      <div className="al-card p-6 space-y-4 text-xs">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <Shield size={16} className="text-blue-500" /> Multi-Factor Authentication
         </h3>
@@ -129,7 +129,7 @@ export const Profile: React.FC = () => {
             </div>
             <button 
               onClick={handleStart2faSetup}
-              className="glass-button-primary px-4 py-2 text-white font-bold rounded-btn"
+              className="al-btn al-btn-primary px-4 py-2 font-bold"
               disabled={loading}
             >
               Configure 2FA Setup
@@ -141,7 +141,7 @@ export const Profile: React.FC = () => {
       {/* 2FA Setup Modal Popup */}
       {show2faSetup && (
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm glass-panel rounded-card border border-borderSubtle overflow-hidden flex flex-col p-6 space-y-4">
+          <div className="w-full max-w-sm al-card p-6 space-y-4 flex flex-col overflow-hidden">
             <div className="flex items-center justify-between border-b border-borderSubtle pb-2">
               <h3 className="text-sm font-bold text-white">Configure Authenticator App</h3>
               <button onClick={() => setShow2faSetup(false)} className="text-gray-400 hover:text-white"><X size={16} /></button>
@@ -155,7 +155,7 @@ export const Profile: React.FC = () => {
               <img src={qrCode} alt="2FA QR Code" className="w-full h-full" />
             </div>
 
-            <div className="text-center font-mono text-[10px] bg-white/5 p-2 rounded text-gray-300 select-all border border-borderSubtle">
+            <div className="text-center font-mono text-[10px] bg-secondaryBg/40 p-2 rounded text-gray-300 select-all border border-borderSubtle">
               Secret: {secret}
             </div>
 
@@ -163,11 +163,11 @@ export const Profile: React.FC = () => {
               <div>
                 <label className="text-[10px] text-gray-500 block mb-1">Enter Authenticator Verification Code</label>
                 <input 
-                  type="text" maxLength={6} placeholder="123456" className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-center text-white tracking-widest font-mono focus:outline-none focus:border-blue-600"
+                  type="text" maxLength={6} placeholder="123456" className="w-full al-input text-center tracking-widest font-mono"
                   value={verificationCode} onChange={e => setVerificationCode(e.target.value)} required
                 />
               </div>
-              <button type="submit" className="w-full glass-button-primary py-2 text-white font-bold rounded-btn" disabled={loading}>
+              <button type="submit" className="w-full al-btn al-btn-primary py-2.5 font-bold" disabled={loading}>
                 Verify and Activate
               </button>
             </form>

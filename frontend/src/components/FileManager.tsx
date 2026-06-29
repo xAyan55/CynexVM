@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { 
   Folder, File, ChevronRight, FolderPlus, FilePlus, 
-  Trash2, Shield, ArrowUp, ArrowDown, X, Save 
+  Trash2, Shield, X, Save 
 } from 'lucide-react';
 
 interface FileItem {
@@ -177,7 +177,6 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFolderName) return;
-    // Chmod/create dir is normally a mkdir command. We write a directory by writing a placeholder file
     const targetPath = currentPath.endsWith('/') ? `${currentPath}${newFolderName}/.keep` : `${currentPath}/${newFolderName}/.keep`;
     try {
       const res = await fetch(`/api/v1/instances/${instanceId}/files/write`, {
@@ -249,7 +248,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
     <div className="space-y-4">
       {/* 1. Connection prompt */}
       {!connected && (
-        <form onSubmit={handleConnect} className="glass-panel p-4 rounded-btn border border-borderSubtle space-y-4 max-w-md mx-auto">
+        <form onSubmit={handleConnect} className="al-card p-4 space-y-4 max-w-md mx-auto">
           <h3 className="text-sm font-semibold text-white">Access SFTP File Manager</h3>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="space-y-3">
@@ -258,7 +257,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
               <input 
                 type="text" 
                 placeholder="10.0.0.x" 
-                className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+                className="w-full al-input"
                 value={creds.host}
                 onChange={e => setCreds({...creds, host: e.target.value})}
                 required
@@ -269,7 +268,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
                 <label className="text-[11px] text-gray-400 block mb-1">Username</label>
                 <input 
                   type="text" 
-                  className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+                  className="w-full al-input"
                   value={creds.username}
                   onChange={e => setCreds({...creds, username: e.target.value})}
                   required
@@ -279,14 +278,14 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
                 <label className="text-[11px] text-gray-400 block mb-1">Password</label>
                 <input 
                   type="password" 
-                  className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+                  className="w-full al-input"
                   value={creds.password}
                   onChange={e => setCreds({...creds, password: e.target.value})}
                 />
               </div>
             </div>
           </div>
-          <button type="submit" className="w-full glass-button-primary py-2 text-xs text-white font-semibold">
+          <button type="submit" className="w-full al-btn al-btn-primary py-2 text-xs font-semibold">
             Open File Manager
           </button>
         </form>
@@ -296,7 +295,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {connected && (
         <div className="space-y-3">
           {/* Breadcrumb Navigation and Action Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-white/5 border border-borderSubtle rounded-btn">
+          <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-secondaryBg/20 border border-borderSubtle rounded-btn">
             {/* Breadcrumb */}
             <div className="flex items-center gap-1.5 text-xs text-gray-400">
               <button onClick={() => setCurrentPath('/root')} className="hover:text-white font-semibold">root</button>
@@ -312,13 +311,13 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setShowFileModal(true)} 
-                className="flex items-center gap-1 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-borderSubtle rounded-btn text-xs"
+                className="flex items-center gap-1 px-3 py-1.5 al-btn al-btn-secondary text-xs"
               >
                 <FilePlus size={14} /> Create File
               </button>
               <button 
                 onClick={() => setShowFolderModal(true)} 
-                className="flex items-center gap-1 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-borderSubtle rounded-btn text-xs"
+                className="flex items-center gap-1 px-3 py-1.5 al-btn al-btn-secondary text-xs"
               >
                 <FolderPlus size={14} /> Create Folder
               </button>
@@ -326,7 +325,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
           </div>
 
           {/* Files List Table */}
-          <div className="glass-panel rounded-card border border-borderSubtle overflow-hidden">
+          <div className="al-card overflow-hidden">
             {loading ? (
               <div className="p-12 text-center text-gray-500 text-sm">Loading folder contents...</div>
             ) : (
@@ -375,7 +374,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
                         </button>
                         <button 
                           onClick={() => handleDelete(item)} 
-                          className="p-1.5 hover:bg-red-500/10 rounded text-gray-400 hover:text-red-400"
+                          className="p-1.5 hover:bg-red-500/10 rounded text-gray-400 hover:text-red-450"
                           title="Delete"
                         >
                           <Trash2 size={14} />
@@ -393,13 +392,13 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {/* 3. Monaco Code Editor Modal */}
       {editingFile && (
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl glass-panel rounded-card border border-borderSubtle flex flex-col h-[85vh]">
+          <div className="w-full max-w-4xl al-card flex flex-col h-[85vh] overflow-hidden">
             <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
               <span className="text-xs font-mono text-gray-300 truncate max-w-xl">{editingFile.path}</span>
               <div className="flex items-center gap-2">
                 <button 
                   onClick={handleSaveFile} 
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-semibold"
+                  className="flex items-center gap-1.5 px-3 py-1.5 al-btn al-btn-primary text-xs"
                   disabled={editorLoading}
                 >
                   <Save size={14} /> Save
@@ -434,19 +433,19 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {/* 4. Folder Creation Modal */}
       {showFolderModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateFolder} className="glass-panel p-6 rounded-card border border-borderSubtle space-y-4 max-w-sm w-full">
+          <form onSubmit={handleCreateFolder} className="al-card p-6 space-y-4 max-w-sm w-full">
             <h3 className="text-sm font-semibold text-white">Create New Folder</h3>
             <input 
               type="text" 
               placeholder="Folder Name" 
-              className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+              className="w-full al-input"
               value={newFolderName}
               onChange={e => setNewFolderName(e.target.value)}
               required
             />
             <div className="flex justify-end gap-2 text-xs">
-              <button type="button" onClick={() => setShowFolderModal(false)} className="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-btn text-gray-300">Cancel</button>
-              <button type="submit" className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn font-semibold">Create</button>
+              <button type="button" onClick={() => setShowFolderModal(false)} className="px-3 py-2 al-btn al-btn-secondary">Cancel</button>
+              <button type="submit" className="px-3 py-2 al-btn al-btn-primary">Create</button>
             </div>
           </form>
         </div>
@@ -455,19 +454,19 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {/* 5. File Creation Modal */}
       {showFileModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateFile} className="glass-panel p-6 rounded-card border border-borderSubtle space-y-4 max-w-sm w-full">
+          <form onSubmit={handleCreateFile} className="al-card p-6 space-y-4 max-w-sm w-full">
             <h3 className="text-sm font-semibold text-white">Create New File</h3>
             <input 
               type="text" 
               placeholder="Filename" 
-              className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+              className="w-full al-input"
               value={newFileName}
               onChange={e => setNewFileName(e.target.value)}
               required
             />
             <div className="flex justify-end gap-2 text-xs">
-              <button type="button" onClick={() => setShowFileModal(false)} className="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-btn text-gray-300">Cancel</button>
-              <button type="submit" className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn font-semibold">Create</button>
+              <button type="button" onClick={() => setShowFileModal(false)} className="px-3 py-2 al-btn al-btn-secondary">Cancel</button>
+              <button type="submit" className="px-3 py-2 al-btn al-btn-primary">Create</button>
             </div>
           </form>
         </div>
@@ -476,22 +475,22 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {/* 6. Chmod Permissions Modal */}
       {chmodTarget && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleChmod} className="glass-panel p-6 rounded-card border border-borderSubtle space-y-4 max-w-sm w-full">
+          <form onSubmit={handleChmod} className="al-card p-6 space-y-4 max-w-sm w-full">
             <h3 className="text-sm font-semibold text-white">Modify Permissions (Chmod)</h3>
             <div>
               <label className="text-[10px] text-gray-400 block mb-1">Octal Mode (e.g. 0755)</label>
               <input 
                 type="text" 
                 placeholder="0755" 
-                className="w-full bg-white/5 border border-borderSubtle rounded-btn px-3 py-2 text-xs text-white focus:border-blue-600 focus:outline-none"
+                className="w-full al-input"
                 value={chmodTarget.mode}
                 onChange={e => setChmodTarget({ ...chmodTarget, mode: e.target.value })}
                 required
               />
             </div>
             <div className="flex justify-end gap-2 text-xs">
-              <button type="button" onClick={() => setChmodTarget(null)} className="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-btn text-gray-300">Cancel</button>
-              <button type="submit" className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn font-semibold">Apply Mode</button>
+              <button type="button" onClick={() => setChmodTarget(null)} className="px-3 py-2 al-btn al-btn-secondary">Cancel</button>
+              <button type="submit" className="px-3 py-2 al-btn al-btn-primary">Apply Mode</button>
             </div>
           </form>
         </div>
