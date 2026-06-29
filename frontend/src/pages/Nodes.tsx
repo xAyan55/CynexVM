@@ -22,8 +22,8 @@ export const Nodes: React.FC = () => {
   // Form states
   const [name, setName] = useState('');
   const [hostname, setHostname] = useState('');
-  const [port, setPort] = useState(8006);
-  const [username, setUsername] = useState('root@pam');
+  const [port, setPort] = useState(22);
+  const [username, setUsername] = useState('root');
   const [password, setPassword] = useState('');
   const [cpuCores, setCpuCores] = useState(8);
   const [memoryMb, setMemoryMb] = useState(16384);
@@ -199,7 +199,7 @@ export const Nodes: React.FC = () => {
               <div>
                 <label className="block text-neutral-400 mb-1">Friendly Name</label>
                 <input 
-                  type="text" placeholder="pve-node-1" className="w-full al-input" 
+                  type="text" placeholder="lxd-node-1" className="w-full al-input" 
                   value={name} onChange={e => setName(e.target.value)} required 
                 />
               </div>
@@ -214,25 +214,25 @@ export const Nodes: React.FC = () => {
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-neutral-400 mb-1">Port</label>
+                <label className="block text-neutral-400 mb-1">SSH Port</label>
                 <input 
-                  type="number" className="w-full al-input" 
+                  type="number" placeholder="22" className="w-full al-input" 
                   value={port} onChange={e => setPort(parseInt(e.target.value, 10))} required 
                 />
               </div>
               <div className="col-span-2">
-                <label className="block text-neutral-400 mb-1">Realm Username</label>
+                <label className="block text-neutral-400 mb-1">SSH Username</label>
                 <input 
-                  type="text" className="w-full al-input" 
+                  type="text" placeholder="root" className="w-full al-input" 
                   value={username} onChange={e => setUsername(e.target.value)} required 
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-neutral-400 mb-1">Realm Password/Token</label>
+              <label className="block text-neutral-400 mb-1">SSH Password / Private Key</label>
               <input 
-                type="password" placeholder="••••••••" className="w-full al-input" 
+                type="password" placeholder="SSH password or private key" className="w-full al-input" 
                 value={password} onChange={e => setPassword(e.target.value)} required 
               />
             </div>
