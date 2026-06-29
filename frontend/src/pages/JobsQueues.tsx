@@ -2,11 +2,7 @@ import React, { useState } from 'react';
 import { Play, RotateCw, AlertTriangle } from 'lucide-react';
 
 export const JobsQueues: React.FC = () => {
-  const [jobs] = useState([
-    { id: '1', task: 'vzdump-backup-100', node: 'pve-node-1', status: 'completed', runtime: '48s', time: '10 mins ago' },
-    { id: '2', task: 'lxc-create-101', node: 'pve-node-1', status: 'completed', runtime: '2m 14s', time: '1 hour ago' },
-    { id: '3', task: 'lxc-destroy-99', node: 'pve-node-2', status: 'failed', runtime: '4s', time: '2 hours ago' }
-  ]);
+  const [jobs] = useState<any[]>([]);
 
   return (
     <div className="space-y-6">

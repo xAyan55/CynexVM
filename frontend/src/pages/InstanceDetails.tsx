@@ -46,18 +46,12 @@ export const InstanceDetails: React.FC = () => {
   const [activeTab, setActiveTab] = useState('console');
 
   // Resource History for Live Sparklines
-  const [cpuHistory, setCpuHistory] = useState<number[]>([12, 14, 11, 15, 18, 19, 14, 16, 20, 22]);
-  const [ramHistory, setRamHistory] = useState<number[]>([44, 45, 44, 46, 45, 48, 47, 49, 48, 48]);
-  const [diskHistory, setDiskHistory] = useState<number[]>([35, 35, 35, 35, 35, 35, 35, 35, 35, 35]);
+  const [cpuHistory, setCpuHistory] = useState<number[]>([]);
+  const [ramHistory, setRamHistory] = useState<number[]>([]);
+  const [diskHistory, setDiskHistory] = useState<number[]>([]);
 
   // Processes Tab States
-  const [processes, setProcesses] = useState([
-    { pid: 1, name: 'systemd', cpu: 0.1, mem: 2.4 },
-    { pid: 102, name: 'nginx: master process', cpu: 1.4, mem: 12.8 },
-    { pid: 103, name: 'nginx: worker process', cpu: 6.2, mem: 24.1 },
-    { pid: 215, name: 'node /var/www/server.js', cpu: 4.8, mem: 48.9 },
-    { pid: 485, name: 'sshd: root@pts/0', cpu: 0.0, mem: 4.2 }
-  ]);
+  const [processes, setProcesses] = useState<{ pid: number; name: string; cpu: number; mem: number }[]>([]);
   const [procSearch, setProcSearch] = useState('');
   const [procSort, setProcSort] = useState<'cpu' | 'mem'>('cpu');
 
@@ -72,19 +66,15 @@ export const InstanceDetails: React.FC = () => {
 
   // Settings & Custom properties
   const [settingsName, setSettingsName] = useState('');
-  const [settingsCores, setSettingsCores] = useState(2);
-  const [settingsMemory, setSettingsMemory] = useState(1024);
-  const [settingsStorage, setSettingsStorage] = useState(20);
-  const [notes, setNotes] = useState('Production database host container.');
-  const [tags, setTags] = useState<string[]>(['Database', 'Primary']);
+  const [settingsCores, setSettingsCores] = useState(1);
+  const [settingsMemory, setSettingsMemory] = useState(512);
+  const [settingsStorage, setSettingsStorage] = useState(10);
+  const [notes, setNotes] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
 
   // Activity logs feed
-  const [activities] = useState([
-    { id: 1, user: 'admin', action: 'Restarted instance', time: 'Just Now' },
-    { id: 2, user: 'admin', action: 'Modified CPU Core limits', time: '10 mins ago' },
-    { id: 3, user: 'system', action: 'Nightly backup snapshot created', time: '1 day ago' }
-  ]);
+  const [activities, setActivities] = useState<any[]>([]);
 
   useEffect(() => {
     fetchInstanceDetails();
@@ -123,16 +113,11 @@ export const InstanceDetails: React.FC = () => {
         setSettingsMemory(data.memoryMb);
         setSettingsCores(data.cpuCores);
         setSettingsStorage(data.storageGb);
-        setBackups([
-          { id: 'b1', name: 'vzdump-lxc-daily-backup', sizeBytes: 256214580, status: 'completed', createdAt: new Date(Date.now() - 24 * 3600 * 1000) }
-        ]);
-        setSnapshots([
-          { id: 's1', name: 'pre-upgrade-checkpoint', description: 'Snapshot prior to package upgrades', status: 'active', createdAt: new Date(Date.now() - 48 * 3600 * 1000) }
-        ]);
-        setFirewallRules([
-          { id: 'f1', direction: 'inbound', action: 'ACCEPT', protocol: 'tcp', port: '80', sourceIp: '0.0.0.0/0' },
-          { id: 'f2', direction: 'inbound', action: 'ACCEPT', protocol: 'tcp', port: '22', sourceIp: '192.168.1.0/24' }
-        ]);
+        setBackups(data.backups || []);
+        setSnapshots(data.snapshots || []);
+        setFirewallRules(data.firewallRules || []);
+        setNotes(data.notes || '');
+        setTags(data.tags?.map((t: any) => t.tag?.name) || []);
       } else {
         navigate('/');
       }

@@ -2,11 +2,7 @@ import React, { useState } from 'react';
 import { Upload, HardDrive, Trash2 } from 'lucide-react';
 
 export const TemplatesImages: React.FC = () => {
-  const [templates, setTemplates] = useState([
-    { id: '1', name: 'ubuntu-22.04-standard_22.04-1_amd64.tar.zst', size: '124 MB', type: 'LXC Template', storage: 'local' },
-    { id: '2', name: 'debian-12-standard_12.2-1_amd64.tar.zst', size: '118 MB', type: 'LXC Template', storage: 'local' },
-    { id: '3', name: 'alpine-3.19-default_20231215_amd64.tar.gz', size: '3.8 MB', type: 'LXC Template', storage: 'local' }
-  ]);
+  const [templates, setTemplates] = useState<any[]>([]);
 
   const [uploading, setUploading] = useState(false);
 
