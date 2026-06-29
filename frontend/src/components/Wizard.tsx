@@ -30,7 +30,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   const [cpuCores, setCpuCores] = useState(1);
   const [memoryMb, setMemoryMb] = useState(512);
   const [storageGb, setStorageGb] = useState(10);
-  const [netBridge, setNetBridge] = useState('vmbr0');
+  const [netBridge, setNetBridge] = useState('lxdbr0');
   const [netIp, setNetIp] = useState('dhcp');
   const [vmid, setVmid] = useState(100);
   const [name, setName] = useState('');
