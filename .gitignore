@@ -1,0 +1,25 @@
+# Dependency directories
+node_modules/
+
+# Compile outputs
+dist/
+/frontend/dist
+/backend/dist
+
+# Local databases and environment configuration
+*.db
+*.db-journal
+.env
+backend/.env
+
+# Temporary zip files and extracted references
+airlink-panel.zip
+airlink_extracted/
+
+# System logs and task states
+.system_generated/
+.gemini/
+.git/
+.vscode/
+.idea/
+.DS_Store

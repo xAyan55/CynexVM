@@ -1,0 +1,335 @@
+// Prisma Schema for CynexVM Control Panel
+// For SQLite (Development): Use provider = "sqlite"
+// For PostgreSQL (Production): Change to provider = "postgresql"
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// User & Access Control System
+model User {
+  id                 String              @id @default(uuid())
+  username           String              @unique
+  email              String              @unique
+  passwordHash       String
+  twoFactorSecret    String?
+  twoFactorEnabled   Boolean             @default(false)
+  emailVerified      Boolean             @default(false)
+  emailVerifyToken   String?
+  resetPasswordToken String?
+  resetTokenExpires  DateTime?
+  lockedUntil        DateTime?
+  loginAttempts      Int                 @default(0)
+  passwordChangedAt  DateTime            @default(now())
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  sessions           Session[]
+  apiKeys            ApiKey[]
+  auditLogs          AuditLog[]
+  passwordHistories  PasswordHistory[]
+  trustedDevices     TrustedDevice[]
+  groupMemberships   UserGroupMember[]
+  roles              UserRole[]
+}
+
+model Role {
+  id              String           @id @default(uuid())
+  name            String           @unique // e.g. "Admin", "Billing", "Developer"
+  description     String?
+  permissions     RolePermission[]
+  users           UserRole[]
+  groups          RoleGroup[]
+}
+
+model Permission {
+  id              String           @id @default(uuid())
+  name            String           @unique // e.g. "instance.start", "node.create"
+  description     String?
+  groupId         String
+  group           PermissionGroup  @relation(fields: [groupId], references: [id])
+  roles           RolePermission[]
+}
+
+model PermissionGroup {
+  id          String       @id @default(uuid())
+  name        String       @unique // e.g. "Virtualization", "Billing", "User Management"
+  description String?
+  permissions Permission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model UserGroup {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  description String?
+  members     UserGroupMember[]
+  roles       RoleGroup[]
+}
+
+model UserGroupMember {
+  userId  String
+  groupId String
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+}
+
+model RoleGroup {
+  roleId  String
+  groupId String
+  role    Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  group   UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, groupId])
+}
+
+model PasswordHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  token        String   @unique
+  refreshToken String   @unique
+  ipAddress    String?
+  userAgent    String?
+  deviceId     String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TrustedDevice {
+  id          String   @id @default(uuid())
+  userId      String
+  deviceId    String   @unique
+  deviceName  String?
+  trustToken  String   @unique
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id          String         @id @default(uuid())
+  userId      String
+  name        String
+  keyHash     String         @unique
+  expiresAt   DateTime?
+  createdAt   DateTime       @default(now())
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopes      ApiKeyScope[]
+}
+
+model ApiScope {
+  id          String         @id @default(uuid())
+  name        String         @unique // e.g. "vps:read", "vps:write"
+  description String?
+  apiKeys     ApiKeyScope[]
+}
+
+model ApiKeyScope {
+  apiKeyId String
+  scopeId  String
+  apiKey   ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  scope    ApiScope @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  @@id([apiKeyId, scopeId])
+}
+
+// Secret Management
+model Secret {
+  id                 String         @id @default(uuid())
+  keyIdentifier      String         @unique // e.g. "proxmox.token.node1"
+  valueEncrypted     String         // AES-256-GCM encrypted payload
+  encryptionVersion  String         // e.g. "v1"
+  lastRotated        DateTime       @default(now())
+  lastVerified       DateTime?
+  createdBy          String?
+  updatedBy          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+// Virtualization Infrastructure
+model Node {
+  id              String      @id @default(uuid())
+  name            String      @unique
+  hostname        String
+  apiUrl          String
+  apiToken        String
+  sslFingerprint  String?
+  cpuCores        Int         @default(0)
+  memoryMb        Int         @default(0)
+  storageGb       Int         @default(0)
+  status          String      @default("offline") // "online" | "offline" | "maintenance"
+  latency         Int         @default(0)
+  version         String      @default("unknown")
+  clusterName     String?
+  maintenanceMode Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  instances       Instance[]
+  tags            NodeTag[]
+}
+
+model Instance {
+  id               String          @id @default(uuid())
+  nodeId           String
+  vmid             Int
+  name             String
+  status           String          @default("stopped") // "running" | "stopped" | "suspended" | "starting" | "stopping"
+  cpuCores         Int             @default(1)
+  memoryMb         Int             @default(512)
+  storageGb        Int             @default(10)
+  ipAddress        String?
+  gateway          String?
+  osTemplate       String
+  password         String?
+  hostname         String
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  node             Node            @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  backups          Backup[]
+  snapshots        Snapshot[]
+  firewallRules    FirewallRule[]
+  tags             InstanceTag[]
+}
+
+model Tag {
+  id         String        @id @default(uuid())
+  name       String        @unique
+  color      String        // HEX code
+  instances  InstanceTag[]
+  nodes      NodeTag[]
+}
+
+model InstanceTag {
+  instanceId String
+  tagId      String
+  instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([instanceId, tagId])
+}
+
+model NodeTag {
+  nodeId String
+  tagId  String
+  node   Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([nodeId, tagId])
+}
+
+// Storage Abstraction
+model StorageProvider {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  type           String   // "local" | "s3" | "r2" | "b2" | "sftp" | "nfs"
+  secretId       String   // References Secret.keyIdentifier
+  status         String   @default("active") // "active" | "inactive"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  backups        Backup[]
+}
+
+model Backup {
+  id                String          @id @default(uuid())
+  instanceId        String
+  storageProviderId String
+  name              String
+  sizeBytes         Int             @default(0)
+  status            String          @default("pending") // "pending" | "completed" | "failed"
+  type              String          @default("manual") // "manual" | "scheduled"
+  path              String?
+  encryptionEnabled Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  instance          Instance        @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  storageProvider   StorageProvider @relation(fields: [storageProviderId], references: [id], onDelete: Cascade)
+}
+
+model Snapshot {
+  id          String   @id @default(uuid())
+  instanceId  String
+  name        String
+  description String?
+  status      String   @default("active") // "active" | "restoring"
+  createdAt   DateTime @default(now())
+  instance    Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+}
+
+model FirewallRule {
+  id         String   @id @default(uuid())
+  instanceId String
+  direction  String   // "inbound" | "outbound"
+  action     String   // "ACCEPT" | "DROP" | "REJECT"
+  protocol   String   // "tcp" | "udp" | "icmp"
+  port       String?  // Port number or range
+  sourceIp   String?  @default("0.0.0.0/0")
+  createdAt  DateTime @default(now())
+  instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+}
+
+// Monitoring & Audit
+model AuditLog {
+  id                 String   @id @default(uuid())
+  requestId          String?  // Correlation ID
+  sessionId          String?
+  userId             String?
+  username           String   @default("system")
+  action             String   // e.g. "auth.login", "vps.reboot"
+  details            String?
+  severity           String   @default("info")
+  targetResourceId   String?
+  targetResourceType String?  // e.g. "Instance", "Node"
+  previousState      String?  // JSON text representation
+  newState           String?  // JSON text representation
+  executionTimeMs    Int      @default(0)
+  success            Boolean  @default(true)
+  failureReason      String?
+  httpMethod         String?
+  endpoint           String?
+  ipAddress          String?
+  userAgent          String?
+  country            String?  // GeoIP resolve
+  createdAt          DateTime @default(now())
+  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
