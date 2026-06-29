@@ -96,21 +96,20 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
     }
 
     const decoded = jwt.verify(token, CONFIG.JWT_SECRET) as any;
+    if (!decoded || !decoded.userId) {
+      return res.status(401).json({ error: 'Invalid authentication token payload' });
+    }
     
-    // Check if session exists and is not expired
-    const activeSession = await db.session.findUnique({
-      where: { token },
+    // Check user and permissions directly from decoded token
+    const user = await db.user.findUnique({
+      where: { id: decoded.userId },
       include: {
-        user: {
+        roles: {
           include: {
-            roles: {
+            role: {
               include: {
-                role: {
-                  include: {
-                    permissions: {
-                      include: { permission: true }
-                    }
-                  }
+                permissions: {
+                  include: { permission: true }
                 }
               }
             }
@@ -119,11 +118,10 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
       }
     });
 
-    if (!activeSession || activeSession.expiresAt < new Date()) {
-      return res.status(401).json({ error: 'Session expired or invalidated' });
+    if (!user) {
+      return res.status(401).json({ error: 'User associated with token not found' });
     }
 
-    const user = activeSession.user;
     const permissions = user.roles.flatMap(ur => 
       ur.role.permissions.map(rp => rp.permission.name)
     );

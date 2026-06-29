@@ -13,7 +13,7 @@ const router = Router();
 
 // Helpers
 const generateAccessToken = (userId: string): string => {
-  return jwt.sign({ userId }, CONFIG.JWT_SECRET, { expiresIn: '15m' });
+  return jwt.sign({ userId }, CONFIG.JWT_SECRET, { expiresIn: '7d' });
 };
 
 const generateRefreshToken = (sessionId: string): string => {
