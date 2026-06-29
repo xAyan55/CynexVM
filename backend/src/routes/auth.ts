@@ -493,4 +493,23 @@ router.get('/me', authenticate, async (req: AuthenticatedRequest, res) => {
   }
 });
 
+/**
+ * @route   GET /api/v1/auth/users
+ * @desc    Get list of all users
+ */
+router.get('/users', authenticate, async (req, res) => {
+  try {
+    const users = await db.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        email: true
+      }
+    });
+    return res.status(200).json(users);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 export default router;

@@ -145,15 +145,51 @@ export class LxdService {
       const containerName = `cynex-${vmid}`;
       const { stdout } = await execAsync(`/snap/bin/lxc info ${containerName} --format=json`);
       const info = JSON.parse(stdout);
+
+      const state = info.state || {};
+      const memory = state.memory || {};
+      const disk = state.disk || {};
+      const rootDisk = disk.root || {};
+      const net = state.network || {};
+
+      // Aggregate network bytes from all interfaces
+      let netin = 0, netout = 0;
+      for (const iface of Object.values(net) as any[]) {
+        if (iface.counters) {
+          netin += iface.counters.bytes_received || 0;
+          netout += iface.counters.bytes_sent || 0;
+        }
+      }
+
+      // Try to get CPU usage from /proc inside container
+      let cpuPercent = 0;
+      try {
+        const { stdout: cpuOut } = await execAsync(`/snap/bin/lxc exec ${containerName} -- cat /proc/stat 2>/dev/null`);
+        const cpuLine = cpuOut.split('\n').find((l: string) => l.startsWith('cpu '));
+        if (cpuLine) {
+          const fields = cpuLine.split(/\s+/).slice(1).map(Number);
+          const idle = fields[3] || 0;
+          const total = fields.reduce((a: number, b: number) => a + b, 0);
+          cpuPercent = total > 0 ? ((total - idle) / total) : 0;
+        }
+      } catch (_) {
+        cpuPercent = 0;
+      }
+
       return {
-        status: info.status?.toLowerCase() || 'stopped',
-        cpu: 0.05,
-        mem: info.state?.memory?.usage || 0,
-        maxmem: info.state?.memory?.usage_peak || 512 * 1024 * 1024,
-        uptime: info.state?.uptime || 0
+        status: (info.status || 'Stopped').toLowerCase(),
+        cpu: cpuPercent,
+        maxcpu: 1,
+        mem: memory.usage || 0,
+        maxmem: memory.usage_peak || 512 * 1024 * 1024,
+        disk: rootDisk.usage || 0,
+        maxdisk: rootDisk.total || 10 * 1024 * 1024 * 1024,
+        netin,
+        netout,
+        uptime: state.pid ? Math.floor(Date.now() / 1000) - (state.started_at ? Math.floor(new Date(state.started_at).getTime() / 1000) : 0) : 0
       };
     } catch (_) {
-      return { status: 'stopped', cpu: 0, mem: 0, maxmem: 512 * 1024 * 1024, uptime: 0 };
+      return { status: 'stopped', cpu: 0, maxcpu: 1, mem: 0, maxmem: 512 * 1024 * 1024, disk: 0, maxdisk: 10 * 1024 * 1024 * 1024, netin: 0, netout: 0, uptime: 0 };
     }
   }
 

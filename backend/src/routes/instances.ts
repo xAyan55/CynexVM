@@ -77,7 +77,7 @@ router.get('/:id', authenticate, requirePermission('instance.read'), async (req,
  * @desc    Deploys a new LXC container (VM Creation Wizard)
  */
 router.post('/', authenticate, requirePermission('instance.create'), async (req, res) => {
-  const { nodeId, name, vmid, osTemplate, cpuCores, memoryMb, storageGb, hostname, password } = req.body;
+  const { nodeId, userId, name, vmid, osTemplate, cpuCores, memoryMb, storageGb, hostname, password } = req.body;
   
   if (!nodeId || !name || !vmid || !osTemplate || !hostname) {
     return res.status(400).json({ error: 'Missing deployment parameters' });
@@ -109,6 +109,7 @@ router.post('/', authenticate, requirePermission('instance.create'), async (req,
     const instance = await db.instance.create({
       data: {
         nodeId,
+        userId: userId || null,
         vmid: parseInt(vmid, 10),
         name,
         cpuCores: parseInt(cpuCores || '1', 10),

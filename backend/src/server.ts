@@ -4,6 +4,7 @@ import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { CONFIG } from './config';
 import { apiLimiter } from './middleware/rateLimit';
 
@@ -16,7 +17,6 @@ import settingRoutes from './routes/settings';
 import auditLogRoutes from './routes/auditLogs';
 
 // Services
-import { SshService } from './services/sshService';
 import { LxdService } from './services/lxdService';
 import { db } from './db';
 
@@ -26,18 +26,18 @@ const server = http.createServer(app);
 // Socket.IO configuration
 const io = new Server(server, {
   cors: {
-    origin: '*', // In production, restrict to panel domain name
+    origin: '*',
     methods: ['GET', 'POST']
   }
 });
 
 // Security & Parsing Middleware
 app.use(helmet({
-  contentSecurityPolicy: CONFIG.NODE_ENV === 'production' ? undefined : false, // Disable for dev source maps
+  contentSecurityPolicy: CONFIG.NODE_ENV === 'production' ? undefined : false,
 }));
 
 app.use(cors({
-  origin: true, // Allow frontend domain
+  origin: true,
   credentials: true
 }));
 
@@ -56,6 +56,20 @@ app.use('/api/v1/instances/:id/files', fileRoutes);
 app.use('/api/v1/settings', settingRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
 
+// Folder management API
+app.patch('/api/v1/instances/:id/folder', async (req, res) => {
+  try {
+    const { folderId } = req.body;
+    await db.instance.update({
+      where: { id: req.params.id },
+      data: { folderId: folderId || null }
+    });
+    return res.status(200).json({ message: 'Folder updated' });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to update folder' });
+  }
+});
+
 // Catch-all 404
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
@@ -71,9 +85,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 io.on('connection', (socket: Socket) => {
   console.log(`[Socket] Client connected: ${socket.id}`);
   let metricsInterval: NodeJS.Timeout | null = null;
+  let terminalProcess: ChildProcessWithoutNullStreams | null = null;
 
-  // 1. Terminal Proxy Session handler
-  socket.on('terminal.init', async (params: { instanceId: string; host?: string; username?: string; password?: string }) => {
+  // 1. Terminal via lxc exec (direct container shell, no SSH)
+  socket.on('terminal.init', async (params: { instanceId: string }) => {
     try {
       const instance = await db.instance.findUnique({
         where: { id: params.instanceId },
@@ -81,27 +96,51 @@ io.on('connection', (socket: Socket) => {
       });
 
       if (!instance) {
-        return socket.emit('terminal.log', '\r\n*** ERROR: LXC Container instance not found ***\r\n');
+        return socket.emit('terminal.log', '\r\n*** ERROR: Container not found ***\r\n');
       }
 
-      const host = params.host || instance.ipAddress;
-      const username = params.username || 'root';
-      const password = params.password || instance.password || undefined;
+      const containerName = `cynex-${instance.vmid}`;
+      socket.emit('terminal.log', `\r\nAttaching to container ${containerName}...\r\n`);
 
-      if (!host) {
-        return socket.emit('terminal.log', '\r\n*** ERROR: No IP Address configured on container ***\r\n');
-      }
-
-      socket.emit('terminal.log', `\r\nConnecting to SSH server at ${host}:22...\r\n`);
-      
-      SshService.handleTerminalSocket(socket, {
-        host,
-        username,
-        password,
-        port: 22
+      // Spawn lxc exec with interactive bash shell
+      const proc = spawn('/snap/bin/lxc', ['exec', containerName, '--', '/bin/bash'], {
+        env: { ...process.env, TERM: 'xterm-256color' }
       });
+
+      terminalProcess = proc;
+
+      proc.stdout.on('data', (data: Buffer) => {
+        socket.emit('terminal.data', data.toString('utf8'));
+      });
+
+      proc.stderr.on('data', (data: Buffer) => {
+        socket.emit('terminal.data', data.toString('utf8'));
+      });
+
+      proc.on('close', (code: number | null) => {
+        socket.emit('terminal.log', `\r\n*** Session ended (exit ${code}) ***\r\n`);
+        terminalProcess = null;
+      });
+
+      proc.on('error', (err: Error) => {
+        socket.emit('terminal.log', `\r\n*** Failed to attach: ${err.message} ***\r\n`);
+        terminalProcess = null;
+      });
+
+      // Relay user keystrokes to the container shell
+      socket.on('terminal.input', (data: string) => {
+        if (proc && !proc.killed) {
+          proc.stdin.write(data);
+        }
+      });
+
+      socket.on('terminal.resize', (size: { cols: number; rows: number }) => {
+        // LXC exec doesn't support resize signals directly via spawn,
+        // but the terminal will still function correctly
+      });
+
     } catch (err: any) {
-      socket.emit('terminal.log', `\r\n*** ERROR negotiating terminal tunnel: ${err.message} ***\r\n`);
+      socket.emit('terminal.log', `\r\n*** ERROR: ${err.message} ***\r\n`);
     }
   });
 
@@ -118,27 +157,27 @@ io.on('connection', (socket: Socket) => {
 
         if (!instance) return;
 
-        const live = await LxdService.getContainerStatus(instance.vmid);
+        const live = await LxdService.getContainerStatus(instance.vmid, instance.node);
 
         socket.emit('metrics.data', {
-          cpu: live.cpu,
-          maxcpu: live.maxcpu,
-          mem: live.mem,
-          maxmem: live.maxmem,
-          disk: live.disk,
-          maxdisk: live.maxdisk,
-          netin: live.netin,
-          netout: live.netout,
-          uptime: live.uptime
+          cpu: live.cpu || 0,
+          maxcpu: live.maxcpu || 1,
+          mem: live.mem || 0,
+          maxmem: live.maxmem || instance.memoryMb * 1024 * 1024,
+          disk: live.disk || 0,
+          maxdisk: live.maxdisk || instance.storageGb * 1024 * 1024 * 1024,
+          netin: live.netin || 0,
+          netout: live.netout || 0,
+          uptime: live.uptime || 0,
+          status: live.status || instance.status
         });
       } catch (err: any) {
         socket.emit('metrics.error', { message: err.message });
       }
     };
 
-    // Emit immediately then set interval
     await emitMetrics();
-    metricsInterval = setInterval(emitMetrics, 2000); // 2 second polls
+    metricsInterval = setInterval(emitMetrics, 2000);
   });
 
   socket.on('metrics.unsubscribe', () => {
@@ -150,6 +189,9 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('disconnect', () => {
     if (metricsInterval) clearInterval(metricsInterval);
+    if (terminalProcess && !terminalProcess.killed) {
+      terminalProcess.kill();
+    }
     console.log(`[Socket] Client disconnected: ${socket.id}`);
   });
 });

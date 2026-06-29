@@ -36,6 +36,7 @@ model User {
   trustedDevices     TrustedDevice[]
   groupMemberships   UserGroupMember[]
   roles              UserRole[]
+  instances          Instance[]
 }
 
 model Role {
@@ -206,6 +207,7 @@ model Node {
 model Instance {
   id               String          @id @default(uuid())
   nodeId           String
+  userId           String?
   vmid             Int
   name             String
   status           String          @default("stopped") // "running" | "stopped" | "suspended" | "starting" | "stopping"
@@ -218,9 +220,11 @@ model Instance {
   password         String?
   hostname         String
   notes            String?
+  folderId         String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   node             Node            @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   backups          Backup[]
   snapshots        Snapshot[]
   firewallRules    FirewallRule[]

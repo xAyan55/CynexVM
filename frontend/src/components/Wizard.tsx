@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Server, FileText, Cpu, HardDrive, Globe, Keyboard, CheckCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Server, User as UserIcon, FileText, Cpu, HardDrive, Globe, Keyboard, CheckCircle } from 'lucide-react';
 
 interface Node {
   id: string;
@@ -10,6 +10,12 @@ interface Node {
   storageGb: number;
 }
 
+interface User {
+  id: string;
+  username: string;
+  email: string;
+}
+
 interface WizardProps {
   onSuccess: () => void;
   onCancel: () => void;
@@ -18,15 +24,18 @@ interface WizardProps {
 export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   const [step, setStep] = useState(1);
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  
   const [templates] = useState([
-    { name: 'Ubuntu 22.04 LTS (Jammy)', path: 'local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst' },
-    { name: 'Debian 12 Bookworm', path: 'local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst' },
-    { name: 'Debian 11 Bullseye', path: 'local:vztmpl/debian-11-standard_11.7-1_amd64.tar.zst' }
+    { name: 'Ubuntu 22.04 LTS (Jammy)', path: 'images:ubuntu/22.04' },
+    { name: 'Debian 12 Bookworm', path: 'images:debian/12' },
+    { name: 'Alpine 3.19 Standard', path: 'images:alpine/3.19' }
   ]);
 
   // Form Fields
   const [selectedNodeId, setSelectedNodeId] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('images:ubuntu/22.04');
   const [cpuCores, setCpuCores] = useState(1);
   const [memoryMb, setMemoryMb] = useState(512);
   const [storageGb, setStorageGb] = useState(10);
@@ -54,7 +63,23 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
         }
       } catch (_) {}
     };
+
+    const fetchUsers = async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        const res = await fetch('/api/v1/auth/users', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUsers(data);
+          if (data.length > 0) setSelectedUserId(data[0].id);
+        }
+      } catch (_) {}
+    };
+
     fetchNodes();
+    fetchUsers();
   }, []);
 
   const handleDeploy = async () => {
@@ -70,9 +95,10 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
         },
         body: JSON.stringify({
           nodeId: selectedNodeId,
+          userId: selectedUserId || undefined,
           name,
           vmid,
-          osTemplate: selectedTemplate || templates[0].path,
+          osTemplate: selectedTemplate,
           cpuCores,
           memoryMb,
           storageGb,
@@ -96,20 +122,23 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
 
   const stepsList = [
     { num: 1, title: 'Choose Node', desc: 'Select target hypervisor host', icon: Server },
-    { num: 2, title: 'OS Template', desc: 'Select Linux operating system image', icon: FileText },
-    { num: 3, title: 'Resources', desc: 'Configure CPU cores and Memory allocations', icon: Cpu },
-    { num: 4, title: 'Storage size', desc: 'Define primary container virtual disk size', icon: HardDrive },
-    { num: 5, title: 'Networking', desc: 'Assign network bridge interfaces and IP settings', icon: Globe },
-    { num: 6, title: 'Container Config', desc: 'Configure hostnames, VMID, and passwords', icon: Keyboard },
-    { num: 7, title: 'Review & Deploy', desc: 'Validate allocations and launch deployment', icon: CheckCircle },
+    { num: 2, title: 'Assign Owner', desc: 'Assign instance to user', icon: UserIcon },
+    { num: 3, title: 'OS Template', desc: 'Select Linux operating system image', icon: FileText },
+    { num: 4, title: 'Resources', desc: 'Configure CPU cores and Memory allocations', icon: Cpu },
+    { num: 5, title: 'Storage size', desc: 'Define primary container virtual disk size', icon: HardDrive },
+    { num: 6, title: 'Networking', desc: 'Assign network bridge interfaces and IP settings', icon: Globe },
+    { num: 7, title: 'Container Config', desc: 'Configure hostnames, VMID, and passwords', icon: Keyboard },
+    { num: 8, title: 'Review & Deploy', desc: 'Validate allocations and launch deployment', icon: CheckCircle },
   ];
+
+  const selectedUser = users.find(u => u.id === selectedUserId);
 
   return (
     <div className="w-full max-w-4xl al-card overflow-hidden flex flex-col h-[75vh]">
       {/* Header and Step Stepper indicator */}
       <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-white">Create LXC VPS Wizard</h2>
-        <span className="text-xs text-gray-500">Step {step} of 7</span>
+        <span className="text-xs text-gray-500">Step {step} of 8</span>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
@@ -142,7 +171,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {nodes.length === 0 ? (
                   <div className="p-6 border border-borderSubtle rounded-card text-center text-gray-500 text-xs col-span-2">
-                    No nodes configured. Run the onboarding wizard.
+                    No nodes configured.
                   </div>
                 ) : (
                   nodes.map(n => (
@@ -170,8 +199,33 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 2: Choose Template */}
+          {/* STEP 2: Assign Owner */}
           {step === 2 && (
+            <div className="space-y-4 max-w-md">
+              <h3 className="text-sm font-semibold text-white">Assign owner for this VPS</h3>
+              <div className="space-y-2">
+                <label className="text-[11px] text-gray-400 block mb-1">Select User</label>
+                {users.length === 0 ? (
+                  <p className="text-xs text-neutral-500">No users found.</p>
+                ) : (
+                  <select
+                    className="w-full al-input text-xs"
+                    value={selectedUserId}
+                    onChange={e => setSelectedUserId(e.target.value)}
+                  >
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.username} ({u.email})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: Choose Template */}
+          {step === 3 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Select Container OS Template</h3>
               <div className="space-y-2">
@@ -193,8 +247,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 3: Resources */}
-          {step === 3 && (
+          {/* STEP 4: Resources */}
+          {step === 4 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Configure CPU and Memory</h3>
               <div className="space-y-4 text-xs">
@@ -220,8 +274,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 4: Disk Storage */}
-          {step === 4 && (
+          {/* STEP 5: Disk Storage */}
+          {step === 5 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Container Virtual Disk Allocation</h3>
               <div>
@@ -236,8 +290,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 5: Network bridge and IP */}
-          {step === 5 && (
+          {/* STEP 6: Network bridge and IP */}
+          {step === 6 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Configure Networking Interfaces</h3>
               <div className="space-y-3 text-xs">
@@ -261,8 +315,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 6: Hostname, VMID & Password */}
-          {step === 6 && (
+          {/* STEP 7: Hostname, VMID & Password */}
+          {step === 7 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Configure Container Credentials</h3>
               <div className="space-y-3 text-xs">
@@ -308,8 +362,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 7: Review & Deploy */}
-          {step === 7 && (
+          {/* STEP 8: Review & Deploy */}
+          {step === 8 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Review Configuration Allocations</h3>
               <div className="al-card p-4 divide-y divide-borderSubtle text-xs">
@@ -318,8 +372,14 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                   <span className="font-mono">{selectedNodeId}</span>
                 </div>
                 <div className="py-2 flex justify-between">
+                  <span className="text-gray-500">Owner User</span>
+                  <span className="font-semibold text-gray-200">
+                    {selectedUser ? `${selectedUser.username} (${selectedUser.email})` : 'None'}
+                  </span>
+                </div>
+                <div className="py-2 flex justify-between">
                   <span className="text-gray-500">Container Template</span>
-                  <span className="font-mono text-gray-400 truncate max-w-xs">{selectedTemplate || templates[0].name}</span>
+                  <span className="font-mono text-gray-400 truncate max-w-xs">{selectedTemplate}</span>
                 </div>
                 <div className="py-2 flex justify-between">
                   <span className="text-gray-500">CPU Allocation</span>
@@ -356,7 +416,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           <ChevronLeft size={16} /> Back
         </button>
 
-        {step < 7 ? (
+        {step < 8 ? (
           <button 
             onClick={() => setStep(step + 1)}
             className="flex items-center gap-1.5 al-btn al-btn-primary"

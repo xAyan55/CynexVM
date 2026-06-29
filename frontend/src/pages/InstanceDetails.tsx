@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { Console } from '../components/Console';
 import { FileManager } from '../components/FileManager';
 import { 
   Terminal as TermIcon, Folder, Globe, ShieldCheck, Settings as SetIcon,
-  ArrowLeft, Trash2, Cpu, HardDrive, Shield, RefreshCw, Layers, ListFilter, ClipboardCheck, Tag
+  ArrowLeft, Trash2, Cpu, HardDrive, Shield, RefreshCw, Layers, ListFilter, 
+  ClipboardCheck, Tag, Activity, Clock, Wifi, WifiOff, ArrowDownToLine, ArrowUpFromLine
 } from 'lucide-react';
 
-// Self-contained custom SVG sparkline renderer for live diagnostics
-const Sparkline: React.FC<{ data: number[]; color: string; label: string; maxVal: number; suffix?: string }> = ({ data, color, label, maxVal, suffix = '%' }) => {
+// Sparkline for live metric visualization
+const Sparkline: React.FC<{ data: number[]; color: string; label: string; maxVal: number; suffix?: string; currentLabel?: string }> = ({ data, color, label, maxVal, suffix = '%', currentLabel }) => {
   const width = 160;
   const height = 30;
   const currentVal = data.length > 0 ? data[data.length - 1] : 0;
@@ -25,7 +26,7 @@ const Sparkline: React.FC<{ data: number[]; color: string; label: string; maxVal
       <div>
         <p className="text-[10px] text-neutral-500 uppercase font-semibold">{label}</p>
         <p className="text-sm font-semibold text-neutral-800 dark:text-white mt-0.5">
-          {currentVal.toFixed(1)}{suffix}
+          {currentLabel || `${currentVal.toFixed(1)}${suffix}`}
         </p>
       </div>
       <svg width={width} height={height} className="overflow-visible ml-auto">
@@ -33,6 +34,26 @@ const Sparkline: React.FC<{ data: number[]; color: string; label: string; maxVal
       </svg>
     </div>
   );
+};
+
+// Format bytes to human-readable
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
+// Format uptime seconds to human-readable
+const formatUptime = (seconds: number): string => {
+  if (!seconds || seconds <= 0) return '—';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 };
 
 export const InstanceDetails: React.FC = () => {
@@ -43,24 +64,22 @@ export const InstanceDetails: React.FC = () => {
   const [instance, setInstance] = useState<any | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('console');
+  const [activeTab, setActiveTab] = useState('overview');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [powerError, setPowerError] = useState<string | null>(null);
 
   // Resource History for Live Sparklines
   const [cpuHistory, setCpuHistory] = useState<number[]>([]);
   const [ramHistory, setRamHistory] = useState<number[]>([]);
   const [diskHistory, setDiskHistory] = useState<number[]>([]);
-
-  // Processes Tab States
-  const [processes, setProcesses] = useState<{ pid: number; name: string; cpu: number; mem: number }[]>([]);
-  const [procSearch, setProcSearch] = useState('');
-  const [procSort, setProcSort] = useState<'cpu' | 'mem'>('cpu');
+  const [netInHistory, setNetInHistory] = useState<number[]>([]);
+  const [netOutHistory, setNetOutHistory] = useState<number[]>([]);
 
   // Network & Firewall
   const [firewallRules, setFirewallRules] = useState<any[]>([]);
   const [newRule, setNewRule] = useState({ direction: 'inbound', action: 'ACCEPT', protocol: 'tcp', port: '', sourceIp: '0.0.0.0/0' });
 
   // Snapshots & backups
-  const [backups, setBackups] = useState<any[]>([]);
   const [snapshots, setSnapshots] = useState<any[]>([]);
   const [newSnapshotName, setNewSnapshotName] = useState('');
 
@@ -73,9 +92,6 @@ export const InstanceDetails: React.FC = () => {
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
 
-  // Activity logs feed
-  const [activities, setActivities] = useState<any[]>([]);
-
   useEffect(() => {
     fetchInstanceDetails();
   }, [id]);
@@ -87,10 +103,16 @@ export const InstanceDetails: React.FC = () => {
     socket.emit('metrics.subscribe', { instanceId: id });
     socket.on('metrics.data', (data) => {
       setLiveMetrics(data);
-      // Append and slide metric values (max 20 data points)
-      setCpuHistory(prev => [...prev.slice(-19), data.cpu * 100]);
-      setRamHistory(prev => [...prev.slice(-19), (data.mem / data.maxmem) * 100]);
-      setDiskHistory(prev => [...prev.slice(-19), (data.disk / data.maxdisk) * 100]);
+      setCpuHistory(prev => [...prev.slice(-19), (data.cpu || 0) * 100]);
+      setRamHistory(prev => [...prev.slice(-19), data.maxmem > 0 ? (data.mem / data.maxmem) * 100 : 0]);
+      setDiskHistory(prev => [...prev.slice(-19), data.maxdisk > 0 ? (data.disk / data.maxdisk) * 100 : 0]);
+      setNetInHistory(prev => [...prev.slice(-19), data.netin || 0]);
+      setNetOutHistory(prev => [...prev.slice(-19), data.netout || 0]);
+
+      // Update instance status from live metrics
+      if (data.status) {
+        setInstance((prev: any) => prev ? { ...prev, status: data.status } : prev);
+      }
     });
 
     return () => {
@@ -113,7 +135,6 @@ export const InstanceDetails: React.FC = () => {
         setSettingsMemory(data.memoryMb);
         setSettingsCores(data.cpuCores);
         setSettingsStorage(data.storageGb);
-        setBackups(data.backups || []);
         setSnapshots(data.snapshots || []);
         setFirewallRules(data.firewallRules || []);
         setNotes(data.notes || '');
@@ -128,19 +149,29 @@ export const InstanceDetails: React.FC = () => {
     }
   };
 
-  const handlePowerAction = async (action: string) => {
+  const handlePowerAction = useCallback(async (action: string) => {
     if (!instance) return;
+    setActionLoading(action);
+    setPowerError(null);
     try {
       const token = localStorage.getItem('accessToken');
       const res = await fetch(`/api/v1/instances/${instance.id}/${action}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (res.ok) {
-        setInstance({ ...instance, status: action === 'start' ? 'running' : action === 'stop' ? 'stopped' : instance.status });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `${action} failed`);
       }
-    } catch (_) {}
-  };
+      // Wait briefly for LXD to process the action, then refresh
+      await new Promise(r => setTimeout(r, 1500));
+      await fetchInstanceDetails();
+    } catch (err: any) {
+      setPowerError(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  }, [instance, id]);
 
   const handleAddFirewallRule = (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,10 +224,6 @@ export const InstanceDetails: React.FC = () => {
     } catch (_) {}
   };
 
-  const sortedProcesses = [...processes]
-    .filter(p => p.name.toLowerCase().includes(procSearch.toLowerCase()))
-    .sort((a, b) => b[procSort] - a[procSort]);
-
   if (loading || !instance) {
     return <div className="p-12 text-center text-neutral-500 text-sm">Loading instance configuration...</div>;
   }
@@ -233,20 +260,20 @@ export const InstanceDetails: React.FC = () => {
         </button>
       </div>
 
-      {/* Live Graph Diagnostic widgets */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <Sparkline data={cpuHistory} color="#ef4444" label="CPU utilization" maxVal={100} />
-        <Sparkline data={ramHistory} color="#3b82f6" label="RAM allocation" maxVal={100} />
-        <Sparkline data={diskHistory} color="#10b981" label="Disk consumption" maxVal={100} />
-      </div>
+      {/* Power error banner */}
+      {powerError && (
+        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs">
+          Power action failed: {powerError}
+        </div>
+      )}
 
       {/* Tabs navigation list */}
       <div>
         <nav className="flex relative">
           <ul role="list" className="flex min-w-full mt-1.5 flex-none gap-x-2 text-sm font-normal leading-6 text-neutral-600 dark:text-neutral-400 overflow-x-auto">
             {[
+              { id: 'overview', label: 'Overview', icon: Activity },
               { id: 'console', label: 'Console', icon: TermIcon },
-              { id: 'processes', label: 'Processes', icon: ListFilter },
               { id: 'files', label: 'Files', icon: Folder },
               { id: 'network', label: 'Networking', icon: Globe },
               { id: 'backups', label: 'Backups', icon: ShieldCheck },
@@ -270,60 +297,138 @@ export const InstanceDetails: React.FC = () => {
 
       {/* Tab contents panels */}
 
+      {/* 0. OVERVIEW TAB (Default) */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Live Sparkline Graphs */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Sparkline data={cpuHistory} color="#ef4444" label="CPU Usage" maxVal={100} />
+            <Sparkline 
+              data={ramHistory} 
+              color="#3b82f6" 
+              label="Memory" 
+              maxVal={100} 
+              currentLabel={liveMetrics ? `${formatBytes(liveMetrics.mem)} / ${formatBytes(liveMetrics.maxmem)}` : 'Waiting...'}
+            />
+            <Sparkline 
+              data={diskHistory} 
+              color="#10b981" 
+              label="Disk" 
+              maxVal={100} 
+              currentLabel={liveMetrics ? `${formatBytes(liveMetrics.disk)} / ${formatBytes(liveMetrics.maxdisk)}` : 'Waiting...'}
+            />
+          </div>
+
+          {/* Info Cards Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Uptime */}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-neutral-200 dark:border-neutral-800/30">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock size={14} className="text-blue-400" />
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">Uptime</span>
+              </div>
+              <p className="text-lg font-semibold text-white">{formatUptime(liveMetrics?.uptime)}</p>
+            </div>
+
+            {/* Network In */}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-neutral-200 dark:border-neutral-800/30">
+              <div className="flex items-center gap-2 mb-2">
+                <ArrowDownToLine size={14} className="text-green-400" />
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">Network In</span>
+              </div>
+              <p className="text-lg font-semibold text-white">{formatBytes(liveMetrics?.netin || 0)}</p>
+            </div>
+
+            {/* Network Out */}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-neutral-200 dark:border-neutral-800/30">
+              <div className="flex items-center gap-2 mb-2">
+                <ArrowUpFromLine size={14} className="text-orange-400" />
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">Network Out</span>
+              </div>
+              <p className="text-lg font-semibold text-white">{formatBytes(liveMetrics?.netout || 0)}</p>
+            </div>
+
+            {/* Status */}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-neutral-200 dark:border-neutral-800/30">
+              <div className="flex items-center gap-2 mb-2">
+                {instance.status === 'running' ? <Wifi size={14} className="text-emerald-400" /> : <WifiOff size={14} className="text-red-400" />}
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">Status</span>
+              </div>
+              <p className={`text-lg font-semibold capitalize ${instance.status === 'running' ? 'text-emerald-400' : 'text-red-400'}`}>
+                {instance.status}
+              </p>
+            </div>
+          </div>
+
+          {/* Instance Configuration Details */}
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30">
+            <h3 className="text-sm font-semibold text-white mb-4">Container Configuration</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+              <div>
+                <span className="block text-[10px] text-neutral-500 uppercase mb-0.5">Hostname</span>
+                <span className="text-neutral-200 font-mono font-medium">{instance.hostname}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-neutral-500 uppercase mb-0.5">IP Address</span>
+                <span className="text-neutral-200 font-mono font-medium">{instance.ipAddress || 'DHCP'}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-neutral-500 uppercase mb-0.5">OS Template</span>
+                <span className="text-neutral-200 font-medium">{instance.osTemplate}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-neutral-500 uppercase mb-0.5">VMID</span>
+                <span className="text-neutral-200 font-mono font-medium">{instance.vmid}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-neutral-500 uppercase mb-0.5">CPU Cores</span>
+                <span className="text-neutral-200 font-medium">{instance.cpuCores} vCPU</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-neutral-500 uppercase mb-0.5">Memory</span>
+                <span className="text-neutral-200 font-medium">{instance.memoryMb} MB</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-neutral-500 uppercase mb-0.5">Storage</span>
+                <span className="text-neutral-200 font-medium">{instance.storageGb} GB</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-neutral-500 uppercase mb-0.5">Created</span>
+                <span className="text-neutral-200 font-medium">{new Date(instance.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* No metrics warning */}
+          {!liveMetrics && (
+            <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl text-amber-400 text-xs flex items-center gap-2">
+              <RefreshCw size={14} className="animate-spin" />
+              Waiting for live metrics from container... Make sure the container is running.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 1. CONSOLE TAB */}
       {activeTab === 'console' && (
         <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
           <Console 
             instanceId={instance.id} 
             status={instance.status} 
-            onPowerAction={handlePowerAction} 
+            onPowerAction={handlePowerAction}
+            actionLoading={actionLoading}
           />
         </div>
       )}
 
-      {/* 2. PROCESSES TAB */}
-      {activeTab === 'processes' && (
-        <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-semibold text-white">LXC Thread Processes</h3>
-            <input 
-              type="text" placeholder="Search processes..." className="al-input text-xs"
-              value={procSearch} onChange={e => setProcSearch(e.target.value)}
-            />
-          </div>
-          <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50 dark:bg-neutral-800/50 text-neutral-800 dark:text-white">
-                <tr>
-                  <th className="p-3">PID</th>
-                  <th className="p-3">Task Name</th>
-                  <th className="p-3 cursor-pointer" onClick={() => setProcSort('cpu')}>CPU %</th>
-                  <th className="p-3 cursor-pointer" onClick={() => setProcSort('mem')}>Memory MB</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
-                {sortedProcesses.map(p => (
-                  <tr key={p.pid} className="hover:bg-white/5">
-                    <td className="p-3 font-mono">{p.pid}</td>
-                    <td className="p-3 font-medium">{p.name}</td>
-                    <td className="p-3">{p.cpu.toFixed(1)}%</td>
-                    <td className="p-3">{p.mem.toFixed(1)} MB</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* 3. FILES TAB */}
+      {/* 2. FILES TAB */}
       {activeTab === 'files' && (
         <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
           <FileManager instanceId={instance.id} />
         </div>
       )}
 
-      {/* 4. NETWORKING TAB */}
+      {/* 3. NETWORKING TAB */}
       {activeTab === 'network' && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
@@ -331,7 +436,7 @@ export const InstanceDetails: React.FC = () => {
             <div className="grid grid-cols-2 gap-4 text-sm text-neutral-400">
               <div>
                 <span className="block text-[10px] text-neutral-500">Bridge Interface</span>
-                <span className="text-neutral-800 dark:text-neutral-300 font-medium">vmbr0</span>
+                <span className="text-neutral-800 dark:text-neutral-300 font-medium">lxdbr0</span>
               </div>
               <div>
                 <span className="block text-[10px] text-neutral-500">Address IP/CIDR</span>
@@ -343,30 +448,16 @@ export const InstanceDetails: React.FC = () => {
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
             <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Firewall Rules</h2>
             <form onSubmit={handleAddFirewallRule} className="grid grid-cols-5 gap-3">
-              <select 
-                className="al-input text-xs" 
-                value={newRule.direction} 
-                onChange={e => setNewRule({...newRule, direction: e.target.value})}
-              >
+              <select className="al-input text-xs" value={newRule.direction} onChange={e => setNewRule({...newRule, direction: e.target.value})}>
                 <option value="inbound">Inbound</option>
                 <option value="outbound">Outbound</option>
               </select>
-              <select 
-                className="al-input text-xs" 
-                value={newRule.action} 
-                onChange={e => setNewRule({...newRule, action: e.target.value})}
-              >
+              <select className="al-input text-xs" value={newRule.action} onChange={e => setNewRule({...newRule, action: e.target.value})}>
                 <option value="ACCEPT">ACCEPT</option>
                 <option value="DROP">DROP</option>
               </select>
-              <input 
-                type="text" placeholder="Port" className="al-input text-xs" 
-                value={newRule.port} onChange={e => setNewRule({...newRule, port: e.target.value})} required 
-              />
-              <input 
-                type="text" placeholder="Source IP" className="al-input text-xs" 
-                value={newRule.sourceIp} onChange={e => setNewRule({...newRule, sourceIp: e.target.value})} required 
-              />
+              <input type="text" placeholder="Port" className="al-input text-xs" value={newRule.port} onChange={e => setNewRule({...newRule, port: e.target.value})} required />
+              <input type="text" placeholder="Source IP" className="al-input text-xs" value={newRule.sourceIp} onChange={e => setNewRule({...newRule, sourceIp: e.target.value})} required />
               <button type="submit" className="al-btn al-btn-primary py-2 text-xs">Add Rule</button>
             </form>
 
@@ -383,6 +474,9 @@ export const InstanceDetails: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                  {firewallRules.length === 0 && (
+                    <tr><td colSpan={6} className="p-6 text-center text-neutral-500">No firewall rules configured</td></tr>
+                  )}
                   {firewallRules.map(r => (
                     <tr key={r.id}>
                       <td className="p-3 font-semibold uppercase">{r.direction}</td>
@@ -404,16 +498,13 @@ export const InstanceDetails: React.FC = () => {
         </div>
       )}
 
-      {/* 5. BACKUPS TAB */}
+      {/* 4. BACKUPS TAB */}
       {activeTab === 'backups' && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
             <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Snapshots Checkpoints</h2>
             <form onSubmit={handleCreateSnapshot} className="flex gap-3">
-              <input 
-                type="text" placeholder="Snapshot name" className="flex-1 al-input" 
-                value={newSnapshotName} onChange={e => setNewSnapshotName(e.target.value)} required 
-              />
+              <input type="text" placeholder="Snapshot name" className="flex-1 al-input" value={newSnapshotName} onChange={e => setNewSnapshotName(e.target.value)} required />
               <button type="submit" className="al-btn al-btn-primary">Create Snapshot</button>
             </form>
 
@@ -428,6 +519,9 @@ export const InstanceDetails: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                  {snapshots.length === 0 && (
+                    <tr><td colSpan={4} className="p-6 text-center text-neutral-500">No snapshots found</td></tr>
+                  )}
                   {snapshots.map(s => (
                     <tr key={s.id}>
                       <td className="p-3 font-medium text-neutral-900 dark:text-white">{s.name}</td>
@@ -445,23 +539,15 @@ export const InstanceDetails: React.FC = () => {
         </div>
       )}
 
-      {/* 6. ACTIVITY & NOTES TAB */}
+      {/* 5. ACTIVITY & NOTES TAB */}
       {activeTab === 'activity' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Notes & Tags card */}
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-sm space-y-4">
             <h3 className="text-sm font-semibold text-white">Container metadata</h3>
-            
-            {/* Notes */}
             <div className="space-y-1">
               <label className="text-[10px] text-neutral-500 uppercase font-semibold">Instance Notes</label>
-              <textarea 
-                className="w-full al-input text-xs resize-none" rows={3}
-                value={notes} onChange={e => setNotes(e.target.value)}
-              />
+              <textarea className="w-full al-input text-xs resize-none" rows={3} value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
-
-            {/* Tags */}
             <div className="space-y-2">
               <label className="text-[10px] text-neutral-500 uppercase font-semibold block">Tags</label>
               <div className="flex flex-wrap gap-1.5">
@@ -473,83 +559,52 @@ export const InstanceDetails: React.FC = () => {
                 ))}
               </div>
               <form onSubmit={handleAddTag} className="flex gap-2">
-                <input 
-                  type="text" placeholder="Add tag..." className="flex-1 al-input text-[11px] py-1 px-2"
-                  value={newTag} onChange={e => setNewTag(e.target.value)}
-                />
+                <input type="text" placeholder="Add tag..." className="flex-1 al-input text-[11px] py-1 px-2" value={newTag} onChange={e => setNewTag(e.target.value)} />
                 <button type="submit" className="p-1 border border-neutral-700 rounded-lg text-neutral-350 hover:text-white">
                   <Tag size={12} />
                 </button>
               </form>
             </div>
           </div>
-
-          {/* Activity Feed log streams */}
-          <div className="md:col-span-2 bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-sm space-y-4">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <div className="md:col-span-2 bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-sm">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-4">
               <ClipboardCheck size={18} /> Operation Log Feed
             </h3>
-            <div className="divide-y divide-neutral-850 text-xs">
-              {activities.map(a => (
-                <div key={a.id} className="py-2.5 flex justify-between">
-                  <div>
-                    <span className="font-semibold text-white mr-2">{a.user}</span>
-                    <span className="text-neutral-400">{a.action}</span>
-                  </div>
-                  <span className="text-neutral-500 font-mono text-[11px]">{a.time}</span>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs text-neutral-500 text-center py-8">No activity logs recorded yet.</p>
           </div>
         </div>
       )}
 
-      {/* 7. SETTINGS TAB */}
+      {/* 6. SETTINGS TAB */}
       {activeTab === 'settings' && (
         <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-6 max-w-xl">
           <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Hardware Limits</h2>
           <form className="space-y-4 text-xs">
             <div>
               <label className="text-[11px] text-neutral-400 block mb-1">Rename VPS Label</label>
-              <input 
-                type="text" className="w-full al-input" 
-                value={settingsName} onChange={e => setSettingsName(e.target.value)} required 
-              />
+              <input type="text" className="w-full al-input" value={settingsName} onChange={e => setSettingsName(e.target.value)} required />
             </div>
-            
             <div className="space-y-1">
               <div className="flex justify-between text-[11px] text-neutral-400">
                 <span>CPU Allocation Cores</span>
                 <span className="font-semibold text-white">{settingsCores} Cores</span>
               </div>
-              <input 
-                type="range" min="1" max="16" className="w-full accent-indigo-500" 
-                value={settingsCores} onChange={e => setSettingsCores(parseInt(e.target.value, 10))} 
-              />
+              <input type="range" min="1" max="16" className="w-full accent-indigo-500" value={settingsCores} onChange={e => setSettingsCores(parseInt(e.target.value, 10))} />
             </div>
-
             <div className="space-y-1">
               <div className="flex justify-between text-[11px] text-neutral-400">
                 <span>Memory Allocation MB</span>
                 <span className="font-semibold text-white">{settingsMemory} MB</span>
               </div>
-              <input 
-                type="range" min="256" max="16384" step="256" className="w-full accent-indigo-500" 
-                value={settingsMemory} onChange={e => setSettingsMemory(parseInt(e.target.value, 10))} 
-              />
+              <input type="range" min="256" max="16384" step="256" className="w-full accent-indigo-500" value={settingsMemory} onChange={e => setSettingsMemory(parseInt(e.target.value, 10))} />
             </div>
-
             <div className="space-y-1">
               <div className="flex justify-between text-[11px] text-neutral-400">
                 <span>Disk capacity size (GB)</span>
                 <span className="font-semibold text-white">{settingsStorage} GB</span>
               </div>
-              <input 
-                type="range" min="10" max="500" className="w-full accent-indigo-500" 
-                value={settingsStorage} onChange={e => setSettingsStorage(parseInt(e.target.value, 10))} 
-              />
+              <input type="range" min="10" max="500" className="w-full accent-indigo-500" value={settingsStorage} onChange={e => setSettingsStorage(parseInt(e.target.value, 10))} />
             </div>
-
             <button type="button" className="al-btn al-btn-primary">Update Allocations</button>
           </form>
         </div>

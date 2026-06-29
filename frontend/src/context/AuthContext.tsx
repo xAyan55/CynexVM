@@ -36,29 +36,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const fetchProfile = async (authToken?: string) => {
-    const activeToken = authToken || token;
+  // Periodic token refresh check (every 4 minutes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const savedRefreshToken = localStorage.getItem('refreshToken');
+      if (savedRefreshToken && token) {
+        attemptTokenRefresh();
+      }
+    }, 4 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [token]);
+
+  const attemptTokenRefresh = async (): Promise<string | null> => {
+    const savedRefreshToken = localStorage.getItem('refreshToken');
+    if (!savedRefreshToken) return null;
+
+    try {
+      const res = await fetch('/api/v1/auth/refresh-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ refreshToken: savedRefreshToken })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('refreshToken', data.refreshToken);
+        setToken(data.accessToken);
+        return data.accessToken;
+      } else if (res.status === 401) {
+        // Refresh token itself expired, clear session
+        clearAuth();
+      }
+    } catch (err) {
+      console.warn('Silent token refresh failed (network/server temporary error):', err);
+    }
+    return null;
+  };
+
+  const fetchProfile = async (authToken?: string): Promise<boolean> => {
+    let activeToken = authToken || token;
     if (!activeToken) return false;
 
     try {
-      const res = await fetch('/api/v1/auth/me', {
+      let res = await fetch('/api/v1/auth/me', {
         headers: {
           'Authorization': `Bearer ${activeToken}`
         }
       });
 
+      // If token expired, try to refresh it once
+      if (res.status === 401) {
+        const refreshedToken = await attemptTokenRefresh();
+        if (refreshedToken) {
+          activeToken = refreshedToken;
+          res = await fetch('/api/v1/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${activeToken}`
+            }
+          });
+        }
+      }
+
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
         return true;
-      } else {
-        // Token might be expired, clear auth
+      } else if (res.status === 401) {
+        // Explicit unauthorized only - clear auth
         clearAuth();
         return false;
       }
+      // Keep user state for other status codes (e.g. 502/503/504 server restarts)
+      return true;
     } catch (err) {
-      console.error('Failed to fetch user profile:', err);
-      return false;
+      console.error('Failed to fetch user profile (ignoring transient network error):', err);
+      // Do NOT log out on network/fetch errors, keep session intact
+      return true;
     }
   };
 
