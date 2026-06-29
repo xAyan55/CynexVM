@@ -17,9 +17,8 @@ import auditLogRoutes from './routes/auditLogs';
 
 // Services
 import { SshService } from './services/sshService';
-import { ProxmoxService } from './services/proxmoxService';
+import { LxdService } from './services/lxdService';
 import { db } from './db';
-import { CryptoService } from './services/cryptoService';
 
 const app = express();
 const server = http.createServer(app);
@@ -119,12 +118,7 @@ io.on('connection', (socket: Socket) => {
 
         if (!instance) return;
 
-        const token = CryptoService.decrypt(instance.node.apiToken);
-        const live = await ProxmoxService.getContainerStatus({
-          apiUrl: instance.node.apiUrl,
-          apiToken: token,
-          sslFingerprint: instance.node.sslFingerprint
-        }, instance.node.name, instance.vmid);
+        const live = await LxdService.getContainerStatus(instance.vmid);
 
         socket.emit('metrics.data', {
           cpu: live.cpu,

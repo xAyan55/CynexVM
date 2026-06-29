@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db';
 import { authenticate, requirePermission } from '../middleware/auth';
 import { CryptoService } from '../services/cryptoService';
-import { ProxmoxService } from '../services/proxmoxService';
+import { LxdService } from '../services/lxdService';
 
 const router = Router();
 
@@ -73,26 +73,26 @@ router.get('/:id', authenticate, requirePermission('node.read'), async (req, res
  */
 router.post('/', authenticate, requirePermission('node.create'), async (req, res) => {
   const { name, hostname, apiUrl, apiToken, sslFingerprint, cpuCores, memoryMb, storageGb } = req.body;
-  if (!name || !hostname || !apiUrl || !apiToken) {
-    return res.status(400).json({ error: 'Name, Hostname, API URL and API Token are required' });
+  if (!name || !hostname) {
+    return res.status(400).json({ error: 'Name and Hostname are required' });
   }
 
   try {
-    // Encrypt sensitive token using AES-256-GCM
-    const encryptedToken = CryptoService.encrypt(apiToken);
+    // Encrypt SSH credentials if provided
+    const encryptedToken = apiToken ? CryptoService.encrypt(apiToken) : 'local-placeholder';
 
     // Save node configurations
     const node = await db.node.create({
       data: {
         name,
         hostname,
-        apiUrl,
+        apiUrl: apiUrl || '22', // Port field
         apiToken: encryptedToken,
         sslFingerprint: sslFingerprint || null,
         cpuCores: parseInt(cpuCores || '0', 10),
         memoryMb: parseInt(memoryMb || '0', 10),
         storageGb: parseInt(storageGb || '0', 10),
-        status: 'offline'
+        status: 'online'
       }
     });
 
@@ -179,21 +179,14 @@ router.delete('/:id', authenticate, requirePermission('node.delete'), async (req
 
 /**
  * @route   POST /api/v1/nodes/:id/test
- * @desc    Tests live connection to Proxmox VE node
+ * @desc    Tests live connection to the local LXD container engine
  */
 router.post('/:id/test', authenticate, requirePermission('node.write'), async (req, res) => {
   try {
     const node = await db.node.findUnique({ where: { id: req.params.id } });
     if (!node) return res.status(404).json({ error: 'Node not found' });
 
-    // Decrypt credentials
-    const decryptedToken = CryptoService.decrypt(node.apiToken);
-
-    const test = await ProxmoxService.testConnection({
-      apiUrl: node.apiUrl,
-      apiToken: decryptedToken,
-      sslFingerprint: node.sslFingerprint
-    });
+    const test = await LxdService.testConnection();
 
     if (test.success) {
       await db.node.update({
