@@ -70,6 +70,23 @@ npm install --workspaces --include=dev
 
 # 3. Database migrations and seeding
 echo -e "${YELLOW}[3/5] Syncing database schemas...${NC}"
+
+if [ ! -f "backend/.env" ]; then
+  echo -e "${YELLOW}[Info] Generating backend security environment config (.env)...${NC}"
+  JWT_SEC=$(openssl rand -hex 32)
+  JWT_REF_SEC=$(openssl rand -hex 32)
+  ENC_KEY=$(openssl rand -hex 32)
+  
+  cat <<EOF > backend/.env
+DATABASE_URL="file:./dev.db"
+PORT=5000
+NODE_ENV="production"
+JWT_SECRET="${JWT_SEC}"
+JWT_REFRESH_SECRET="${JWT_REF_SEC}"
+ENCRYPTION_KEY="${ENC_KEY}"
+EOF
+fi
+
 cd backend
 npx prisma generate
 npx prisma db push
