@@ -23,7 +23,7 @@ fi
 # 1. Install Dependencies
 echo -e "${YELLOW}[1/4] Installing package dependencies...${NC}"
 apt update -y
-apt install -y curl git snapd nodejs npm
+apt install -y curl git snapd nodejs
 
 # Install LXD (container engine)
 if ! command -v lxc &> /dev/null; then
