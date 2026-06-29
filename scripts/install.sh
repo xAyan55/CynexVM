@@ -166,4 +166,3 @@ echo -e "${GREEN}   CynexVM successfully installed and active!      ${NC}"
 echo -e "${GREEN}   Admin panel accessible on: http://your-ip/      ${NC}"
 echo -e "${GREEN}   Default credentials: admin@gmail.com / admin    ${NC}"
 echo -e "${GREEN}==================================================${NC}"
-EOF
