@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   LayoutDashboard, Server, Settings, ShieldAlert, LogOut, 
-  Users, HardDrive, RotateCw, MonitorPlay
+  Users, HardDrive, RotateCw, MonitorPlay, User
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -11,6 +11,7 @@ export const Sidebar: React.FC = () => {
 
   const userLinks = [
     { to: '/', label: 'Instances', icon: MonitorPlay },
+    { to: '/profile', label: 'My Profile', icon: User },
   ];
 
   const adminLinks = [

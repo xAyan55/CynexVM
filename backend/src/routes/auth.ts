@@ -512,4 +512,99 @@ router.get('/users', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * @route   PUT /api/v1/auth/profile
+ * @desc    Updates current user's profile details (username, email)
+ */
+router.put('/profile', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { username, email } = req.body;
+
+  try {
+    const data: any = {};
+    if (username) {
+      // Check if username taken
+      const existing = await db.user.findFirst({ where: { username, NOT: { id: req.user.id } } });
+      if (existing) {
+        return res.status(400).json({ error: 'Username is already in use.' });
+      }
+      data.username = username;
+    }
+
+    if (email) {
+      // Check if email taken
+      const existing = await db.user.findFirst({ where: { email, NOT: { id: req.user.id } } });
+      if (existing) {
+        return res.status(400).json({ error: 'Email is already in use.' });
+      }
+      data.email = email;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'No fields to update.' });
+    }
+
+    const updatedUser = await db.user.update({
+      where: { id: req.user.id },
+      data,
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        twoFactorEnabled: true,
+        roles: { include: { role: true } }
+      }
+    });
+
+    return res.status(200).json({
+      message: 'Profile updated successfully.',
+      user: {
+        id: updatedUser.id,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        twoFactorEnabled: updatedUser.twoFactorEnabled,
+        role: updatedUser.roles[0]?.role.name || 'User'
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to update profile.' });
+  }
+});
+
+/**
+ * @route   PUT /api/v1/auth/password
+ * @desc    Updates current user's password
+ */
+router.put('/password', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Both current password and new password are required.' });
+  }
+
+  try {
+    const user = await db.user.findUnique({ where: { id: req.user.id } });
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    // Verify current password
+    const passwordMatch = await argon2.verify(user.passwordHash, currentPassword);
+    if (!passwordMatch) {
+      return res.status(400).json({ error: 'Incorrect current password.' });
+    }
+
+    // Hash new password
+    const passwordHash = await argon2.hash(newPassword);
+    await db.user.update({
+      where: { id: req.user.id },
+      data: { passwordHash, passwordChangedAt: new Date() }
+    });
+
+    return res.status(200).json({ message: 'Password updated successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to update password.' });
+  }
+});
+
 export default router;
