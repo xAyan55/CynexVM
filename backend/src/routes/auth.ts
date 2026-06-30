@@ -12,8 +12,8 @@ import crypto from 'crypto';
 const router = Router();
 
 // Helpers
-const generateAccessToken = (userId: string): string => {
-  return jwt.sign({ userId }, CONFIG.JWT_SECRET, { expiresIn: '7d' });
+const generateAccessToken = (userId: string, sessionId: string): string => {
+  return jwt.sign({ userId, sessionId }, CONFIG.JWT_SECRET, { expiresIn: '7d' });
 };
 
 const generateRefreshToken = (sessionId: string): string => {
@@ -165,7 +165,7 @@ router.post('/login', authLimiter, async (req, res) => {
       }
     });
 
-    const accessToken = generateAccessToken(user.id);
+    const accessToken = generateAccessToken(user.id, session.id);
     const clientRefreshToken = generateRefreshToken(session.id);
 
     // Set secure cookie
@@ -335,7 +335,7 @@ router.post('/2fa/validate-login', async (req, res) => {
       }
     });
 
-    const accessToken = generateAccessToken(user.id);
+    const accessToken = generateAccessToken(user.id, session.id);
     const clientRefreshToken = generateRefreshToken(session.id);
 
     res.cookie('accessToken', accessToken, { httpOnly: true, secure: CONFIG.NODE_ENV === 'production', sameSite: 'strict' });
@@ -403,7 +403,7 @@ router.post('/refresh-token', async (req, res) => {
       }
     });
 
-    const newAccessToken = generateAccessToken(session.userId);
+    const newAccessToken = generateAccessToken(session.userId, updatedSession.id);
     const clientRefreshToken = generateRefreshToken(updatedSession.id);
 
     res.cookie('accessToken', newAccessToken, { httpOnly: true, secure: CONFIG.NODE_ENV === 'production', sameSite: 'strict' });
@@ -425,10 +425,8 @@ router.post('/logout', authenticate, async (req: AuthenticatedRequest, res) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
-    const token = req.cookies?.accessToken || req.headers.authorization?.split(' ')[1];
-    
-    if (token) {
-      await db.session.deleteMany({ where: { token } });
+    if (req.sessionId) {
+      await db.session.delete({ where: { id: req.sessionId } }).catch(() => {});
     }
 
     res.clearCookie('accessToken');
@@ -604,6 +602,165 @@ router.put('/password', authenticate, async (req: AuthenticatedRequest, res) => 
     return res.status(200).json({ message: 'Password updated successfully.' });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to update password.' });
+  }
+});
+
+/**
+ * @route   GET /api/v1/auth/sessions
+ * @desc    Lists all active sessions for current user
+ */
+router.get('/sessions', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const list = await db.session.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const parsed = list.map(s => {
+      const ua = s.userAgent || '';
+      let os = 'Unknown OS';
+      if (ua.includes('Windows')) os = 'Windows';
+      else if (ua.includes('Macintosh')) os = 'macOS';
+      else if (ua.includes('Linux')) os = 'Linux';
+      else if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
+      else if (ua.includes('Android')) os = 'Android';
+
+      let browser = 'Unknown Browser';
+      if (ua.includes('Firefox')) browser = 'Firefox';
+      else if (ua.includes('Chrome')) browser = 'Chrome';
+      else if (ua.includes('Safari')) browser = 'Safari';
+      else if (ua.includes('Edge')) browser = 'Edge';
+
+      const isMobile = ua.includes('Mobi') || ua.includes('Android') || ua.includes('iPhone');
+
+      return {
+        id: s.id,
+        browser: `${browser} on ${os}`,
+        ip: s.ipAddress || '0.0.0.0',
+        location: s.ipAddress?.startsWith('192.168.') || s.ipAddress === '::1' || s.ipAddress === '127.0.0.1' ? 'Local Network' : 'Remote Network',
+        active: s.id === req.sessionId,
+        device: isMobile ? 'mobile' : 'desktop',
+        createdAt: s.createdAt
+      };
+    });
+
+    return res.status(200).json(parsed);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to fetch sessions.' });
+  }
+});
+
+/**
+ * @route   DELETE /api/v1/auth/sessions/:id
+ * @desc    Revokes a specific session
+ */
+router.delete('/sessions/:id', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const session = await db.session.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: 'Session not found.' });
+
+    if (session.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden.' });
+    }
+
+    await db.session.delete({ where: { id: req.params.id } });
+
+    if (req.params.id === req.sessionId) {
+      res.clearCookie('accessToken');
+      return res.status(200).json({ message: 'Current session revoked. Logging out.', loggedOut: true });
+    }
+
+    return res.status(200).json({ message: 'Session revoked successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to revoke session.' });
+  }
+});
+
+/**
+ * @route   GET /api/v1/auth/apikeys
+ * @desc    Get all developer API keys
+ */
+router.get('/apikeys', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const keys = await db.apiKey.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const parsed = keys.map(k => ({
+      id: k.id,
+      label: k.name,
+      key: 'cv_live_••••••••••••' + k.keyHash.substring(k.keyHash.length - 4),
+      createdAt: k.createdAt.toISOString().split('T')[0]
+    }));
+
+    return res.status(200).json(parsed);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to fetch API keys.' });
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/apikeys
+ * @desc    Generate a new API key
+ */
+router.post('/apikeys', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Key label name is required.' });
+
+  try {
+    const rawKey = 'cv_live_' + crypto.randomBytes(24).toString('hex');
+    const hash = crypto.createHash('sha256').update(rawKey).digest('hex');
+
+    const apiKey = await db.apiKey.create({
+      data: {
+        userId: req.user.id,
+        name,
+        keyHash: hash
+      }
+    });
+
+    return res.status(201).json({
+      message: 'API Key generated successfully.',
+      key: {
+        id: apiKey.id,
+        label: apiKey.name,
+        rawKey,
+        createdAt: apiKey.createdAt.toISOString().split('T')[0]
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to generate API key.' });
+  }
+});
+
+/**
+ * @route   DELETE /api/v1/auth/apikeys/:id
+ * @desc    Delete/Revoke an API key
+ */
+router.delete('/apikeys/:id', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const key = await db.apiKey.findUnique({ where: { id: req.params.id } });
+    if (!key) return res.status(404).json({ error: 'API Key not found.' });
+
+    if (key.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden.' });
+    }
+
+    await db.apiKey.delete({ where: { id: req.params.id } });
+    return res.status(200).json({ message: 'API Key revoked successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to revoke API key.' });
   }
 });
 

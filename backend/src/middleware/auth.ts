@@ -12,6 +12,7 @@ export interface AuthenticatedRequest extends Request {
     role: string;
     permissions: string[];
   };
+  sessionId?: string;
   apiKey?: {
     id: string;
     name: string;
@@ -125,6 +126,14 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
     const permissions = user.roles.flatMap(ur => 
       ur.role.permissions.map(rp => rp.permission.name)
     );
+
+    if (decoded.sessionId) {
+      const sessionExists = await db.session.findUnique({ where: { id: decoded.sessionId } });
+      if (!sessionExists) {
+        return res.status(401).json({ error: 'Session has been invalidated' });
+      }
+      req.sessionId = decoded.sessionId;
+    }
 
     req.user = {
       id: user.id,

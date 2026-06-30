@@ -1,9 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { User, Mail, Lock, Shield, Trash2, Key, HelpCircle, HardDrive, Smartphone } from 'lucide-react';
+import { User, Mail, Lock, Shield, Trash2, Key, HelpCircle, HardDrive, Smartphone, Eye, EyeOff } from 'lucide-react';
+
+interface UserSession {
+  id: string;
+  browser: string;
+  ip: string;
+  location: string;
+  active: boolean;
+  device: string;
+  createdAt: string;
+}
+
+interface ApiKeyItem {
+  id: string;
+  label: string;
+  key: string;
+  createdAt: string;
+}
 
 export const Profile: React.FC = () => {
-  const { user, token, fetchProfile } = useAuth();
+  const { user, token, fetchProfile, logout } = useAuth();
   
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -14,17 +31,45 @@ export const Profile: React.FC = () => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
-  // Active Sessions database (simulate logs for presentation)
-  const [sessions, setSessions] = useState([
-    { id: '1', browser: 'Chrome on Windows 10', ip: '192.168.1.100', location: 'Local Network', active: true, device: 'desktop' },
-    { id: '2', browser: 'Safari on iPhone', ip: '172.56.21.84', location: 'Mobile Cellular', active: false, device: 'mobile' }
-  ]);
-
-  // Personal API keys
-  const [apiKeys, setApiKeys] = useState([
-    { id: 'k1', label: 'CynexVM CLI Access', key: 'cv_live_••••••••••••x9s', createdAt: '2026-06-28' }
-  ]);
+  // Active Sessions & API keys
+  const [sessions, setSessions] = useState<UserSession[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
   const [newKeyLabel, setNewKeyLabel] = useState('');
+  
+  // Show newly generated raw API key modal/banner
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [showKey, setShowKey] = useState(false);
+
+  // Fetch real data on mount
+  useEffect(() => {
+    if (!token) return;
+    loadSessions();
+    loadApiKeys();
+  }, [token]);
+
+  const loadSessions = async () => {
+    try {
+      const res = await fetch('/api/v1/auth/sessions', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+    } catch (_) {}
+  };
+
+  const loadApiKeys = async () => {
+    try {
+      const res = await fetch('/api/v1/auth/apikeys', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApiKeys(data);
+      }
+    } catch (_) {}
+  };
 
   const handleUpdateProfile = async (field: 'username' | 'email') => {
     setError(null);
@@ -86,16 +131,67 @@ export const Profile: React.FC = () => {
     }
   };
 
-  const handleGenerateKey = (e: React.FormEvent) => {
+  const handleGenerateKey = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setGeneratedKey(null);
     if (!newKeyLabel) return;
-    setApiKeys([...apiKeys, {
-      id: Math.random().toString(),
-      label: newKeyLabel,
-      key: 'cv_live_' + Math.random().toString(36).substring(2, 15) + '••••',
-      createdAt: new Date().toISOString().split('T')[0]
-    }]);
-    setNewKeyLabel('');
+
+    try {
+      const res = await fetch('/api/v1/auth/apikeys', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newKeyLabel })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate token.');
+      }
+      setSuccess(data.message);
+      setGeneratedKey(data.key.rawKey);
+      setShowKey(true);
+      setNewKeyLabel('');
+      loadApiKeys();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleRevokeKey = async (id: string) => {
+    if (!confirm('Are you sure you want to revoke this API token? Any external integrations using it will fail.')) return;
+    try {
+      const res = await fetch(`/api/v1/auth/apikeys/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        loadApiKeys();
+        setSuccess('API Token revoked successfully.');
+      }
+    } catch (_) {}
+  };
+
+  const handleRevokeSession = async (id: string) => {
+    if (!confirm('Are you sure you want to log out of this session?')) return;
+    try {
+      const res = await fetch(`/api/v1/auth/sessions/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.loggedOut && logout) {
+          logout();
+        } else {
+          loadSessions();
+          setSuccess('Session revoked successfully.');
+        }
+      }
+    } catch (_) {}
   };
 
   if (!user) return <div className="p-12 text-center text-neutral-500 text-sm">Loading user profile...</div>;
@@ -119,7 +215,7 @@ export const Profile: React.FC = () => {
               Account Preferences
             </h1>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-              Manage your personal credentials, sessions, and developer API tokens.
+              Manage your personal credentials, active sessions, and developer API tokens.
             </p>
           </div>
         </div>
@@ -142,6 +238,41 @@ export const Profile: React.FC = () => {
       {error && (
         <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-2xl text-xs font-medium transition duration-200">
           {error}
+        </div>
+      )}
+
+      {/* Generated Token Warning Banner */}
+      {generatedKey && (
+        <div className="p-5 bg-blue-500/10 border border-blue-500/25 rounded-2xl text-xs space-y-3">
+          <div className="flex items-center gap-2 font-semibold text-blue-600 dark:text-blue-400">
+            <Key className="w-4 h-4" /> Copy Your New API Key
+          </div>
+          <p className="text-neutral-600 dark:text-neutral-400 leading-relaxed">
+            For security reasons, this token will only be shown to you once. Please copy it immediately and store it securely.
+          </p>
+          <div className="flex items-center gap-2">
+            <input 
+              type={showKey ? 'text' : 'password'}
+              readOnly 
+              value={generatedKey} 
+              className="flex-1 bg-white dark:bg-black/45 border border-neutral-200 dark:border-white/5 font-mono px-3 py-2 rounded-xl text-neutral-850 dark:text-white focus:outline-none"
+            />
+            <button 
+              onClick={() => setShowKey(!showKey)}
+              className="p-2 hover:bg-white/5 rounded-xl transition text-neutral-500 hover:text-white"
+            >
+              {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+            <button 
+              onClick={() => {
+                navigator.clipboard.writeText(generatedKey);
+                alert('Copied to clipboard!');
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition"
+            >
+              Copy
+            </button>
+          </div>
         </div>
       )}
 
@@ -274,28 +405,34 @@ export const Profile: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800/40 text-neutral-700 dark:text-neutral-300">
-                  {sessions.map(s => (
-                    <tr key={s.id} className="hover:bg-neutral-50 dark:hover:bg-white/[0.01]">
-                      <td className="p-3 flex items-center gap-2">
-                        {s.device === 'desktop' ? <HardDrive className="w-4 h-4 text-neutral-400" /> : <Smartphone className="w-4 h-4 text-neutral-400" />}
-                        <span className="font-medium">{s.browser}</span>
-                      </td>
-                      <td className="p-3 font-mono text-neutral-500">{s.ip}</td>
-                      <td className="p-3 text-neutral-500">{s.location}</td>
-                      <td className="p-3 text-right">
-                        {s.active ? (
-                          <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] font-bold uppercase">This Device</span>
-                        ) : (
-                          <button 
-                            onClick={() => setSessions(sessions.filter(x => x.id !== s.id))}
-                            className="text-red-500 hover:text-red-600 hover:underline font-semibold"
-                          >
-                            Revoke
-                          </button>
-                        )}
-                      </td>
+                  {sessions.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-neutral-500">No active login sessions detected.</td>
                     </tr>
-                  ))}
+                  ) : (
+                    sessions.map(s => (
+                      <tr key={s.id} className="hover:bg-neutral-50 dark:hover:bg-white/[0.01]">
+                        <td className="p-3 flex items-center gap-2">
+                          {s.device === 'desktop' ? <HardDrive className="w-4 h-4 text-neutral-400" /> : <Smartphone className="w-4 h-4 text-neutral-400" />}
+                          <span className="font-medium">{s.browser}</span>
+                        </td>
+                        <td className="p-3 font-mono text-neutral-500">{s.ip}</td>
+                        <td className="p-3 text-neutral-500">{s.location}</td>
+                        <td className="p-3 text-right">
+                          {s.active ? (
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] font-bold uppercase">This Device</span>
+                          ) : (
+                            <button 
+                              onClick={() => handleRevokeSession(s.id)}
+                              className="text-red-500 hover:text-red-650 hover:underline font-semibold"
+                            >
+                              Revoke
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -319,7 +456,7 @@ export const Profile: React.FC = () => {
               <div className="flex gap-2">
                 <input 
                   type="text" 
-                  placeholder="Key name tag (e.g. CI deploy)" 
+                  placeholder="Key name (e.g. CLI Deploy)" 
                   className="flex-1 px-3 py-2 bg-neutral-900/10 dark:bg-black/25 border border-neutral-200 dark:border-white/5 focus:border-blue-500 focus:outline-none rounded-xl text-neutral-850 dark:text-white transition-colors" 
                   value={newKeyLabel} 
                   onChange={e => setNewKeyLabel(e.target.value)} 
@@ -332,21 +469,25 @@ export const Profile: React.FC = () => {
             </form>
 
             <div className="space-y-3 pt-2">
-              {apiKeys.map(k => (
-                <div key={k.id} className="flex items-center justify-between p-3 bg-neutral-100/50 dark:bg-white/[0.02] border border-neutral-200 dark:border-white/5 rounded-2xl text-xs">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-neutral-800 dark:text-white truncate">{k.label}</p>
-                    <p className="font-mono text-neutral-500 mt-1 truncate">{k.key}</p>
-                    <p className="text-[10px] text-neutral-400 mt-0.5">Created: {k.createdAt}</p>
+              {apiKeys.length === 0 ? (
+                <p className="text-xs text-neutral-500 text-center py-4">No developer tokens generated yet.</p>
+              ) : (
+                apiKeys.map(k => (
+                  <div key={k.id} className="flex items-center justify-between p-3 bg-neutral-100/50 dark:bg-white/[0.02] border border-neutral-200 dark:border-white/5 rounded-2xl text-xs">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-neutral-800 dark:text-white truncate">{k.label}</p>
+                      <p className="font-mono text-neutral-500 mt-1 truncate">{k.key}</p>
+                      <p className="text-[10px] text-neutral-400 mt-0.5">Created: {k.createdAt}</p>
+                    </div>
+                    <button 
+                      onClick={() => handleRevokeKey(k.id)} 
+                      className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-lg transition ml-3"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => setApiKeys(apiKeys.filter(x => x.id !== k.id))} 
-                    className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-lg transition ml-3"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
@@ -356,7 +497,7 @@ export const Profile: React.FC = () => {
               <HelpCircle className="w-3.5 h-3.5" /> Integration Help
             </h3>
             <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
-              Integrate CynexVM into your automation pipelines. Consult our OpenAPI documentation to authorize REST calls using your bearer token.
+              Integrate CynexVM into your automation pipelines. Consult our documentation to authorize REST calls using your bearer token.
             </p>
           </div>
         </div>
