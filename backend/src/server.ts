@@ -19,6 +19,7 @@ import auditLogRoutes from './routes/auditLogs';
 
 // Services
 import { LxdService } from './services/lxdService';
+import { ReconciliationService } from './services/reconciliation';
 import { db } from './db';
 
 const app = express();
@@ -49,6 +50,18 @@ app.use(express.urlencoded({ extended: true }));
 // Apply rate limits
 app.use('/api/', apiLimiter);
 
+// Observability & Health Endpoints
+app.get('/health', (req, res) => res.status(200).json({ status: 'healthy', timestamp: new Date() }));
+app.get('/liveness', (req, res) => res.status(200).send('OK'));
+app.get('/readiness', async (req, res) => {
+  try {
+    await db.$queryRaw`SELECT 1`;
+    return res.status(200).json({ status: 'ready', database: 'connected' });
+  } catch (err: any) {
+    return res.status(503).json({ status: 'unready', error: err.message });
+  }
+});
+
 // Bind REST routes
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/nodes', nodeRoutes);
@@ -70,6 +83,11 @@ app.patch('/api/v1/instances/:id/folder', async (req, res) => {
     return res.status(500).json({ error: 'Failed to update folder' });
   }
 });
+
+// Start background reconciliation loop
+setInterval(() => {
+  ReconciliationService.run();
+}, 60000);
 
 // Catch-all 404
 app.use((req, res) => {

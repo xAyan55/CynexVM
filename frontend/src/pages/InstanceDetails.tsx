@@ -8,7 +8,7 @@ import {
   Terminal as TermIcon, Folder, Globe, ShieldCheck, Settings as SetIcon,
   ArrowLeft, Trash2, Cpu, HardDrive, Shield, RefreshCw, Layers, ListFilter, 
   ClipboardCheck, Tag, Activity, Clock, Wifi, WifiOff, ArrowDownToLine, ArrowUpFromLine,
-  Play, Square, RotateCcw, Skull
+  Play, Square, RotateCcw, Skull, Pause
 } from 'lucide-react';
 
 // Sparkline for live metric visualization
@@ -263,6 +263,26 @@ export const InstanceDetails: React.FC = () => {
     } catch (_) {}
   };
 
+  const handleReinstall = async () => {
+    if (!instance) return;
+    if (!confirm('CRITICAL WARNING: Reinstalling will wipe the entire container disk! This action is irreversible.')) return;
+    
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${instance.id}/reinstall`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert('Reinstallation started! Redirecting to Task logs.');
+        navigate('/admin/tasks');
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Reinstall failed');
+      }
+    } catch (_) {}
+  };
+
   if (loading || !instance) {
     return <div className="p-12 text-center text-neutral-500 text-sm">Loading instance configuration...</div>;
   }
@@ -331,6 +351,24 @@ export const InstanceDetails: React.FC = () => {
           >
             <Skull size={13} /> {actionLoading === 'kill' ? 'Killing...' : 'Kill'}
           </button>
+
+          {instance.status === 'frozen' ? (
+            <button 
+              onClick={() => handlePowerAction('unfreeze')} 
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-750 text-white rounded-xl text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={actionLoading === 'unfreeze'}
+            >
+              <Play size={13} /> Unfreeze
+            </button>
+          ) : (
+            <button 
+              onClick={() => handlePowerAction('freeze')} 
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-xl text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={instance.status !== 'running' || actionLoading === 'freeze'}
+            >
+              <Pause size={13} /> Freeze
+            </button>
+          )}
 
           {/* Admin Destroy VPS button */}
           {user?.role === 'Admin' && (
@@ -685,6 +723,17 @@ export const InstanceDetails: React.FC = () => {
               {savingSpecs ? 'Saving specifications...' : 'Update Allocations'}
             </button>
           </form>
+
+          <div className="pt-6 border-t border-neutral-200/30 dark:border-white/5 space-y-3">
+            <h3 className="text-sm font-semibold text-rose-500">Danger Zone</h3>
+            <p className="text-[11px] text-neutral-400">Reinstalling deletes the container filesystem root and recreates it from the original OS template. All user configuration files and data will be destroyed.</p>
+            <button 
+              onClick={handleReinstall}
+              className="px-3.5 py-2 bg-rose-650 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow transition"
+            >
+              Reinstall OS
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -1,55 +1,41 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { authenticate, requirePermission } from '../middleware/auth';
-import { SshService } from '../services/sshService';
+import { authenticate, requirePermission, AuthenticatedRequest } from '../middleware/auth';
+import { LxdFileService } from '../services/lxd/lxdFileService';
 
 const router = Router({ mergeParams: true });
 
-// Middleware to extract SSH credentials
-async function getSshCreds(req: any, res: any, next: any) {
+// Middleware to authorize container access
+async function verifyContainerOwner(req: any, res: any, next: any) {
   const { id } = req.params;
   try {
     const instance = await db.instance.findUnique({
-      where: { id },
-      include: { node: true }
+      where: { id }
     });
 
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
-    // Ownership check
-    if (req.user.role !== 'Admin' && instance.userId !== req.user.id) {
+    // Ownership validation check
+    if (req.user?.role !== 'Admin' && instance.userId !== req.user?.id) {
       return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
     }
 
-    const host = req.query.host || req.body.host || instance.ipAddress;
-    const username = req.query.username || req.body.username || 'root';
-    const password = req.query.password || req.body.password || instance.password;
-
-    if (!host) {
-      return res.status(400).json({ error: 'Container IP address is required for SSH/SFTP connections. Please configure the networking tab.' });
-    }
-
-    req.sshCreds = {
-      host,
-      username,
-      password,
-      port: 22
-    };
-
+    req.instanceMetadata = instance;
     next();
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to negotiate SSH connection context' });
+    return res.status(500).json({ error: 'Failed to negotiate container security context' });
   }
 }
 
 /**
  * @route   GET /api/v1/instances/:id/files/list
- * @desc    Lists directory items inside container
+ * @desc    Lists directory items inside container via LXD API
  */
-router.get('/list', authenticate, requirePermission('instance.files'), getSshCreds, async (req: any, res) => {
+router.get('/list', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
   const dirPath = (req.query.path as string) || '/root';
+  const instance = req.instanceMetadata;
   try {
-    const list = await SshService.listDirectory(req.sshCreds, dirPath);
+    const list = await LxdFileService.listDirectory(instance.nodeId, instance.vmid, dirPath);
     return res.status(200).json(list);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to list directory contents' });
@@ -58,14 +44,15 @@ router.get('/list', authenticate, requirePermission('instance.files'), getSshCre
 
 /**
  * @route   GET /api/v1/instances/:id/files/read
- * @desc    Reads file content
+ * @desc    Reads file content directly from container
  */
-router.get('/read', authenticate, requirePermission('instance.files'), getSshCreds, async (req: any, res) => {
+router.get('/read', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
   const filePath = req.query.path as string;
+  const instance = req.instanceMetadata;
   if (!filePath) return res.status(400).json({ error: 'Path is required' });
 
   try {
-    const data = await SshService.readFile(req.sshCreds, filePath);
+    const data = await LxdFileService.readFile(instance.nodeId, instance.vmid, filePath);
     return res.status(200).json({ content: data });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to read file content' });
@@ -76,14 +63,15 @@ router.get('/read', authenticate, requirePermission('instance.files'), getSshCre
  * @route   POST /api/v1/instances/:id/files/write
  * @desc    Writes string content into container file
  */
-router.post('/write', authenticate, requirePermission('instance.files'), getSshCreds, async (req: any, res) => {
+router.post('/write', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
   const { path: filePath, content } = req.body;
+  const instance = req.instanceMetadata;
   if (!filePath || content === undefined) {
     return res.status(400).json({ error: 'Path and content parameters are required' });
   }
 
   try {
-    await SshService.writeFile(req.sshCreds, filePath, content);
+    await LxdFileService.writeFile(instance.nodeId, instance.vmid, filePath, content);
     return res.status(200).json({ success: true, message: 'File written successfully' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to save file' });
@@ -92,39 +80,18 @@ router.post('/write', authenticate, requirePermission('instance.files'), getSshC
 
 /**
  * @route   DELETE /api/v1/instances/:id/files/delete
- * @desc    Deletes file or directory
+ * @desc    Deletes file or directory from container
  */
-router.delete('/delete', authenticate, requirePermission('instance.files'), getSshCreds, async (req: any, res) => {
-  const { path: filePath, isDirectory } = req.body;
+router.delete('/delete', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
+  const { path: filePath } = req.body;
+  const instance = req.instanceMetadata;
   if (!filePath) return res.status(400).json({ error: 'Path is required' });
 
   try {
-    if (isDirectory) {
-      await SshService.deleteDirectory(req.sshCreds, filePath);
-    } else {
-      await SshService.deleteFile(req.sshCreds, filePath);
-    }
-    return res.status(200).json({ success: true, message: 'Deleted successfully' });
+    await LxdFileService.deleteFile(instance.nodeId, instance.vmid, filePath);
+    return res.status(200).json({ success: true, message: 'File deleted successfully' });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Deletion failed' });
-  }
-});
-
-/**
- * @route   POST /api/v1/instances/:id/files/chmod
- * @desc    Chmods file permissions
- */
-router.post('/chmod', authenticate, requirePermission('instance.files'), getSshCreds, async (req: any, res) => {
-  const { path: filePath, mode } = req.body;
-  if (!filePath || !mode) return res.status(400).json({ error: 'Path and octal mode are required' });
-
-  try {
-    // Parse octal string e.g. "0755" or number 755
-    const numericMode = typeof mode === 'string' ? parseInt(mode, 8) : mode;
-    await SshService.chmod(req.sshCreds, filePath, numericMode);
-    return res.status(200).json({ success: true, message: 'Permissions updated successfully' });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Failed to update permissions' });
+    return res.status(500).json({ error: err.message || 'Failed to delete file' });
   }
 });
 

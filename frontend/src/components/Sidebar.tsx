@@ -21,7 +21,7 @@ export const Sidebar: React.FC = () => {
     { to: '/admin/templates', label: 'OS Templates', icon: HardDrive },
     { to: '/admin/audit-logs', label: 'Audit Logs', icon: ShieldAlert },
     { to: '/admin/settings', label: 'Settings', icon: Settings },
-    { to: '/admin/jobs', label: 'Queue Tasks', icon: RotateCw },
+    { to: '/admin/tasks', label: 'Tasks Logs', icon: RotateCw },
   ];
 
   return (

@@ -153,7 +153,7 @@ export const App: React.FC = () => {
             <Route path="/admin/templates" element={<AdminRoute element={<TemplatesImages />} />} />
             <Route path="/admin/audit-logs" element={<AdminRoute element={<AuditLogs />} />} />
             <Route path="/admin/settings" element={<AdminRoute element={<AdminSettings />} />} />
-            <Route path="/admin/jobs" element={<AdminRoute element={<JobsQueues />} />} />
+            <Route path="/admin/tasks" element={<AdminRoute element={<JobsQueues />} />} />
           </Route>
 
           {/* Catch-all redirects */}
