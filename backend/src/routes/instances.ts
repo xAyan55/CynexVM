@@ -1,22 +1,37 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { authenticate, requirePermission } from '../middleware/auth';
+import { authenticate, requirePermission, AuthenticatedRequest } from '../middleware/auth';
 import { LxdService } from '../services/lxdService';
 import { JobService } from '../services/jobService';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
+const execAsync = promisify(exec);
 const router = Router();
 
 /**
  * @route   GET /api/v1/instances
- * @desc    Lists all LXC instances
+ * @desc    Lists all LXC instances (Admin gets all, Customer gets assigned only)
  */
-router.get('/', authenticate, requirePermission('instance.read'), async (req, res) => {
+router.get('/', authenticate, requirePermission('instance.read'), async (req: AuthenticatedRequest, res) => {
   try {
-    const instances = await db.instance.findMany({
-      include: {
-        node: { select: { name: true } }
-      }
-    });
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+    let instances;
+    if (req.user.role === 'Admin') {
+      instances = await db.instance.findMany({
+        include: {
+          node: { select: { name: true } }
+        }
+      });
+    } else {
+      instances = await db.instance.findMany({
+        where: { userId: req.user.id },
+        include: {
+          node: { select: { name: true } }
+        }
+      });
+    }
     return res.status(200).json(instances);
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to retrieve instances' });
@@ -27,14 +42,21 @@ router.get('/', authenticate, requirePermission('instance.read'), async (req, re
  * @route   GET /api/v1/instances/:id
  * @desc    Retrieves status and details of a specific container
  */
-router.get('/:id', authenticate, requirePermission('instance.read'), async (req, res) => {
+router.get('/:id', authenticate, requirePermission('instance.read'), async (req: AuthenticatedRequest, res) => {
   try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
     const instance = await db.instance.findUnique({
       where: { id: req.params.id },
       include: { node: true }
     });
 
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    // Customer ownership check
+    if (req.user.role !== 'Admin' && instance.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
+    }
 
     // Fetch real-time status from local/remote LXD
     try {
@@ -57,10 +79,10 @@ router.get('/:id', authenticate, requirePermission('instance.read'), async (req,
           maxcpu: 1,
           mem: liveStatus.mem,
           maxmem: liveStatus.maxmem,
-          disk: 0,
-          maxdisk: instance.storageGb * 1024 * 1024 * 1024,
-          netin: 0,
-          netout: 0
+          disk: liveStatus.disk || 0,
+          maxdisk: liveStatus.maxdisk || instance.storageGb * 1024 * 1024 * 1024,
+          netin: liveStatus.netin || 0,
+          netout: liveStatus.netout || 0
         }
       });
     } catch (lxdErr: any) {
@@ -74,9 +96,13 @@ router.get('/:id', authenticate, requirePermission('instance.read'), async (req,
 
 /**
  * @route   POST /api/v1/instances
- * @desc    Deploys a new LXC container (VM Creation Wizard)
+ * @desc    Deploys a new LXC container (VM Creation Wizard - Admin Only)
  */
-router.post('/', authenticate, requirePermission('instance.create'), async (req, res) => {
+router.post('/', authenticate, requirePermission('instance.create'), async (req: AuthenticatedRequest, res) => {
+  if (!req.user || req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Forbidden: Only administrators can deploy instances' });
+  }
+
   const { nodeId, userId, name, vmid, osTemplate, cpuCores, memoryMb, storageGb, hostname, password } = req.body;
   
   if (!nodeId || !name || !vmid || !osTemplate || !hostname) {
@@ -133,16 +159,70 @@ router.post('/', authenticate, requirePermission('instance.create'), async (req,
 });
 
 /**
+ * @route   POST /api/v1/instances/:id/specs
+ * @desc    Updates VPS resource specs (Admin Only)
+ */
+router.post('/:id/specs', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user || req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Forbidden: Admin access required' });
+  }
+
+  const { cpuCores, memoryMb, storageGb } = req.body;
+  const { id } = req.params;
+
+  try {
+    const instance = await db.instance.findUnique({
+      where: { id },
+      include: { node: true }
+    });
+
+    if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    // Update specs in database
+    const updated = await db.instance.update({
+      where: { id },
+      data: {
+        cpuCores: parseInt(cpuCores, 10),
+        memoryMb: parseInt(memoryMb, 10),
+        storageGb: parseInt(storageGb, 10)
+      }
+    });
+
+    // Set configuration limits on local LXD container
+    const containerName = `cynex-${instance.vmid}`;
+    try {
+      if (!instance.node || instance.node.hostname === 'localhost') {
+        await execAsync(`/snap/bin/lxc config set ${containerName} limits.cpu ${cpuCores}`);
+        await execAsync(`/snap/bin/lxc config set ${containerName} limits.memory ${memoryMb}MB`);
+      }
+    } catch (err: any) {
+      console.warn('LXD hardware limits application warning:', err.message);
+    }
+
+    return res.status(200).json({ message: 'VPS hardware specifications updated successfully', instance: updated });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to update VPS specifications' });
+  }
+});
+
+/**
  * @route   POST /api/v1/instances/:id/start
  * @desc    Starts the container
  */
-router.post('/:id/start', authenticate, requirePermission('instance.start'), async (req, res) => {
+router.post('/:id/start', authenticate, requirePermission('instance.start'), async (req: AuthenticatedRequest, res) => {
   try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
     const instance = await db.instance.findUnique({ 
       where: { id: req.params.id },
       include: { node: true }
     });
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    // Ownership check
+    if (req.user.role !== 'Admin' && instance.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
+    }
 
     await LxdService.startContainer(instance.vmid, instance.node);
 
@@ -161,13 +241,20 @@ router.post('/:id/start', authenticate, requirePermission('instance.start'), asy
  * @route   POST /api/v1/instances/:id/stop
  * @desc    Stops the container
  */
-router.post('/:id/stop', authenticate, requirePermission('instance.stop'), async (req, res) => {
+router.post('/:id/stop', authenticate, requirePermission('instance.stop'), async (req: AuthenticatedRequest, res) => {
   try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
     const instance = await db.instance.findUnique({ 
       where: { id: req.params.id },
       include: { node: true }
     });
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    // Ownership check
+    if (req.user.role !== 'Admin' && instance.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
+    }
 
     await LxdService.stopContainer(instance.vmid, instance.node);
 
@@ -186,13 +273,20 @@ router.post('/:id/stop', authenticate, requirePermission('instance.stop'), async
  * @route   POST /api/v1/instances/:id/reboot
  * @desc    Reboots the container
  */
-router.post('/:id/reboot', authenticate, requirePermission('instance.reboot'), async (req, res) => {
+router.post('/:id/reboot', authenticate, requirePermission('instance.reboot'), async (req: AuthenticatedRequest, res) => {
   try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
     const instance = await db.instance.findUnique({ 
       where: { id: req.params.id },
       include: { node: true }
     });
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    // Ownership check
+    if (req.user.role !== 'Admin' && instance.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
+    }
 
     await LxdService.rebootContainer(instance.vmid, instance.node);
 
@@ -203,10 +297,46 @@ router.post('/:id/reboot', authenticate, requirePermission('instance.reboot'), a
 });
 
 /**
- * @route   DELETE /api/v1/instances/:id
- * @desc    Destroys the container
+ * @route   POST /api/v1/instances/:id/kill
+ * @desc    Forcefully stops the container
  */
-router.delete('/:id', authenticate, requirePermission('instance.delete'), async (req, res) => {
+router.post('/:id/kill', authenticate, async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const instance = await db.instance.findUnique({ 
+      where: { id: req.params.id },
+      include: { node: true }
+    });
+    if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    // Ownership check
+    if (req.user.role !== 'Admin' && instance.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
+    }
+
+    await LxdService.stopContainer(instance.vmid, instance.node); // LXD stops instantly
+
+    await db.instance.update({
+      where: { id: instance.id },
+      data: { status: 'stopped' }
+    });
+
+    return res.status(200).json({ message: 'Container forcefully killed.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to kill container' });
+  }
+});
+
+/**
+ * @route   DELETE /api/v1/instances/:id
+ * @desc    Destroys the container (Admin Only)
+ */
+router.delete('/:id', authenticate, requirePermission('instance.delete'), async (req: AuthenticatedRequest, res) => {
+  if (!req.user || req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Forbidden: Only administrators can destroy instances' });
+  }
+
   try {
     const instance = await db.instance.findUnique({ 
       where: { id: req.params.id },

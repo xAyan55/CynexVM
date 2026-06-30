@@ -116,9 +116,9 @@ export const AdminInstances: React.FC = () => {
         </div>
         <button 
           onClick={() => setShowDeployWizard(true)}
-          className="border border-neutral-800/20 block rounded-xl bg-white hover:bg-neutral-100 text-neutral-800 px-3 py-2 text-center text-sm font-medium transition"
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow transition"
         >
-          Deploy New VPS
+          <Plus size={14} /> Deploy VPS
         </button>
       </div>
 

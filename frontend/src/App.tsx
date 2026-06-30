@@ -118,6 +118,15 @@ const AppLayout: React.FC = () => {
   );
 };
 
+// Protected Admin Route wrapper
+const AdminRoute: React.FC<{ element: React.ReactElement }> = ({ element }) => {
+  const { user } = useAuth();
+  if (!user || user.role !== 'Admin') {
+    return <Navigate to="/" replace />;
+  }
+  return element;
+};
+
 export const App: React.FC = () => {
   return (
     <Router>
@@ -137,14 +146,14 @@ export const App: React.FC = () => {
             <Route path="/profile" element={<Profile />} />
             
             {/* Admin only subroutes */}
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            <Route path="/admin/users" element={<AdminUsers />} />
-            <Route path="/admin/instances" element={<AdminInstances />} />
-            <Route path="/admin/nodes" element={<Nodes />} />
-            <Route path="/admin/templates" element={<TemplatesImages />} />
-            <Route path="/admin/audit-logs" element={<AuditLogs />} />
-            <Route path="/admin/settings" element={<AdminSettings />} />
-            <Route path="/admin/jobs" element={<JobsQueues />} />
+            <Route path="/admin/dashboard" element={<AdminRoute element={<AdminDashboard />} />} />
+            <Route path="/admin/users" element={<AdminRoute element={<AdminUsers />} />} />
+            <Route path="/admin/instances" element={<AdminRoute element={<AdminInstances />} />} />
+            <Route path="/admin/nodes" element={<AdminRoute element={<Nodes />} />} />
+            <Route path="/admin/templates" element={<AdminRoute element={<TemplatesImages />} />} />
+            <Route path="/admin/audit-logs" element={<AdminRoute element={<AuditLogs />} />} />
+            <Route path="/admin/settings" element={<AdminRoute element={<AdminSettings />} />} />
+            <Route path="/admin/jobs" element={<AdminRoute element={<JobsQueues />} />} />
           </Route>
 
           {/* Catch-all redirects */}

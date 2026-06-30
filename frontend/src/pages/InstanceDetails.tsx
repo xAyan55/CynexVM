@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import { Console } from '../components/Console';
 import { FileManager } from '../components/FileManager';
 import { 
   Terminal as TermIcon, Folder, Globe, ShieldCheck, Settings as SetIcon,
   ArrowLeft, Trash2, Cpu, HardDrive, Shield, RefreshCw, Layers, ListFilter, 
-  ClipboardCheck, Tag, Activity, Clock, Wifi, WifiOff, ArrowDownToLine, ArrowUpFromLine
+  ClipboardCheck, Tag, Activity, Clock, Wifi, WifiOff, ArrowDownToLine, ArrowUpFromLine,
+  Play, Square, RotateCcw, Skull
 } from 'lucide-react';
 
 // Sparkline for live metric visualization
@@ -60,6 +62,7 @@ export const InstanceDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const socket = useSocket();
+  const { user } = useAuth();
 
   const [instance, setInstance] = useState<any | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<any | null>(null);
@@ -92,6 +95,8 @@ export const InstanceDetails: React.FC = () => {
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
 
+  const [savingSpecs, setSavingSpecs] = useState(false);
+
   useEffect(() => {
     fetchInstanceDetails();
   }, [id]);
@@ -100,7 +105,9 @@ export const InstanceDetails: React.FC = () => {
   useEffect(() => {
     if (!socket || !id) return;
 
-    socket.emit('metrics.subscribe', { instanceId: id });
+    const token = localStorage.getItem('accessToken') || undefined;
+
+    socket.emit('metrics.subscribe', { instanceId: id, token });
     socket.on('metrics.data', (data) => {
       setLiveMetrics(data);
       setCpuHistory(prev => [...prev.slice(-19), (data.cpu || 0) * 100]);
@@ -173,6 +180,38 @@ export const InstanceDetails: React.FC = () => {
     }
   }, [instance, id]);
 
+  const handleUpdateSpecs = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!instance) return;
+    setSavingSpecs(true);
+    setPowerError(null);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${instance.id}/specs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          cpuCores: settingsCores,
+          memoryMb: settingsMemory,
+          storageGb: settingsStorage
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to update specifications');
+      }
+      alert('Hardware limits updated successfully!');
+      fetchInstanceDetails();
+    } catch (err: any) {
+      setPowerError(err.message);
+    } finally {
+      setSavingSpecs(false);
+    }
+  };
+
   const handleAddFirewallRule = (e: React.FormEvent) => {
     e.preventDefault();
     setFirewallRules([...firewallRules, { id: Math.random().toString(), ...newRule }]);
@@ -228,10 +267,20 @@ export const InstanceDetails: React.FC = () => {
     return <div className="p-12 text-center text-neutral-500 text-sm">Loading instance configuration...</div>;
   }
 
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: Activity },
+    { id: 'console', label: 'Console', icon: TermIcon },
+    { id: 'files', label: 'Files', icon: Folder },
+    { id: 'network', label: 'Networking', icon: Globe },
+    { id: 'backups', label: 'Backups', icon: ShieldCheck },
+    { id: 'activity', label: 'Activity & Notes', icon: ClipboardCheck },
+    ...(user?.role === 'Admin' ? [{ id: 'settings', label: 'Settings', icon: SetIcon }] : [])
+  ];
+
   return (
     <div className="space-y-6">
       {/* Header bar */}
-      <div className="flex items-center justify-between pb-4 border-b border-neutral-200/30 dark:border-white/5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-neutral-200/30 dark:border-white/5 gap-4">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => navigate('/')} 
@@ -252,12 +301,47 @@ export const InstanceDetails: React.FC = () => {
           </div>
         </div>
 
-        <button 
-          onClick={handleDeleteInstance}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-semibold transition"
-        >
-          <Trash2 size={14} /> Destroy VPS
-        </button>
+        {/* Global Power Ribbon */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button 
+            onClick={() => handlePowerAction('start')} 
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={instance.status === 'running' || actionLoading === 'start'}
+          >
+            <Play size={13} /> {actionLoading === 'start' ? 'Starting...' : 'Start'}
+          </button>
+          <button 
+            onClick={() => handlePowerAction('stop')} 
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={instance.status === 'stopped' || actionLoading === 'stop'}
+          >
+            <Square size={13} /> {actionLoading === 'stop' ? 'Stopping...' : 'Stop'}
+          </button>
+          <button 
+            onClick={() => handlePowerAction('reboot')} 
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={instance.status !== 'running' || actionLoading === 'reboot'}
+          >
+            <RotateCcw size={13} /> {actionLoading === 'reboot' ? 'Rebooting...' : 'Reboot'}
+          </button>
+          <button 
+            onClick={() => handlePowerAction('kill')} 
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-800 hover:bg-rose-900 text-white rounded-xl text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={instance.status === 'stopped' || actionLoading === 'kill'}
+          >
+            <Skull size={13} /> {actionLoading === 'kill' ? 'Killing...' : 'Kill'}
+          </button>
+
+          {/* Admin Destroy VPS button */}
+          {user?.role === 'Admin' && (
+            <button 
+              onClick={handleDeleteInstance}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-semibold transition ml-2"
+            >
+              <Trash2 size={13} /> Destroy VPS
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Power error banner */}
@@ -271,15 +355,7 @@ export const InstanceDetails: React.FC = () => {
       <div>
         <nav className="flex relative">
           <ul role="list" className="flex min-w-full mt-1.5 flex-none gap-x-2 text-sm font-normal leading-6 text-neutral-600 dark:text-neutral-400 overflow-x-auto">
-            {[
-              { id: 'overview', label: 'Overview', icon: Activity },
-              { id: 'console', label: 'Console', icon: TermIcon },
-              { id: 'files', label: 'Files', icon: Folder },
-              { id: 'network', label: 'Networking', icon: Globe },
-              { id: 'backups', label: 'Backups', icon: ShieldCheck },
-              { id: 'activity', label: 'Activity & Notes', icon: ClipboardCheck },
-              { id: 'settings', label: 'Settings', icon: SetIcon }
-            ].map((t) => (
+            {tabs.map((t) => (
               <li key={t.id} className="transition">
                 <button
                   onClick={() => setActiveTab(t.id)}
@@ -575,14 +651,14 @@ export const InstanceDetails: React.FC = () => {
         </div>
       )}
 
-      {/* 6. SETTINGS TAB */}
-      {activeTab === 'settings' && (
+      {/* 6. SETTINGS TAB (Admin Only) */}
+      {activeTab === 'settings' && user?.role === 'Admin' && (
         <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-6 max-w-xl">
           <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Hardware Limits</h2>
-          <form className="space-y-4 text-xs">
+          <form onSubmit={handleUpdateSpecs} className="space-y-4 text-xs">
             <div>
               <label className="text-[11px] text-neutral-400 block mb-1">Rename VPS Label</label>
-              <input type="text" className="w-full al-input" value={settingsName} onChange={e => setSettingsName(e.target.value)} required />
+              <input type="text" className="w-full al-input" value={settingsName} onChange={e => setSettingsName(e.target.value)} required disabled />
             </div>
             <div className="space-y-1">
               <div className="flex justify-between text-[11px] text-neutral-400">
@@ -605,7 +681,9 @@ export const InstanceDetails: React.FC = () => {
               </div>
               <input type="range" min="10" max="500" className="w-full accent-indigo-500" value={settingsStorage} onChange={e => setSettingsStorage(parseInt(e.target.value, 10))} />
             </div>
-            <button type="button" className="al-btn al-btn-primary">Update Allocations</button>
+            <button type="submit" className="al-btn al-btn-primary" disabled={savingSpecs}>
+              {savingSpecs ? 'Saving specifications...' : 'Update Allocations'}
+            </button>
           </form>
         </div>
       )}

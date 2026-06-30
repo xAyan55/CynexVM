@@ -16,8 +16,11 @@ async function getSshCreds(req: any, res: any, next: any) {
 
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
-    // In a real setup, we use the container IP, username, and password configured in setting or body
-    // If not passed in body or headers, we default to host settings.
+    // Ownership check
+    if (req.user.role !== 'Admin' && instance.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
+    }
+
     const host = req.query.host || req.body.host || instance.ipAddress;
     const username = req.query.username || req.body.username || 'root';
     const password = req.query.password || req.body.password || instance.password;

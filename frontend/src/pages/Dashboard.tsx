@@ -180,20 +180,22 @@ export const Dashboard: React.FC = () => {
           <h1 className="text-base font-medium text-neutral-800 dark:text-white">Instances</h1>
           <p className="text-sm text-neutral-500 mt-0.5">Manage and catalog your LXD virtualization containers.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowNewFolderModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-white/5 border border-borderSubtle hover:bg-white/10 text-white rounded-xl transition"
-          >
-            <FolderPlus size={14} /> New Folder
-          </button>
-          <button
-            onClick={() => setShowDeployWizard(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow transition"
-          >
-            <Plus size={14} /> Deploy VPS
-          </button>
-        </div>
+        {user?.role === 'Admin' && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowNewFolderModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-white/5 border border-borderSubtle hover:bg-white/10 text-white rounded-xl transition"
+            >
+              <FolderPlus size={14} /> New Folder
+            </button>
+            <button
+              onClick={() => setShowDeployWizard(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow transition"
+            >
+              <Plus size={14} /> Deploy VPS
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (

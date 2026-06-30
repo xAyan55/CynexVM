@@ -5,6 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import jwt from 'jsonwebtoken';
 import { CONFIG } from './config';
 import { apiLimiter } from './middleware/rateLimit';
 
@@ -81,6 +82,31 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'An unexpected internal error occurred' });
 });
 
+// Socket.IO Auth Helper
+async function checkSocketAuth(instanceId: string, token?: string): Promise<boolean> {
+  if (!token) return false;
+  try {
+    const decoded = jwt.verify(token, CONFIG.JWT_SECRET) as any;
+    if (!decoded || !decoded.userId) return false;
+
+    const user = await db.user.findUnique({
+      where: { id: decoded.userId },
+      include: { roles: { include: { role: true } } }
+    });
+    if (!user) return false;
+
+    const instance = await db.instance.findUnique({ where: { id: instanceId } });
+    if (!instance) return false;
+
+    const roleName = user.roles[0]?.role.name || 'User';
+    if (roleName === 'Admin') return true;
+
+    return instance.userId === user.id;
+  } catch (_) {
+    return false;
+  }
+}
+
 // WebSocket Server Handlers
 io.on('connection', (socket: Socket) => {
   console.log(`[Socket] Client connected: ${socket.id}`);
@@ -88,8 +114,13 @@ io.on('connection', (socket: Socket) => {
   let terminalProcess: ChildProcessWithoutNullStreams | null = null;
 
   // 1. Terminal via lxc exec (direct container shell, no SSH)
-  socket.on('terminal.init', async (params: { instanceId: string }) => {
+  socket.on('terminal.init', async (params: { instanceId: string; token?: string }) => {
     try {
+      const authorized = await checkSocketAuth(params.instanceId, params.token);
+      if (!authorized) {
+        return socket.emit('terminal.log', '\r\n*** ERROR: Unauthorized access to container terminal ***\r\n');
+      }
+
       const instance = await db.instance.findUnique({
         where: { id: params.instanceId },
         include: { node: true }
@@ -135,8 +166,7 @@ io.on('connection', (socket: Socket) => {
       });
 
       socket.on('terminal.resize', (size: { cols: number; rows: number }) => {
-        // LXC exec doesn't support resize signals directly via spawn,
-        // but the terminal will still function correctly
+        // LXC exec doesn't support resize signals directly via spawn
       });
 
     } catch (err: any) {
@@ -145,8 +175,13 @@ io.on('connection', (socket: Socket) => {
   });
 
   // 2. Real-time Live Metrics Streaming
-  socket.on('metrics.subscribe', async (params: { instanceId: string }) => {
+  socket.on('metrics.subscribe', async (params: { instanceId: string; token?: string }) => {
     if (metricsInterval) clearInterval(metricsInterval);
+
+    const authorized = await checkSocketAuth(params.instanceId, params.token);
+    if (!authorized) {
+      return socket.emit('metrics.error', { message: 'Unauthorized metrics subscription' });
+    }
 
     const emitMetrics = async () => {
       try {
