@@ -503,16 +503,16 @@ router.post('/:id/unfreeze', authenticate, async (req: AuthenticatedRequest, res
 
 /**
  * @route   POST /api/v1/instances/:id/reinstall
- * @desc    Reinstalls the container operating system filesystem (Admin Only)
+ * @desc    Reinstalls the container operating system filesystem (Owner or Admin)
  */
 router.post('/:id/reinstall', authenticate, async (req: AuthenticatedRequest, res) => {
-  if (!req.user || req.user.role !== 'Admin') {
-    return res.status(403).json({ error: 'Forbidden: Admin access required' });
-  }
-
   try {
     const instance = await db.instance.findUnique({ where: { id: req.params.id }, include: { node: true } });
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    if (req.user?.role !== 'Admin' && instance.userId !== req.user?.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
+    }
 
     if (!LockManager.acquire(instance.id, 'reinstall')) {
       return res.status(409).json({ error: 'Resource locked by another running task' });
@@ -581,6 +581,56 @@ router.delete('/:id', authenticate, requirePermission('instance.delete'), async 
     return res.status(200).json({ message: 'Container destroyed successfully' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to destroy container' });
+  }
+});
+
+/**
+ * @route   POST /api/v1/instances/:id/password
+ * @desc    Changes root password of the container (Owner or Admin)
+ */
+router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password is required' });
+
+    const instance = await db.instance.findUnique({ where: { id: req.params.id } });
+    if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    if (req.user.role !== 'Admin' && instance.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this instance' });
+    }
+
+    const containerName = `cynex-${instance.vmid}`;
+    
+    // Execute chpasswd inside the container
+    const { LxdClient } = require('../services/lxd/lxdClient');
+    try {
+      await LxdClient.request(
+        instance.nodeId,
+        `/1.0/instances/${containerName}/exec`,
+        'POST',
+        {
+          command: ['sh', '-c', `echo "root:${password}" | chpasswd`],
+          environment: {},
+          'wait-for-variables': true,
+          record: false
+        }
+      );
+      
+      // Update password in local database
+      await db.instance.update({
+        where: { id: instance.id },
+        data: { password }
+      });
+
+      return res.status(200).json({ message: 'Root password updated successfully.' });
+    } catch (lxdErr: any) {
+      return res.status(400).json({ error: 'Failed to update password inside container. Make sure the VPS is running.' });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to update root password' });
   }
 });
 

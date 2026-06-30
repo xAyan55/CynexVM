@@ -91,6 +91,91 @@ export const InstanceDetails: React.FC = () => {
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
 
+  // Password reset & OS Reinstall
+  const [newRootPassword, setNewRootPassword] = useState('');
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [reinstallTemplate, setReinstallTemplate] = useState('');
+  const [reinstalling, setReinstalling] = useState(false);
+  const [images, setImages] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      fetchImages();
+    }
+  }, [activeTab]);
+
+  const fetchImages = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch('/api/v1/images', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setImages(data);
+        if (data.length > 0) {
+          setReinstallTemplate(data[0].aliases?.[0] || data[0].fingerprint);
+        }
+      }
+    } catch (_) {}
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRootPassword) return;
+    setUpdatingPassword(true);
+    setPowerError(null);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ password: newRootPassword })
+      });
+      if (res.ok) {
+        alert('Root password changed successfully!');
+        setNewRootPassword('');
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to change root password');
+      }
+    } catch (_) {
+      alert('Failed to change root password');
+    }
+    setUpdatingPassword(false);
+  };
+
+  const handleReinstall = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reinstallTemplate) return;
+    if (!confirm('CRITICAL WARNING: Reinstalling will wipe the entire container disk! This action is irreversible. Are you sure you want to proceed?')) return;
+    setReinstalling(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/reinstall`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ osTemplate: reinstallTemplate })
+      });
+      if (res.ok) {
+        alert('Reinstallation started! Redirecting to dashboard.');
+        navigate('/');
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Reinstall failed');
+      }
+    } catch (_) {
+      alert('Reinstall failed');
+    }
+    setReinstalling(false);
+  };
+
   useEffect(() => {
     fetchInstanceDetails();
   }, [id]);
@@ -235,7 +320,8 @@ export const InstanceDetails: React.FC = () => {
     { id: 'files', label: 'Files', icon: Folder },
     { id: 'network', label: 'Networking', icon: Globe },
     { id: 'backups', label: 'Backups', icon: ShieldCheck },
-    { id: 'activity', label: 'Activity & Notes', icon: ClipboardCheck }
+    { id: 'activity', label: 'Activity & Notes', icon: ClipboardCheck },
+    { id: 'settings', label: 'Settings', icon: SetIcon }
   ];
 
   return (
@@ -626,6 +712,80 @@ export const InstanceDetails: React.FC = () => {
               <ClipboardCheck size={18} /> Operation Log Feed
             </h3>
             <p className="text-xs text-neutral-500 text-center py-8">No activity logs recorded yet.</p>
+          </div>
+        </div>
+      )}
+      {activeTab === 'settings' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
+          {/* Change Root Password Card */}
+          <div className="bg-white dark:bg-white/5 border border-neutral-350 dark:border-neutral-800/20 rounded-2xl p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-semibold text-neutral-850 dark:text-white flex items-center gap-2">
+              <SetIcon size={16} className="text-blue-500" /> Change Root Password
+            </h2>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+              Instantly update the root user account password inside the container filesystem. The container must be running to apply this change.
+            </p>
+            <form onSubmit={handleChangePassword} className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="text-neutral-500 dark:text-neutral-400 font-medium">New Root Password</label>
+                <input 
+                  type="password" 
+                  value={newRootPassword}
+                  onChange={e => setNewRootPassword(e.target.value)}
+                  placeholder="Enter secure password"
+                  className="w-full al-input"
+                  required
+                />
+              </div>
+              <button 
+                type="submit" 
+                disabled={updatingPassword}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition disabled:opacity-40"
+              >
+                {updatingPassword ? 'Updating...' : 'Update Password'}
+              </button>
+            </form>
+          </div>
+
+          {/* OS Reinstallation Card (Danger Zone) */}
+          <div className="bg-white dark:bg-white/5 border border-neutral-350 dark:border-neutral-800/20 rounded-2xl p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-semibold text-rose-500 flex items-center gap-2">
+              <RefreshCw size={16} /> Reinstall Operating System
+            </h2>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed font-semibold">
+              CRITICAL: Reinstalling deletes the container filesystem root and recreates it from the selected OS template. All user files, data, and configurations will be permanently destroyed.
+            </p>
+            <form onSubmit={handleReinstall} className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="text-neutral-500 dark:text-neutral-400 font-medium">Select OS Template</label>
+                <select
+                  value={reinstallTemplate}
+                  onChange={e => setReinstallTemplate(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-800/20 focus:border-blue-500 focus:outline-none rounded-xl text-neutral-850 dark:text-white transition"
+                  required
+                >
+                  {images.length === 0 ? (
+                    <option value="">No cached images found</option>
+                  ) : (
+                    images.map(img => {
+                      const aliasName = img.aliases?.[0] || img.fingerprint;
+                      return (
+                        <option key={img.fingerprint} value={aliasName}>
+                          {aliasName}
+                        </option>
+                      );
+                    })
+                  )}
+                </select>
+              </div>
+              <button 
+                type="submit" 
+                disabled={reinstalling}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold transition disabled:opacity-40"
+              >
+                {reinstalling ? 'Initiating Reinstall...' : 'Reinstall OS'}
+              </button>
+            </form>
           </div>
         </div>
       )}
