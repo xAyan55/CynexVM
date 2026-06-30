@@ -2,7 +2,16 @@ import axios, { AxiosInstance } from 'axios';
 import { db } from '../../db';
 
 export class LxdClient {
-  private static localSocketPath = '/var/snap/lxd/common/lxd/unix.socket';
+  private static getSocketPath(): string {
+    const fs = require('fs');
+    if (fs.existsSync('/var/snap/lxd/common/lxd/unix.socket')) {
+      return '/var/snap/lxd/common/lxd/unix.socket';
+    }
+    if (fs.existsSync('/var/lib/lxd/unix.socket')) {
+      return '/var/lib/lxd/unix.socket';
+    }
+    return '/var/snap/lxd/common/lxd/unix.socket'; // default fallback
+  }
 
   /**
    * Dispatches a REST API call to local or remote LXD node
@@ -77,7 +86,7 @@ export class LxdClient {
   ): Promise<any> {
     try {
       const client = axios.create({
-        socketPath: this.localSocketPath,
+        socketPath: this.getSocketPath(),
         baseURL: 'http://localhost',
         headers: {
           'Content-Type': 'application/json'
@@ -111,7 +120,7 @@ export class LxdClient {
    */
   private static async waitForOperation(opId: string): Promise<any> {
     const client = axios.create({
-      socketPath: this.localSocketPath,
+      socketPath: this.getSocketPath(),
       baseURL: 'http://localhost'
     });
 
