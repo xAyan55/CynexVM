@@ -1,9 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export const Register: React.FC = () => {
   const navigate = useNavigate();
+  const { settings } = useAuth();
+
+  // Redirect if registration is disabled
+  useEffect(() => {
+    if (settings.registration_enabled === 'false') {
+      navigate('/login');
+    }
+  }, [settings, navigate]);
 
   // Form fields
   const [username, setUsername] = useState('');
@@ -92,9 +101,14 @@ export const Register: React.FC = () => {
     <div className="auth-split">
       <div className={`auth-panel ${visible ? 'visible' : ''}`} id="authPanel">
         <div className="mb-8">
-          <img src="/assets/logo.png" alt="" className="h-10 w-10 rounded-xl object-contain mb-5" />
+          <img 
+            src={settings.logo_url || "/assets/logo.png"} 
+            alt="" 
+            className="h-10 w-10 rounded-xl object-contain mb-5" 
+            onError={(e) => { e.currentTarget.src = "/assets/logo.png"; }}
+          />
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Create account</h1>
-          <p className="text-sm text-neutral-500 mt-1">CynexVM</p>
+          <p className="text-sm text-neutral-500 mt-1">{settings.panel_name || 'CynexVM'}</p>
         </div>
 
         {error && (
@@ -202,8 +216,8 @@ export const Register: React.FC = () => {
       
       {/* Right panel split wallpaper for registration */}
       <div 
-        className="auth-image" 
-        style={{ backgroundImage: "url('/assets/wallpapers/register.jpeg')" }}
+        className="auth-image animate-pulse-slow" 
+        style={{ backgroundImage: settings.register_image_url ? `url(${settings.register_image_url})` : undefined }}
       ></div>
     </div>
   );

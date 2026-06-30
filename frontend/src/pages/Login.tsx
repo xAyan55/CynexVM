@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Check } from 'lucide-react';
 
 export const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, settings } = useAuth();
   const navigate = useNavigate();
 
   // Form states
@@ -23,15 +23,12 @@ export const Login: React.FC = () => {
   // Page visible entrance animation class
   const [visible, setVisible] = useState(false);
   useEffect(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setVisible(true);
-      });
-    });
+    setVisible(true);
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!identifier || !password) return;
     setLoading(true);
     setError(null);
 
@@ -39,21 +36,22 @@ export const Login: React.FC = () => {
       const res = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, password, deviceId: 'browser' }),
+        body: JSON.stringify({ identifier, password }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Incorrect username or password.');
+        throw new Error(data.error || 'Failed to authenticate');
       }
 
       if (data.requires2FA) {
         setRequires2FA(true);
-        setTempToken(data.tempToken);
-      } else {
-        login(data.accessToken, data.refreshToken, data.user);
-        navigate('/');
+        setLoading(false);
+        return;
       }
+
+      login(data.accessToken, data.refreshToken, data.user);
+      navigate('/');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -63,19 +61,20 @@ export const Login: React.FC = () => {
 
   const handle2FAVerify = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!totpCode) return;
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch('/api/v1/auth/2fa/validate-login', {
+      const res = await fetch('/api/v1/auth/login/2fa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tempToken, code: totpCode, deviceId: 'browser' }),
+        body: JSON.stringify({ identifier, password, code: totpCode }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Invalid 2FA code');
+        throw new Error(data.error || '2FA verification failed');
       }
 
       login(data.accessToken, data.refreshToken, data.user);
@@ -91,9 +90,14 @@ export const Login: React.FC = () => {
     <div className="auth-split">
       <div className={`auth-panel ${visible ? 'visible' : ''}`} id="authPanel">
         <div className="mb-8">
-          <img src="/assets/logo.png" alt="" className="h-10 w-10 rounded-xl object-contain mb-5" />
+          <img 
+            src={settings.logo_url || "/assets/logo.png"} 
+            alt="" 
+            className="h-10 w-10 rounded-xl object-contain mb-5" 
+            onError={(e) => { e.currentTarget.src = "/assets/logo.png"; }}
+          />
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Sign in</h1>
-          <p className="text-sm text-neutral-500 mt-1">to CynexVM</p>
+          <p className="text-sm text-neutral-500 mt-1">to {settings.panel_name || 'CynexVM'}</p>
         </div>
 
         {error && (
@@ -124,49 +128,27 @@ export const Login: React.FC = () => {
               </div>
 
               <div>
-                <label className="auth-label" htmlFor="password">Password</label>
-                <div className="pw-wrapper">
-                  <input 
-                    id="password" 
-                    type={showPassword ? 'text' : 'password'} 
-                    autoComplete="current-password"
-                    required 
-                    className="auth-input" 
-                    placeholder="••••••••" 
-                    style={{ paddingRight: '40px' }}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <button 
-                    type="button" 
-                    className="pw-toggle" 
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label="Show password"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="auth-label mb-0" htmlFor="password">Password</label>
                 </div>
+                <input 
+                  id="password" 
+                  type="password" 
+                  autoComplete="current-password"
+                  required 
+                  className="auth-input" 
+                  placeholder="••••••••" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
               </div>
-
-              <label className="cb-row" id="rememberLabel" onClick={() => setRemember(!remember)}>
-                <span 
-                  className="cb-box" 
-                  style={{
-                    backgroundColor: remember ? '#ffffff' : '',
-                    borderColor: remember ? '#ffffff' : ''
-                  }}
-                >
-                  {remember && <Check size={10} strokeWidth={2.5} className="text-neutral-900" />}
-                </span>
-                <span className="text-sm text-neutral-500 dark:text-neutral-400">Remember me</span>
-              </label>
 
               <button 
                 type="submit" 
                 className={`auth-submit ${loading ? 'loading' : ''}`} 
                 disabled={loading}
               >
-                {!loading && <span className="btn-label">Sign in</span>}
+                {!loading && <span className="btn-label">Continue</span>}
                 {loading && <span className="spinner"></span>}
               </button>
             </div>
@@ -200,14 +182,19 @@ export const Login: React.FC = () => {
           </form>
         )}
 
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center mt-6">
-          Don't have an account?{' '}
-          <Link to="/register" className="font-medium text-neutral-850 dark:text-neutral-200 hover:underline">
-            Create one
-          </Link>
-        </p>
+        {settings.registration_enabled !== 'false' && (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center mt-6">
+            Don't have an account?{' '}
+            <Link to="/register" className="font-medium text-neutral-850 dark:text-neutral-200 hover:underline">
+              Create one
+            </Link>
+          </p>
+        )}
       </div>
-      <div className="auth-image"></div>
+      <div 
+        className="auth-image animate-pulse-slow" 
+        style={{ backgroundImage: settings.login_image_url ? `url(${settings.login_image_url})` : undefined }}
+      ></div>
     </div>
   );
 };

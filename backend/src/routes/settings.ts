@@ -6,9 +6,9 @@ const router = Router();
 
 /**
  * @route   GET /api/v1/settings
- * @desc    Retrieves all settings key-value pairs
+ * @desc    Retrieves all settings key-value pairs (Public)
  */
-router.get('/', authenticate, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const list = await db.setting.findMany();
     const settingsMap = list.reduce((acc: any, item) => {

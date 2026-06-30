@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, settings } = useAuth();
 
   const userLinks = [
     { to: '/', label: 'Instances', icon: MonitorPlay },
@@ -33,8 +33,13 @@ export const Sidebar: React.FC = () => {
         {/* Top: Logo */}
         <div className="pl-6 pt-4 pb-4 flex min-w-0 shrink-0">
           <a href="/" className="flex items-center min-w-0">
-            <img src="/assets/logo.png" alt="Logo" className="logo-bg p-1 h-10 w-10 rounded-xl mr-3 shrink-0 inline-flex bg-neutral-950/90 dark:bg-transparent" />
-            <h1 className="text-neutral-700 dark:text-white font-medium tracking-tight text-lg truncate min-w-0">CynexVM</h1>
+            <img 
+              src={settings.logo_url || "/assets/logo.png"} 
+              alt="Logo" 
+              className="logo-bg p-1 h-10 w-10 rounded-xl mr-3 shrink-0 inline-flex bg-neutral-950/90 dark:bg-transparent" 
+              onError={(e) => { e.currentTarget.src = "/assets/logo.png"; }}
+            />
+            <h1 className="text-neutral-700 dark:text-white font-medium tracking-tight text-lg truncate min-w-0">{settings.panel_name || 'CynexVM'}</h1>
           </a>
         </div>
 

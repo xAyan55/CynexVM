@@ -31,11 +31,17 @@ import { AdminApiKeys } from './pages/AdminApiKeys';
 
 // Page loading spinner matching Airlink's preparing experience screen
 const LoadingScreen: React.FC = () => {
+  const { settings } = useAuth();
   return (
     <div className="fixed inset-0 z-[99998] flex items-center justify-center bg-[#0f0f0f]">
       <div className="flex flex-col items-center gap-4">
-        <img src="/assets/logo.png" alt="" className="w-[42px] h-[42px] object-contain rounded-xl" />
-        <p className="text-sm font-semibold tracking-tight text-white font-sans">CynexVM</p>
+        <img 
+          src={settings.logo_url || "/assets/logo.png"} 
+          alt="" 
+          className="w-[42px] h-[42px] object-contain rounded-xl" 
+          onError={(e) => { e.currentTarget.src = "/assets/logo.png"; }}
+        />
+        <p className="text-sm font-semibold tracking-tight text-white font-sans">{settings.panel_name || "CynexVM"}</p>
         <div className="w-32 h-[1.5px] bg-white/5 rounded-full overflow-hidden">
           <div className="h-full bg-white animate-pulse w-full"></div>
         </div>

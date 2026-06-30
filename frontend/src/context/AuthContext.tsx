@@ -1,5 +1,16 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 
+export interface SystemSettings {
+  panel_name?: string;
+  welcome_message?: string;
+  maintenance_mode?: string;
+  logo_url?: string;
+  favicon_url?: string;
+  login_image_url?: string;
+  register_image_url?: string;
+  registration_enabled?: string;
+}
+
 interface User {
   id: string;
   username: string;
@@ -13,9 +24,11 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
+  settings: SystemSettings;
   login: (accessToken: string, refreshToken: string, userData: User) => void;
   logout: () => Promise<void>;
   fetchProfile: (authToken?: string) => Promise<boolean>;
+  fetchSettings: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,6 +37,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<SystemSettings>({
+    panel_name: 'CynexVM',
+    welcome_message: 'Welcome to CynexVM Enterprise LXC Manager',
+    maintenance_mode: 'false',
+    logo_url: '',
+    favicon_url: '',
+    login_image_url: '',
+    register_image_url: '',
+    registration_enabled: 'true'
+  });
 
   // Auto-login on load if token is cached
   useEffect(() => {
@@ -119,6 +142,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/v1/settings');
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(prev => ({ ...prev, ...data }));
+      }
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  useEffect(() => {
+    // Dynamic tab document title update
+    if (settings.panel_name) {
+      document.title = settings.panel_name;
+    }
+    // Dynamic browser favicon update
+    if (settings.favicon_url) {
+      const link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+      if (link) {
+        link.href = settings.favicon_url;
+      } else {
+        const newLink = document.createElement('link');
+        newLink.rel = 'shortcut icon';
+        newLink.href = settings.favicon_url;
+        document.head.appendChild(newLink);
+      }
+    }
+  }, [settings]);
+
   const login = (accessToken: string, refreshToken: string, userData: User) => {
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
@@ -146,7 +202,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, fetchProfile }}>
+    <AuthContext.Provider value={{ user, token, loading, settings, login, logout, fetchProfile, fetchSettings }}>
       {children}
     </AuthContext.Provider>
   );
