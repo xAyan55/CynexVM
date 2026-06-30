@@ -90,7 +90,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
 
   return (
     <div className="al-card p-2 bg-[#09090B]">
-      <div ref={terminalRef} className="h-96 min-h-[380px]" />
+      <div ref={terminalRef} className="h-[500px] min-h-[500px]" />
     </div>
   );
 };
