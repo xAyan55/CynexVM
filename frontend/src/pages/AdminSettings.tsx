@@ -10,6 +10,7 @@ export const AdminSettings: React.FC = () => {
   const [welcomeMessage, setWelcomeMessage] = useState('Welcome to CynexVM Enterprise LXC Manager');
   const [maintenanceMode, setMaintenanceMode] = useState('false');
   const [registrationEnabled, setRegistrationEnabled] = useState('true');
+  const [vpsMotd, setVpsMotd] = useState('');
 
   // Custom Assets
   const [logoUrl, setLogoUrl] = useState('');
@@ -52,6 +53,7 @@ export const AdminSettings: React.FC = () => {
         if (data.welcome_message) setWelcomeMessage(data.welcome_message);
         if (data.maintenance_mode) setMaintenanceMode(data.maintenance_mode);
         if (data.registration_enabled) setRegistrationEnabled(data.registration_enabled);
+        if (data.vps_motd) setVpsMotd(data.vps_motd);
         if (data.logo_url) setLogoUrl(data.logo_url);
         if (data.favicon_url) setFaviconUrl(data.favicon_url);
         if (data.login_image_url) setLoginImageUrl(data.login_image_url);
@@ -98,6 +100,7 @@ export const AdminSettings: React.FC = () => {
           welcome_message: welcomeMessage,
           maintenance_mode: maintenanceMode,
           registration_enabled: registrationEnabled,
+          vps_motd: vpsMotd,
           logo_url: logoUrl,
           favicon_url: faviconUrl,
           login_image_url: loginImageUrl,
@@ -138,9 +141,9 @@ export const AdminSettings: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl pb-12">
-      {/* Header Container */}
-      <div className="flex flex-col sm:flex-row sm:items-center px-8 pt-5 justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto px-6 lg:px-8 pb-12">
+      {/* Header Container with Save Trigger */}
+      <div className="flex flex-col sm:flex-row sm:items-center pt-5 justify-between gap-4">
         <div>
           <h1 className="text-base font-medium text-neutral-800 dark:text-white">Branding & System Configuration</h1>
           <p className="mt-0.5 text-sm text-neutral-500">Configure SMTP servers, custom brand aesthetics, user registration policies, and diagnostic webhooks.</p>
@@ -155,7 +158,7 @@ export const AdminSettings: React.FC = () => {
         </button>
       </div>
 
-      <div className="px-8 mt-5">
+      <div className="mt-5">
         <form id="settings-form" onSubmit={handleSave} className="space-y-6">
           {success && (
             <p className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-semibold">
@@ -219,6 +222,17 @@ export const AdminSettings: React.FC = () => {
                       <option value="false">Active (Online)</option>
                       <option value="true">Offline (Maintenance)</option>
                     </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-neutral-400 mb-1">VPS Message of the Day (MOTD)</label>
+                    <textarea 
+                      rows={3} 
+                      placeholder="Welcome to your CynexVM VPS! Managed by system administrator."
+                      className="w-full al-input resize-none"
+                      value={vpsMotd}
+                      onChange={e => setVpsMotd(e.target.value)}
+                    />
                   </div>
                 </div>
               </div>

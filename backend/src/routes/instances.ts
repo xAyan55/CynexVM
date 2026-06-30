@@ -314,6 +314,30 @@ router.post('/:id/start', authenticate, requirePermission('instance.start'), asy
         where: { id: instance.id },
         data: { status: 'running' }
       });
+
+      // Auto-apply current vps_motd setting on boot (asynchronously)
+      (async () => {
+        try {
+          const motdSetting = await db.setting.findUnique({ where: { key: 'vps_motd' } });
+          if (motdSetting?.value) {
+            // Wait a brief moment for container filesystem mounts to stabilize
+            await new Promise(r => setTimeout(r, 2500));
+            const containerName = `cynex-${instance.vmid}`;
+            const { LxdClient } = require('../services/lxd/lxdClient');
+            await LxdClient.request(
+              instance.nodeId,
+              `/1.0/instances/${containerName}/exec`,
+              'POST',
+              {
+                command: ['sh', '-c', `echo "${motdSetting.value.replace(/"/g, '\\"')}" > /etc/motd`],
+                environment: {},
+                'wait-for-variables': true,
+                record: false
+              }
+            );
+          }
+        } catch (_) {}
+      })();
     } finally {
       LockManager.release(instance.id, 'start');
     }
