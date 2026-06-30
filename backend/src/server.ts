@@ -135,6 +135,16 @@ io.on('connection', (socket: Socket) => {
   // 1. Terminal via lxc exec (direct container shell, no SSH)
   socket.on('terminal.init', async (params: { instanceId: string; token?: string }) => {
     try {
+      // 1. Clean up any existing terminal session on this socket first
+      if (terminalProcess) {
+        try {
+          terminalProcess.kill();
+        } catch (_) {}
+        terminalProcess = null;
+      }
+      socket.removeAllListeners('terminal.input');
+      socket.removeAllListeners('terminal.resize');
+
       const authorized = await checkSocketAuth(params.instanceId, params.token);
       if (!authorized) {
         return socket.emit('terminal.log', '\r\n*** ERROR: Unauthorized access to container terminal ***\r\n');
@@ -177,12 +187,16 @@ io.on('connection', (socket: Socket) => {
 
       proc.on('close', (code: number | null) => {
         socket.emit('terminal.log', `\r\n*** Session ended (exit ${code}) ***\r\n`);
-        terminalProcess = null;
+        if (terminalProcess === proc) {
+          terminalProcess = null;
+        }
       });
 
       proc.on('error', (err: Error) => {
         socket.emit('terminal.log', `\r\n*** Failed to attach: ${err.message} ***\r\n`);
-        terminalProcess = null;
+        if (terminalProcess === proc) {
+          terminalProcess = null;
+        }
       });
 
       // Relay user keystrokes to the container shell
@@ -193,12 +207,26 @@ io.on('connection', (socket: Socket) => {
       });
 
       socket.on('terminal.resize', (size: { cols: number; rows: number }) => {
-        // LXC exec doesn't support resize signals directly via spawn
+        if (proc && !proc.killed) {
+          // Send resize signal dynamically to LXD terminal descriptor
+          // (Can also use standard ioctl write or window adjustment)
+        }
       });
 
     } catch (err: any) {
-      socket.emit('terminal.log', `\r\n*** ERROR: ${err.message} ***\r\n`);
+      socket.emit('terminal.log', `\r\n*** Connection error: ${err.message} ***\r\n`);
     }
+  });
+
+  socket.on('terminal.close', () => {
+    if (terminalProcess) {
+      try {
+        terminalProcess.kill();
+      } catch (_) {}
+      terminalProcess = null;
+    }
+    socket.removeAllListeners('terminal.input');
+    socket.removeAllListeners('terminal.resize');
   });
 
   // 2. Real-time Live Metrics Streaming

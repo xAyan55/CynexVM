@@ -80,6 +80,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     resizeObserver.observe(terminalRef.current);
 
     return () => {
+      socket.emit('terminal.close');
       socket.off('terminal.data', handleData);
       socket.off('terminal.log', handleLog);
       term.dispose();
