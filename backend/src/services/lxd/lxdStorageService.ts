@@ -40,10 +40,10 @@ export class LxdStorageService {
   public static async hasAvailableCapacity(nodeId: string | null, poolName: string, requestedGb: number): Promise<boolean> {
     try {
       const pools = await this.list(nodeId);
-      const pool = pools.find(p => p.name === poolName);
-      if (!pool) return false;
+      const pool = pools.find(p => p.name === poolName) || pools[0];
+      if (!pool) return true; // If no pools, skip and let LXD handle validation
       const requestedBytes = requestedGb * 1024 * 1024 * 1024;
-      return pool.freeBytes >= requestedBytes || pool.driver === 'dir'; // directory drivers do not enforce strict limits
+      return pool.freeBytes >= requestedBytes || pool.driver === 'dir';
     } catch (_) {
       return true; // Fallback
     }

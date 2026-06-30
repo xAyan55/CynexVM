@@ -113,12 +113,27 @@ export class LxdContainerService {
       }
     }
 
+    const alias = imageSource.replace('images:', '');
+    let serverUrl = 'https://images.linuxcontainers.org';
+    if (alias.startsWith('ubuntu')) {
+      serverUrl = 'https://images.lxd.canonical.com';
+    }
+
+    // Get active storage pool
+    const { LxdStorageService } = require('../lxd/lxdStorageService');
+    const pools = await LxdStorageService.list(nodeId);
+    const activePool = pools.find((p: any) => p.name === 'default') || pools[0];
+    const poolName = activePool ? activePool.name : 'default';
+
     // 1. Create container skeleton
     await LxdClient.request(nodeId, '/1.0/instances', 'POST', {
       name,
       source: {
         type: 'image',
-        alias: imageSource.replace('images:', '')
+        mode: 'pull',
+        server: serverUrl,
+        protocol: 'simplestreams',
+        alias: alias
       },
       profiles: ['default']
     });
@@ -141,7 +156,7 @@ export class LxdContainerService {
       devices: {
         root: {
           path: '/',
-          pool: 'default',
+          pool: poolName,
           type: 'disk',
           size: `${config.diskSizeGb}GiB`
         }
