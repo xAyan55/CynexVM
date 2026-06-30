@@ -23,6 +23,7 @@ import { ReconciliationService } from './services/reconciliation';
 import { db } from './db';
 
 const app = express();
+app.set('trust proxy', true);
 const server = http.createServer(app);
 
 // Socket.IO configuration
