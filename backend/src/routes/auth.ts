@@ -764,4 +764,100 @@ router.delete('/apikeys/:id', authenticate, async (req: AuthenticatedRequest, re
   }
 });
 
+/**
+ * @route   GET /api/v1/auth/admin/apikeys
+ * @desc    Get all system API keys (Admin only)
+ */
+router.get('/admin/apikeys', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user || req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Forbidden: Requires Admin role' });
+  }
+
+  try {
+    const keys = await db.apiKey.findMany({
+      include: { user: true },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const parsed = keys.map(k => ({
+      id: k.id,
+      label: k.name,
+      key: 'cv_live_••••••••••••' + k.keyHash.substring(k.keyHash.length - 4),
+      createdAt: k.createdAt.toISOString().split('T')[0],
+      user: {
+        id: k.user.id,
+        username: k.user.username,
+        email: k.user.email
+      }
+    }));
+
+    return res.status(200).json(parsed);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to fetch global API keys.' });
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/admin/apikeys
+ * @desc    Generate a new API key for any user (Admin only)
+ */
+router.post('/admin/apikeys', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user || req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Forbidden: Requires Admin role' });
+  }
+
+  const { name, userId } = req.body;
+  if (!name) return res.status(400).json({ error: 'Key label name is required.' });
+
+  const targetUserId = userId || req.user.id;
+
+  try {
+    const targetUser = await db.user.findUnique({ where: { id: targetUserId } });
+    if (!targetUser) return res.status(404).json({ error: 'Target user not found.' });
+
+    const rawKey = 'cv_live_' + crypto.randomBytes(24).toString('hex');
+    const hash = crypto.createHash('sha256').update(rawKey).digest('hex');
+
+    const apiKey = await db.apiKey.create({
+      data: {
+        userId: targetUserId,
+        name,
+        keyHash: hash
+      }
+    });
+
+    return res.status(201).json({
+      message: `API Key generated successfully for user ${targetUser.username}.`,
+      key: {
+        id: apiKey.id,
+        label: apiKey.name,
+        rawKey,
+        createdAt: apiKey.createdAt.toISOString().split('T')[0]
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to generate API key.' });
+  }
+});
+
+/**
+ * @route   DELETE /api/v1/auth/admin/apikeys/:id
+ * @desc    Revoke/Delete any API key (Admin only)
+ */
+router.delete('/admin/apikeys/:id', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user || req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Forbidden: Requires Admin role' });
+  }
+
+  try {
+    const key = await db.apiKey.findUnique({ where: { id: req.params.id } });
+    if (!key) return res.status(404).json({ error: 'API Key not found.' });
+
+    await db.apiKey.delete({ where: { id: req.params.id } });
+    return res.status(200).json({ message: 'API Key revoked successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to revoke API key.' });
+  }
+});
+
 export default router;
