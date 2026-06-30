@@ -87,15 +87,9 @@ export const InstanceDetails: React.FC = () => {
   const [newSnapshotName, setNewSnapshotName] = useState('');
 
   // Settings & Custom properties
-  const [settingsName, setSettingsName] = useState('');
-  const [settingsCores, setSettingsCores] = useState(1);
-  const [settingsMemory, setSettingsMemory] = useState(512);
-  const [settingsStorage, setSettingsStorage] = useState(10);
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
-
-  const [savingSpecs, setSavingSpecs] = useState(false);
 
   useEffect(() => {
     fetchInstanceDetails();
@@ -138,10 +132,6 @@ export const InstanceDetails: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setInstance(data);
-        setSettingsName(data.name);
-        setSettingsMemory(data.memoryMb);
-        setSettingsCores(data.cpuCores);
-        setSettingsStorage(data.storageGb);
         setSnapshots(data.snapshots || []);
         setFirewallRules(data.firewallRules || []);
         setNotes(data.notes || '');
@@ -180,37 +170,7 @@ export const InstanceDetails: React.FC = () => {
     }
   }, [instance, id]);
 
-  const handleUpdateSpecs = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!instance) return;
-    setSavingSpecs(true);
-    setPowerError(null);
-    try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/v1/instances/${instance.id}/specs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          cpuCores: settingsCores,
-          memoryMb: settingsMemory,
-          storageGb: settingsStorage
-        })
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to update specifications');
-      }
-      alert('Hardware limits updated successfully!');
-      fetchInstanceDetails();
-    } catch (err: any) {
-      setPowerError(err.message);
-    } finally {
-      setSavingSpecs(false);
-    }
-  };
+
 
   const handleAddFirewallRule = (e: React.FormEvent) => {
     e.preventDefault();
@@ -263,25 +223,7 @@ export const InstanceDetails: React.FC = () => {
     } catch (_) {}
   };
 
-  const handleReinstall = async () => {
-    if (!instance) return;
-    if (!confirm('CRITICAL WARNING: Reinstalling will wipe the entire container disk! This action is irreversible.')) return;
-    
-    try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/v1/instances/${instance.id}/reinstall`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        alert('Reinstallation started! Redirecting to Task logs.');
-        navigate('/admin/tasks');
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Reinstall failed');
-      }
-    } catch (_) {}
-  };
+
 
   if (loading || !instance) {
     return <div className="p-12 text-center text-neutral-500 text-sm">Loading instance configuration...</div>;
@@ -293,8 +235,7 @@ export const InstanceDetails: React.FC = () => {
     { id: 'files', label: 'Files', icon: Folder },
     { id: 'network', label: 'Networking', icon: Globe },
     { id: 'backups', label: 'Backups', icon: ShieldCheck },
-    { id: 'activity', label: 'Activity & Notes', icon: ClipboardCheck },
-    ...(user?.role === 'Admin' ? [{ id: 'settings', label: 'Settings', icon: SetIcon }] : [])
+    { id: 'activity', label: 'Activity & Notes', icon: ClipboardCheck }
   ];
 
   return (
@@ -689,53 +630,7 @@ export const InstanceDetails: React.FC = () => {
         </div>
       )}
 
-      {/* 6. SETTINGS TAB (Admin Only) */}
-      {activeTab === 'settings' && user?.role === 'Admin' && (
-        <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-6 max-w-xl">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Hardware Limits</h2>
-          <form onSubmit={handleUpdateSpecs} className="space-y-4 text-xs">
-            <div>
-              <label className="text-[11px] text-neutral-400 block mb-1">Rename VPS Label</label>
-              <input type="text" className="w-full al-input" value={settingsName} onChange={e => setSettingsName(e.target.value)} required disabled />
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-neutral-400">
-                <span>CPU Allocation Cores</span>
-                <span className="font-semibold text-white">{settingsCores} Cores</span>
-              </div>
-              <input type="range" min="1" max="16" className="w-full accent-indigo-500" value={settingsCores} onChange={e => setSettingsCores(parseInt(e.target.value, 10))} />
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-neutral-400">
-                <span>Memory Allocation MB</span>
-                <span className="font-semibold text-white">{settingsMemory} MB</span>
-              </div>
-              <input type="range" min="256" max="16384" step="256" className="w-full accent-indigo-500" value={settingsMemory} onChange={e => setSettingsMemory(parseInt(e.target.value, 10))} />
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-neutral-400">
-                <span>Disk capacity size (GB)</span>
-                <span className="font-semibold text-white">{settingsStorage} GB</span>
-              </div>
-              <input type="range" min="10" max="500" className="w-full accent-indigo-500" value={settingsStorage} onChange={e => setSettingsStorage(parseInt(e.target.value, 10))} />
-            </div>
-            <button type="submit" className="al-btn al-btn-primary" disabled={savingSpecs}>
-              {savingSpecs ? 'Saving specifications...' : 'Update Allocations'}
-            </button>
-          </form>
 
-          <div className="pt-6 border-t border-neutral-200/30 dark:border-white/5 space-y-3">
-            <h3 className="text-sm font-semibold text-rose-500">Danger Zone</h3>
-            <p className="text-[11px] text-neutral-400">Reinstalling deletes the container filesystem root and recreates it from the original OS template. All user configuration files and data will be destroyed.</p>
-            <button 
-              onClick={handleReinstall}
-              className="px-3.5 py-2 bg-rose-650 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow transition"
-            >
-              Reinstall OS
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DataTable } from '../components/DataTable';
 import { Wizard } from '../components/Wizard';
-import { Plus, Play, Square, RotateCw, Pause, Trash2 } from 'lucide-react';
+import { Plus, Play, Square, RotateCw, Pause, Trash2, Sliders, X, AlertTriangle } from 'lucide-react';
 
 interface Instance {
   id: string;
@@ -20,6 +20,14 @@ export const AdminInstances: React.FC = () => {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeployWizard, setShowDeployWizard] = useState(false);
+
+  // Specs editing modal states
+  const [editingInstance, setEditingInstance] = useState<Instance | null>(null);
+  const [editCores, setEditCores] = useState(1);
+  const [editMemory, setEditMemory] = useState(512);
+  const [editStorage, setEditStorage] = useState(10);
+  const [savingSpecs, setSavingSpecs] = useState(false);
+  const [reinstalling, setReinstalling] = useState(false);
 
   useEffect(() => {
     fetchInstances();
@@ -65,6 +73,68 @@ export const AdminInstances: React.FC = () => {
         fetchInstances();
       }
     } catch (_) {}
+  };
+
+  const handleUpdateSpecs = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingInstance) return;
+    setSavingSpecs(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${editingInstance.id}/specs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          cpuCores: editCores,
+          memoryMb: editMemory,
+          storageGb: editStorage
+        })
+      });
+      if (res.ok) {
+        alert('VPS hardware specifications updated successfully');
+        setEditingInstance(null);
+        fetchInstances();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to update specs');
+      }
+    } catch (_) {
+      alert('Failed to update specs');
+    }
+    setSavingSpecs(false);
+  };
+
+  const handleReinstall = async () => {
+    if (!editingInstance) return;
+    if (!confirm('CRITICAL WARNING: Reinstalling will wipe the entire container disk! This action is irreversible.')) return;
+    setReinstalling(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${editingInstance.id}/reinstall`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert('OS reinstallation enqueued successfully.');
+        setEditingInstance(null);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Reinstall failed');
+      }
+    } catch (_) {
+      alert('Reinstall failed');
+    }
+    setReinstalling(false);
+  };
+
+  const startEditSpecs = (instance: Instance) => {
+    setEditingInstance(instance);
+    setEditCores(instance.cpuCores);
+    setEditMemory(instance.memoryMb);
+    setEditStorage(instance.storageGb);
   };
 
   const columns = [
@@ -114,6 +184,13 @@ export const AdminInstances: React.FC = () => {
             title="Suspend"
           >
             <Pause size={12} />
+          </button>
+          <button 
+            onClick={() => startEditSpecs(row)}
+            className="p-1 hover:bg-white/5 rounded text-neutral-400 hover:text-white"
+            title="Configure Specs"
+          >
+            <Sliders size={12} />
           </button>
           <button 
             onClick={() => handleDeleteInstance(row.id, row.name)}
@@ -176,6 +253,94 @@ export const AdminInstances: React.FC = () => {
             }} 
             onCancel={() => setShowDeployWizard(false)} 
           />
+        </div>
+      )}
+
+      {/* Edit Specifications Modal Dialog */}
+      {editingInstance && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] border border-neutral-200/10 dark:border-white/5 rounded-2xl p-6 max-w-md w-full space-y-6 text-xs text-left relative">
+            <button 
+              onClick={() => setEditingInstance(null)}
+              className="absolute top-4 right-4 p-1.5 hover:bg-white/5 rounded-lg text-neutral-400 hover:text-white transition"
+            >
+              <X size={14} />
+            </button>
+
+            <div>
+              <h3 className="text-sm font-semibold text-white">Configure Hardware: {editingInstance.name}</h3>
+              <p className="text-[10px] text-neutral-500 mt-0.5">Modify physical resources and template settings.</p>
+            </div>
+
+            <form onSubmit={handleUpdateSpecs} className="space-y-4">
+              <div>
+                <label className="text-[10px] text-neutral-400 block mb-1">Rename VPS Label</label>
+                <input type="text" className="w-full al-input" value={editingInstance.name} required disabled />
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-neutral-400">
+                  <span>CPU Allocation Cores</span>
+                  <span className="font-semibold text-white">{editCores} Cores</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="1" 
+                  max="16" 
+                  className="w-full accent-blue-600 bg-neutral-800" 
+                  value={editCores} 
+                  onChange={e => setEditCores(parseInt(e.target.value, 10))} 
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-neutral-400">
+                  <span>Memory Allocation MB</span>
+                  <span className="font-semibold text-white">{editMemory} MB</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="256" 
+                  max="16384" 
+                  step="256" 
+                  className="w-full accent-blue-600 bg-neutral-800" 
+                  value={editMemory} 
+                  onChange={e => setEditMemory(parseInt(e.target.value, 10))} 
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-neutral-400">
+                  <span>Disk capacity size (GB)</span>
+                  <span className="font-semibold text-white">{editStorage} GB</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="10" 
+                  max="500" 
+                  className="w-full accent-blue-600 bg-neutral-800" 
+                  value={editStorage} 
+                  onChange={e => setEditStorage(parseInt(e.target.value, 10))} 
+                />
+              </div>
+              <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition" disabled={savingSpecs}>
+                {savingSpecs ? 'Saving specifications...' : 'Update Allocations'}
+              </button>
+            </form>
+
+            <div className="pt-4 border-t border-neutral-200/10 dark:border-white/5 space-y-2">
+              <h4 className="text-[11px] font-semibold text-rose-500 flex items-center gap-1">
+                <AlertTriangle size={12} /> Danger Zone
+              </h4>
+              <p className="text-[10px] text-neutral-450 leading-relaxed">
+                Reinstalling wipes the container filesystem root and recreates it from the original OS template. All configuration files and local data will be permanently destroyed.
+              </p>
+              <button 
+                onClick={handleReinstall}
+                disabled={reinstalling}
+                className="w-full py-2 bg-rose-500/10 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-500/20 rounded-xl font-semibold transition"
+              >
+                {reinstalling ? 'Reinstalling OS...' : 'Reinstall OS'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
