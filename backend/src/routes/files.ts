@@ -95,4 +95,24 @@ router.delete('/delete', authenticate, requirePermission('instance.files'), veri
   }
 });
 
+/**
+ * @route   POST /api/v1/instances/:id/files/upload
+ * @desc    Uploads a binary/text file directly using base64 payload
+ */
+router.post('/upload', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
+  const { path: filePath, base64Content } = req.body;
+  const instance = req.instanceMetadata;
+  if (!filePath || base64Content === undefined) {
+    return res.status(400).json({ error: 'Path and base64Content are required' });
+  }
+
+  try {
+    const buffer = Buffer.from(base64Content, 'base64');
+    await LxdFileService.writeFile(instance.nodeId, instance.vmid, filePath, buffer);
+    return res.status(200).json({ success: true, message: 'File uploaded successfully' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to upload file' });
+  }
+});
+
 export default router;

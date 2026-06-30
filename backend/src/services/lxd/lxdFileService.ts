@@ -17,16 +17,16 @@ export class LxdFileService {
   }
 
   /**
-   * Writes string data directly into a file in the container filesystem via LXD REST API
+   * Writes string or binary data directly into a file in the container filesystem via LXD REST API
    */
-  public static async writeFile(nodeId: string | null, vmid: number, filePath: string, content: string): Promise<void> {
+  public static async writeFile(nodeId: string | null, vmid: number, filePath: string, content: string | Buffer): Promise<void> {
     const containerName = `cynex-${vmid}`;
     // LXD REST API: POST /1.0/instances/{name}/files?path={filePath}
     await LxdClient.request(
       nodeId,
       `/1.0/instances/${containerName}/files?path=${encodeURIComponent(filePath)}`,
       'POST',
-      content // Raw payload string
+      content
     );
   }
 
@@ -48,26 +48,31 @@ export class LxdFileService {
    */
   public static async listDirectory(nodeId: string | null, vmid: number, dirPath: string): Promise<any[]> {
     const containerName = `cynex-${vmid}`;
-    // Since there is no native REST endpoint to list directory contents directly in a structured JSON layout,
-    // we run a quick lxc exec commands utility using 'ls -la --time-style=long-iso'
+    const tempFile = `/tmp/cynex-ls-${Date.now()}.txt`;
     try {
-      const execResult = await LxdClient.request(
+      // 1. Run ls command and redirect output to a temp file inside the container
+      await LxdClient.request(
         nodeId,
         `/1.0/instances/${containerName}/exec`,
         'POST',
         {
-          command: ['ls', '-la', '--time-style=long-iso', dirPath],
+          command: ['sh', '-c', `ls -la --time-style=long-iso "${dirPath}" > ${tempFile}`],
           environment: {},
           'wait-for-variables': true,
           record: false
         }
       );
-      // Wait for operation or read stdout (since local Unix socket handles it synchronously, we parse metadata)
-      // If execResult doesn't output stdout directly, we can query the output log.
-      // Let's implement a robust parser for the listing stdout or fallback to a standard list:
-      const output = execResult.output?.stdout || '';
+
+      // 2. Read the temp file content
+      const output = await this.readFile(nodeId, vmid, tempFile);
+
+      // 3. Clean up the temp file
+      await this.deleteFile(nodeId, vmid, tempFile).catch(() => {});
+
+      // 4. Parse output
       return this.parseLsOutput(output);
-    } catch (_) {
+    } catch (err: any) {
+      console.error(`[LxdFileService.listDirectory] Error:`, err.message);
       return [];
     }
   }

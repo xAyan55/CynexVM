@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { 
   Folder, File, ChevronRight, FolderPlus, FilePlus, 
-  Trash2, Shield, X, Save, LayoutGrid, List, Search, Eye, EyeOff
+  Trash2, X, Save, LayoutGrid, List, Search, Eye, EyeOff, Upload
 } from 'lucide-react';
 
 interface FileItem {
@@ -10,10 +10,10 @@ interface FileItem {
   size: number;
   uid: number;
   gid: number;
-  permissions: number;
+  permissions: string;
   isDirectory: boolean;
-  isSymbolicLink: boolean;
-  mtime: number;
+  isSymbolicLink?: boolean;
+  updatedAt?: string;
 }
 
 interface FileManagerProps {
@@ -25,10 +25,6 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
   const [items, setItems] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // SFTP pre-connected state defaults
-  const [creds, setCreds] = useState({ host: '127.0.0.1', username: 'root', password: '' });
-  const [connected, setConnected] = useState(true);
 
   // View state options
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -45,51 +41,30 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
   const [newFileName, setNewFileName] = useState('');
   const [showFileModal, setShowFileModal] = useState(false);
 
-  // Permissions settings modal
-  const [chmodTarget, setChmodTarget] = useState<{ path: string; mode: string } | null>(null);
+  // Uploading state
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    if (connected) {
-      loadDirectory(currentPath);
-    }
-  }, [currentPath, connected]);
+    loadDirectory(currentPath);
+  }, [currentPath]);
 
   const loadDirectory = async (path: string) => {
     setLoading(true);
     setError(null);
     try {
-      const query = new URLSearchParams({
-        path,
-        host: creds.host,
-        username: creds.username,
-        password: creds.password
-      });
-
+      const query = new URLSearchParams({ path });
       const res = await fetch(`/api/v1/instances/${instanceId}/files/list?${query.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setItems(data);
-        setConnected(true);
       } else {
-        // Mock fallback if SFTP backend daemon is offline
-        setItems([
-          { name: '.bashrc', size: 3771, uid: 0, gid: 0, permissions: 0o644, isDirectory: false, isSymbolicLink: false, mtime: Date.now() },
-          { name: 'nginx.conf', size: 1422, uid: 0, gid: 0, permissions: 0o644, isDirectory: false, isSymbolicLink: false, mtime: Date.now() },
-          { name: 'www', size: 4096, uid: 0, gid: 0, permissions: 0o755, isDirectory: true, isSymbolicLink: false, mtime: Date.now() },
-          { name: 'logs', size: 4096, uid: 0, gid: 0, permissions: 0o755, isDirectory: true, isSymbolicLink: false, mtime: Date.now() },
-          { name: 'backup_check.sh', size: 842, uid: 0, gid: 0, permissions: 0o755, isDirectory: false, isSymbolicLink: false, mtime: Date.now() }
-        ]);
-        setConnected(true);
+        const errData = await res.json();
+        setError(errData.error || 'Failed to read directory');
+        setItems([]);
       }
-    } catch (_) {
-      setItems([
-        { name: '.bashrc', size: 3771, uid: 0, gid: 0, permissions: 0o644, isDirectory: false, isSymbolicLink: false, mtime: Date.now() },
-        { name: 'nginx.conf', size: 1422, uid: 0, gid: 0, permissions: 0o644, isDirectory: false, isSymbolicLink: false, mtime: Date.now() },
-        { name: 'www', size: 4096, uid: 0, gid: 0, permissions: 0o755, isDirectory: true, isSymbolicLink: false, mtime: Date.now() },
-        { name: 'logs', size: 4096, uid: 0, gid: 0, permissions: 0o755, isDirectory: true, isSymbolicLink: false, mtime: Date.now() },
-        { name: 'backup_check.sh', size: 842, uid: 0, gid: 0, permissions: 0o755, isDirectory: false, isSymbolicLink: false, mtime: Date.now() }
-      ]);
-      setConnected(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to list directory contents');
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -112,22 +87,17 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
     setEditorLoading(true);
     const filePath = currentPath.endsWith('/') ? `${currentPath}${item.name}` : `${currentPath}/${item.name}`;
     try {
-      const query = new URLSearchParams({
-        path: filePath,
-        host: creds.host,
-        username: creds.username,
-        password: creds.password
-      });
+      const query = new URLSearchParams({ path: filePath });
       const res = await fetch(`/api/v1/instances/${instanceId}/files/read?${query.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setEditingFile({ path: filePath, content: data.content });
       } else {
-        // Mock fallback read file content
-        setEditingFile({ path: filePath, content: `# CynexVM config file mock\nserver {\n  listen 80;\n  server_name localhost;\n}` });
+        const errData = await res.json();
+        alert(errData.error || 'Failed to read file');
       }
-    } catch (_) {
-      setEditingFile({ path: filePath, content: `# CynexVM config file mock\nserver {\n  listen 80;\n  server_name localhost;\n}` });
+    } catch (err: any) {
+      alert(err.message || 'Failed to open file');
     } finally {
       setEditorLoading(false);
     }
@@ -141,9 +111,6 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          host: creds.host,
-          username: creds.username,
-          password: creds.password,
           path: editingFile.path,
           content: editingFile.content
         })
@@ -151,9 +118,16 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       if (res.ok) {
         alert('File saved successfully');
         setEditingFile(null);
+        loadDirectory(currentPath);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to save file');
       }
-    } catch (_) {}
-    setEditorLoading(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to save file');
+    } finally {
+      setEditorLoading(false);
+    }
   };
 
   const handleDelete = async (item: FileItem) => {
@@ -163,18 +137,17 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       const res = await fetch(`/api/v1/instances/${instanceId}/files/delete`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          host: creds.host,
-          username: creds.username,
-          password: creds.password,
-          path: targetPath,
-          isDirectory: item.isDirectory
-        })
+        body: JSON.stringify({ path: targetPath })
       });
       if (res.ok) {
         loadDirectory(currentPath);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to delete file');
       }
-    } catch (_) {}
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete file');
+    }
   };
 
   const handleCreateFolder = async (e: React.FormEvent) => {
@@ -182,21 +155,25 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
     if (!newFolderName) return;
     const targetPath = currentPath.endsWith('/') ? `${currentPath}${newFolderName}/.keep` : `${currentPath}/${newFolderName}/.keep`;
     try {
-      await fetch(`/api/v1/instances/${instanceId}/files/write`, {
+      const res = await fetch(`/api/v1/instances/${instanceId}/files/write`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          host: creds.host,
-          username: creds.username,
-          password: creds.password,
           path: targetPath,
           content: ''
         })
       });
-      setShowFolderModal(false);
-      setNewFolderName('');
-      loadDirectory(currentPath);
-    } catch (_) {}
+      if (res.ok) {
+        setShowFolderModal(false);
+        setNewFolderName('');
+        loadDirectory(currentPath);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to create folder');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to create folder');
+    }
   };
 
   const handleCreateFile = async (e: React.FormEvent) => {
@@ -204,41 +181,71 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
     if (!newFileName) return;
     const targetPath = currentPath.endsWith('/') ? `${currentPath}${newFileName}` : `${currentPath}/${newFileName}`;
     try {
-      await fetch(`/api/v1/instances/${instanceId}/files/write`, {
+      const res = await fetch(`/api/v1/instances/${instanceId}/files/write`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          host: creds.host,
-          username: creds.username,
-          password: creds.password,
           path: targetPath,
           content: ''
         })
       });
-      setShowFileModal(false);
-      setNewFileName('');
-      loadDirectory(currentPath);
-    } catch (_) {}
+      if (res.ok) {
+        setShowFileModal(false);
+        setNewFileName('');
+        loadDirectory(currentPath);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to create file');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to create file');
+    }
   };
 
-  const handleChmod = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chmodTarget) return;
+  const handleUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+
     try {
-      await fetch(`/api/v1/instances/${instanceId}/files/chmod`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          host: creds.host,
-          username: creds.username,
-          password: creds.password,
-          path: chmodTarget.path,
-          mode: chmodTarget.mode
-        })
-      });
-      setChmodTarget(null);
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        const relativePath = file.webkitRelativePath || file.name;
+        const targetPath = currentPath.endsWith('/') 
+          ? `${currentPath}${relativePath}` 
+          : `${currentPath}/${relativePath}`;
+
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const resString = reader.result as string;
+            resolve(resString.split(',')[1]);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const uploadRes = await fetch(`/api/v1/instances/${instanceId}/files/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: targetPath,
+            base64Content: base64
+          })
+        });
+
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json();
+          throw new Error(errData.error || `Failed to upload ${file.name}`);
+        }
+      }
       loadDirectory(currentPath);
-    } catch (_) {}
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
   };
 
   const visibleItems = items
@@ -247,8 +254,24 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
 
   return (
     <div className="space-y-4">
+      {/* Hidden Upload Inputs */}
+      <input 
+        type="file" 
+        id="file-upload-input" 
+        multiple 
+        className="hidden" 
+        onChange={handleUploadFiles} 
+      />
+      <input 
+        type="file" 
+        id="folder-upload-input" 
+        className="hidden" 
+        onChange={handleUploadFiles}
+        {...{ webkitdirectory: "", directory: "", multiple: true }} 
+      />
+
       {/* Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-white/5 border border-neutral-800 rounded-xl text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-white/5 border border-neutral-200/10 dark:border-white/5 rounded-2xl text-xs">
         {/* Breadcrumb path */}
         <div className="flex items-center gap-1.5 text-neutral-400 font-mono">
           <button onClick={() => setCurrentPath('/root')} className="hover:text-white font-semibold">root</button>
@@ -266,7 +289,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 text-neutral-500" size={12} />
             <input 
-              type="text" placeholder="Search folder..." className="al-input pl-8 py-1.5 text-[11px] w-40"
+              type="text" placeholder="Search folder..." className="al-input pl-8 py-1.5 text-[11px] w-40 bg-neutral-900/40"
               value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
@@ -274,30 +297,47 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
           {/* Hidden toggle */}
           <button 
             type="button" onClick={() => setShowHidden(!showHidden)}
-            className="p-2 border border-neutral-700 rounded-lg text-neutral-400 hover:text-white"
+            className="p-2 border border-neutral-200/10 dark:border-white/5 rounded-xl text-neutral-450 hover:text-white"
           >
             {showHidden ? <EyeOff size={13} /> : <Eye size={13} />}
           </button>
 
           {/* List vs Grid Layouts toggle */}
-          <div className="flex border border-neutral-700 rounded-lg p-0.5">
+          <div className="flex border border-neutral-200/10 dark:border-white/5 rounded-xl p-0.5">
             <button 
               onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-neutral-500'}`}
+              className={`p-1.5 rounded-lg transition ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-neutral-500'}`}
             >
               <List size={13} />
             </button>
             <button 
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-neutral-500'}`}
+              className={`p-1.5 rounded-lg transition ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-neutral-500'}`}
             >
               <LayoutGrid size={13} />
             </button>
           </div>
 
+          <button 
+            onClick={() => document.getElementById('file-upload-input')?.click()} 
+            disabled={uploading}
+            className="al-btn al-btn-secondary py-1.5 text-[11px] flex items-center gap-1.5"
+          >
+            <Upload size={12} /> {uploading ? 'Uploading...' : 'Upload Files'}
+          </button>
+          
+          <button 
+            onClick={() => document.getElementById('folder-upload-input')?.click()} 
+            disabled={uploading}
+            className="al-btn al-btn-secondary py-1.5 text-[11px] flex items-center gap-1.5"
+          >
+            <FolderPlus size={12} /> {uploading ? 'Uploading...' : 'Upload Folder'}
+          </button>
+
           <button onClick={() => setShowFileModal(true)} className="al-btn al-btn-secondary py-1.5 text-[11px]">
             + File
           </button>
+          
           <button onClick={() => setShowFolderModal(true)} className="al-btn al-btn-secondary py-1.5 text-[11px]">
             + Folder
           </button>
@@ -307,18 +347,18 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {/* Main directories and grid view options */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* Left Side Tree Navigation */}
-        <div className="bg-white/5 border border-neutral-800 rounded-xl p-4 text-xs space-y-2">
-          <p className="font-semibold text-neutral-400 uppercase tracking-wider text-[10px]">Folder Directory Tree</p>
+        <div className="bg-white/5 border border-neutral-200/10 dark:border-white/5 rounded-2xl p-4 text-xs space-y-2 h-fit">
+          <p className="font-semibold text-neutral-500 uppercase tracking-wider text-[10px]">Folder Directory Tree</p>
           <div className="space-y-1 font-medium">
             <div className="flex items-center gap-2 p-1.5 rounded-lg bg-white/5 text-white">
-              <Folder size={13} className="text-blue-400" />
+              <Folder size={13} className="text-blue-500" />
               <span>/root</span>
             </div>
             {items.filter(i => i.isDirectory).map(item => (
               <div 
                 key={item.name} 
                 onClick={() => handleFolderClick(item)}
-                className="flex items-center gap-2 p-1.5 rounded-lg text-neutral-400 hover:bg-white/5 hover:text-white cursor-pointer pl-6"
+                className="flex items-center gap-2 p-1.5 rounded-lg text-neutral-450 hover:bg-white/5 hover:text-white cursor-pointer pl-6 transition"
               >
                 <Folder size={12} className="text-neutral-500" />
                 <span className="truncate">{item.name}</span>
@@ -329,20 +369,26 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
 
         {/* Right Side Files Viewport */}
         <div className="md:col-span-3">
+          {error && (
+            <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-2xl text-xs font-semibold mb-4">
+              {error}
+            </div>
+          )}
+
           {loading ? (
             <div className="p-12 text-center text-neutral-500 text-xs">Reading directories...</div>
           ) : viewMode === 'list' ? (
             <div className="al-card overflow-hidden text-xs">
               <table className="w-full text-left">
-                <thead className="bg-white/5 border-b border-neutral-800 text-neutral-400">
+                <thead className="bg-white/5 border-b border-neutral-200/10 dark:border-white/5 text-neutral-400">
                   <tr>
-                    <th className="p-3">Name</th>
-                    <th className="p-3">Size</th>
-                    <th className="p-3">Permissions</th>
-                    <th className="p-3 text-right">Delete</th>
+                    <th className="p-3 font-semibold">Name</th>
+                    <th className="p-3 font-semibold">Size</th>
+                    <th className="p-3 font-semibold">Permissions</th>
+                    <th className="p-3 font-semibold text-right">Delete</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-850 text-neutral-300">
+                <tbody className="divide-y divide-neutral-200/10 dark:divide-white/5 text-neutral-300">
                   {visibleItems.length === 0 && (
                     <tr>
                       <td colSpan={4} className="p-8 text-center text-neutral-500">Folder is empty</td>
@@ -354,22 +400,22 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
                         {item.isDirectory ? (
                           <Folder className="text-blue-500 shrink-0" size={15} />
                         ) : (
-                          <File className="text-neutral-400 shrink-0" size={15} />
+                          <File className="text-neutral-450 shrink-0" size={15} />
                         )}
                         {item.isDirectory ? (
-                          <button onClick={() => handleFolderClick(item)} className="hover:text-blue-400 text-left font-medium truncate">{item.name}</button>
+                          <button onClick={() => handleFolderClick(item)} className="hover:text-blue-500 text-left font-medium truncate">{item.name}</button>
                         ) : (
-                          <button onClick={() => handleOpenFile(item)} className="hover:text-blue-400 text-left font-medium truncate">{item.name}</button>
+                          <button onClick={() => handleOpenFile(item)} className="hover:text-blue-500 text-left font-medium truncate">{item.name}</button>
                         )}
                       </td>
-                      <td className="p-3 text-neutral-400">
+                      <td className="p-3 text-neutral-450">
                         {item.isDirectory ? '-' : `${(item.size / 1024).toFixed(1)} KB`}
                       </td>
                       <td className="p-3 font-mono text-neutral-500">
-                        {(item.permissions || 0o755).toString(8)}
+                        {item.permissions}
                       </td>
                       <td className="p-3 text-right">
-                        <button onClick={() => handleDelete(item)} className="text-red-500 hover:text-red-400">
+                        <button onClick={() => handleDelete(item)} className="text-rose-500 hover:text-rose-600 transition p-1 rounded-lg hover:bg-rose-500/10">
                           <Trash2 size={13} />
                         </button>
                       </td>
@@ -381,23 +427,27 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
           ) : (
             /* Grid layout options */
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {visibleItems.length === 0 && (
+                <div className="col-span-full al-card p-12 text-center text-neutral-500">Folder is empty</div>
+              )}
               {visibleItems.map(item => (
                 <div 
                   key={item.name}
-                  className="bg-white/5 border border-neutral-800 rounded-xl p-4 text-center hover:bg-white/10 transition cursor-pointer relative"
+                  onClick={() => item.isDirectory ? handleFolderClick(item) : handleOpenFile(item)}
+                  className="bg-white/5 border border-neutral-200/10 dark:border-white/5 rounded-2xl p-4 text-center hover:bg-white/10 transition cursor-pointer relative group"
                 >
                   {item.isDirectory ? (
-                    <Folder className="mx-auto text-blue-400 mb-2" size={28} />
+                    <Folder className="mx-auto text-blue-500 mb-2" size={28} />
                   ) : (
-                    <File className="mx-auto text-neutral-400 mb-2" size={28} />
+                    <File className="mx-auto text-neutral-450 mb-2" size={28} />
                   )}
-                  <p className="text-xs text-white font-medium truncate">{item.name}</p>
+                  <p className="text-xs text-white font-medium truncate px-2">{item.name}</p>
                   <p className="text-[10px] text-neutral-500 mt-1">
                     {item.isDirectory ? 'Folder' : `${(item.size / 1024).toFixed(0)} KB`}
                   </p>
                   <button 
                     onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
-                    className="absolute top-2 right-2 text-red-500 hover:text-red-400"
+                    className="absolute top-2 right-2 text-rose-500 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-rose-500/10 rounded-lg"
                   >
                     <Trash2 size={11} />
                   </button>
@@ -412,18 +462,19 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {editingFile && (
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-4xl al-card flex flex-col h-[85vh] overflow-hidden bg-[#121212]">
-            <div className="p-4 border-b border-neutral-800 bg-white/5 flex items-center justify-between">
+            <div className="p-4 border-b border-neutral-200/10 dark:border-white/5 bg-white/5 flex items-center justify-between">
               <span className="text-xs font-mono text-gray-300 truncate max-w-xl">{editingFile.path}</span>
               <div className="flex items-center gap-2">
                 <button 
                   onClick={handleSaveFile} 
-                  className="p-2 border border-neutral-700 bg-white/5 hover:bg-white/10 text-white rounded-lg transition"
+                  disabled={editorLoading}
+                  className="p-2 border border-neutral-200/10 dark:border-white/5 bg-white/5 hover:bg-white/10 text-white rounded-xl transition"
                 >
                   <Save size={14} />
                 </button>
                 <button 
                   onClick={() => setEditingFile(null)} 
-                  className="p-2 border border-neutral-700 bg-white/5 hover:bg-white/10 text-white rounded-lg transition"
+                  className="p-2 border border-neutral-200/10 dark:border-white/5 bg-white/5 hover:bg-white/10 text-white rounded-xl transition"
                 >
                   <X size={14} />
                 </button>
@@ -445,14 +496,14 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {/* New Folder Modal */}
       {showFolderModal && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateFolder} className="bg-[#1a1a1a] border border-neutral-800 rounded-2xl p-6 max-w-sm w-full space-y-4 text-xs text-left">
+          <form onSubmit={handleCreateFolder} className="bg-[#1a1a1a] border border-neutral-200/10 dark:border-white/5 rounded-2xl p-6 max-w-sm w-full space-y-4 text-xs text-left">
             <h3 className="text-sm font-semibold text-white">Create New Folder</h3>
             <input 
               type="text" placeholder="Folder Name" className="w-full al-input" 
               value={newFolderName} onChange={e => setNewFolderName(e.target.value)} required 
             />
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowFolderModal(false)} className="px-4 py-2 border border-neutral-700 text-neutral-350 rounded-xl hover:bg-neutral-850 transition">Cancel</button>
+              <button type="button" onClick={() => setShowFolderModal(false)} className="px-4 py-2 border border-neutral-200/10 dark:border-white/5 text-neutral-350 rounded-xl hover:bg-neutral-800 transition">Cancel</button>
               <button type="submit" className="px-4 py-2 al-btn-primary rounded-xl font-semibold">Create</button>
             </div>
           </form>
@@ -462,14 +513,14 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       {/* New File Modal */}
       {showFileModal && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateFile} className="bg-[#1a1a1a] border border-neutral-800 rounded-2xl p-6 max-w-sm w-full space-y-4 text-xs text-left">
+          <form onSubmit={handleCreateFile} className="bg-[#1a1a1a] border border-neutral-200/10 dark:border-white/5 rounded-2xl p-6 max-w-sm w-full space-y-4 text-xs text-left">
             <h3 className="text-sm font-semibold text-white">Create New File</h3>
             <input 
               type="text" placeholder="Filename" className="w-full al-input" 
               value={newFileName} onChange={e => setNewFileName(e.target.value)} required 
             />
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowFileModal(false)} className="px-4 py-2 border border-neutral-700 text-neutral-350 rounded-xl hover:bg-neutral-850 transition">Cancel</button>
+              <button type="button" onClick={() => setShowFileModal(false)} className="px-4 py-2 border border-neutral-200/10 dark:border-white/5 text-neutral-350 rounded-xl hover:bg-neutral-800 transition">Cancel</button>
               <button type="submit" className="px-4 py-2 al-btn-primary rounded-xl font-semibold">Create</button>
             </div>
           </form>
@@ -478,4 +529,5 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
     </div>
   );
 };
+
 export default FileManager;
