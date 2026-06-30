@@ -139,7 +139,7 @@ export const AdminSettings: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-7xl pb-12">
-      {/* Sticky-like Header with Save Trigger */}
+      {/* Header Container */}
       <div className="flex flex-col sm:flex-row sm:items-center px-8 pt-5 justify-between gap-4">
         <div>
           <h1 className="text-base font-medium text-neutral-800 dark:text-white">Branding & System Configuration</h1>
@@ -163,18 +163,18 @@ export const AdminSettings: React.FC = () => {
             </p>
           )}
 
-          {/* Two Column Layout Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          {/* Symmetrical Row-based Grid System */}
+          <div className="space-y-6">
             
-            {/* Left Column: Branding, Site custom configurations */}
-            <div className="space-y-6">
+            {/* ROW 1: Panel Settings & SMTP Transactional Mailer (Equally Sized) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
               
-              {/* Section 1: Panel settings */}
-              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
+              {/* Panel Settings Card */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm flex flex-col">
                 <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
                   <SetIcon size={16} /> Panel Settings
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs flex-1">
                   <div>
                     <label className="block text-neutral-400 mb-1">Site Title (Branding)</label>
                     <input 
@@ -223,12 +223,42 @@ export const AdminSettings: React.FC = () => {
                 </div>
               </div>
 
-              {/* Section 2: Custom Assets */}
-              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
+              {/* SMTP Mailer Card */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm flex flex-col">
+                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
+                  <Mail size={16} /> SMTP Transactional Mailer
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs flex-1">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">SMTP Hostname</label>
+                    <input type="text" className="w-full al-input" value={smtpHost} onChange={e => setSmtpHost(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">SMTP Port</label>
+                    <input type="number" className="w-full al-input" value={smtpPort} onChange={e => setSmtpPort(parseInt(e.target.value, 10))} />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">SMTP Username</label>
+                    <input type="text" className="w-full al-input" value={smtpUser} onChange={e => setSmtpUser(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">SMTP Password</label>
+                    <input type="password" className="w-full al-input" value={smtpPass} onChange={e => setSmtpPass(e.target.value)} placeholder="••••••••••••" />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* ROW 2: Custom Assets & Discord Single Sign-On (Equally Sized) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+              
+              {/* Custom Assets Card */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm flex flex-col">
                 <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
                   <Image size={16} /> Custom Branding Assets
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs flex-1">
                   <div>
                     <label className="block text-neutral-400 mb-1">Logo Image URL</label>
                     <input 
@@ -275,103 +305,76 @@ export const AdminSettings: React.FC = () => {
                 </div>
               </div>
 
-            </div>
-
-            {/* Right Column: Mailers, SSO Integration, Webhooks */}
-            <div className="space-y-6">
-
-              {/* Section 3: SMTP Card */}
-              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
-                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
-                  <Mail size={16} /> SMTP Transactional Mailer
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs">
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SMTP Hostname</label>
-                    <input type="text" className="w-full al-input" value={smtpHost} onChange={e => setSmtpHost(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SMTP Port</label>
-                    <input type="number" className="w-full al-input" value={smtpPort} onChange={e => setSmtpPort(parseInt(e.target.value, 10))} />
-                  </div>
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SMTP Username</label>
-                    <input type="text" className="w-full al-input" value={smtpUser} onChange={e => setSmtpUser(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SMTP Password</label>
-                    <input type="password" className="w-full al-input" value={smtpPass} onChange={e => setSmtpPass(e.target.value)} placeholder="••••••••••••" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 4: Discord OAuth Client */}
-              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
+              {/* Discord SSO Card */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm flex flex-col">
                 <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
                   <Globe size={16} /> Discord Single Sign-On (OAuth)
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs flex-1 align-middle content-center items-start">
+                  <div className="sm:col-span-2">
                     <label className="block text-neutral-400 mb-1">Client ID</label>
                     <input type="text" className="w-full al-input" value={discordId} onChange={e => setDiscordId(e.target.value)} />
                   </div>
-                  <div>
+                  <div className="sm:col-span-2">
                     <label className="block text-neutral-400 mb-1">Client Secret Token</label>
                     <input type="password" className="w-full al-input" value={discordSecret} onChange={e => setDiscordSecret(e.target.value)} placeholder="••••••••••••••••••••••••••••••••" />
                   </div>
+                  <div className="sm:col-span-2 text-[10px] text-neutral-500 leading-relaxed mt-2 bg-neutral-900/10 dark:bg-neutral-800/10 p-3 rounded-lg border border-neutral-700/10">
+                    Authentication keys are used by standard clients to securely authorize access requests. To generate credentials, configure a developer application on the Discord Developer Portal.
+                  </div>
                 </div>
               </div>
 
-              {/* Section 5: Webhooks config */}
-              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
-                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
-                  <Shield size={16} /> Developer Webhooks Endpoint
-                </h2>
-                <div className="px-5 py-5 space-y-4">
-                  <div className="flex gap-3">
-                    <input 
-                      type="text" 
-                      placeholder="https://api.domain.com/webhooks" 
-                      className="flex-1 al-input text-xs" 
-                      value={newWebhook} 
-                      onChange={e => setNewWebhook(e.target.value)} 
-                    />
-                    <button type="button" onClick={handleAddWebhook} className="al-btn al-btn-primary py-2 text-xs">Add Webhook</button>
-                  </div>
+            </div>
 
-                  <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden text-xs">
-                    <table className="w-full text-left">
-                      <thead className="bg-neutral-50 dark:bg-neutral-800/50 text-neutral-400">
+            {/* ROW 3: Developer Webhooks Endpoint (Full Width across bottom) */}
+            <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm w-full">
+              <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
+                <Shield size={16} /> Developer Webhooks Endpoint
+              </h2>
+              <div className="px-5 py-5 space-y-4">
+                <div className="flex gap-3">
+                  <input 
+                    type="text" 
+                    placeholder="https://api.domain.com/webhooks" 
+                    className="flex-1 al-input text-xs" 
+                    value={newWebhook} 
+                    onChange={e => setNewWebhook(e.target.value)} 
+                  />
+                  <button type="button" onClick={handleAddWebhook} className="al-btn al-btn-primary py-2 text-xs">Add Webhook</button>
+                </div>
+
+                <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden text-xs">
+                  <table className="w-full text-left">
+                    <thead className="bg-neutral-50 dark:bg-neutral-800/50 text-neutral-400">
+                      <tr>
+                        <th className="p-3">Webhook URL Target</th>
+                        <th className="p-3">Event Topic</th>
+                        <th className="p-3 text-right">Delete</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                      {webhooks.length === 0 ? (
                         <tr>
-                          <th className="p-3">Webhook URL Target</th>
-                          <th className="p-3">Event Topic</th>
-                          <th className="p-3 text-right">Delete</th>
+                          <td colSpan={3} className="p-4 text-center text-neutral-500">No webhooks configured.</td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
-                        {webhooks.length === 0 ? (
-                          <tr>
-                            <td colSpan={3} className="p-4 text-center text-neutral-500">No webhooks configured.</td>
+                      ) : (
+                        webhooks.map(w => (
+                          <tr key={w.id}>
+                            <td className="p-3 font-mono">{w.url}</td>
+                            <td className="p-3 font-medium uppercase text-blue-400">{w.event}</td>
+                            <td className="p-3 text-right">
+                              <button type="button" onClick={() => setWebhooks(webhooks.filter(x => x.id !== w.id))} className="text-red-500 hover:text-red-400">
+                                Delete
+                              </button>
+                            </td>
                           </tr>
-                        ) : (
-                          webhooks.map(w => (
-                            <tr key={w.id}>
-                              <td className="p-3 font-mono">{w.url}</td>
-                              <td className="p-3 font-medium uppercase text-blue-400">{w.event}</td>
-                              <td className="p-3 text-right">
-                                <button type="button" onClick={() => setWebhooks(webhooks.filter(x => x.id !== w.id))} className="text-red-500 hover:text-red-400">
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-
             </div>
 
           </div>
