@@ -102,41 +102,37 @@ export class LxdContainerService {
   public static async create(nodeId: string | null, config: ContainerConfig): Promise<void> {
     const name = `cynex-${config.vmid}`;
     
-    let imageSource = 'images:ubuntu/22.04';
+    // Resolve image alias with architecture suffix for simplestreams
+    let alias = 'ubuntu/22.04';
     if (config.ostemplate) {
       if (config.ostemplate.toLowerCase().includes('debian')) {
-        imageSource = 'images:debian/12';
+        alias = 'debian/12';
       } else if (config.ostemplate.toLowerCase().includes('alpine')) {
-        imageSource = 'images:alpine/3.19';
-      } else if (config.ostemplate.includes(':')) {
-        imageSource = config.ostemplate;
+        alias = 'alpine/3.19';
+      } else if (config.ostemplate.toLowerCase().includes('centos')) {
+        alias = 'centos/9-Stream';
+      } else if (config.ostemplate.toLowerCase().includes('rocky')) {
+        alias = 'rockylinux/9';
+      } else if (config.ostemplate.toLowerCase().includes('fedora')) {
+        alias = 'fedora/40';
+      } else if (config.ostemplate.includes('/')) {
+        alias = config.ostemplate.replace('images:', '');
       }
     }
 
-    const alias = imageSource.replace('images:', '');
-    let serverUrl = 'https://images.linuxcontainers.org';
-    if (alias.startsWith('ubuntu')) {
-      serverUrl = 'https://images.lxd.canonical.com';
+    // Append architecture if not already present
+    if (!alias.includes('/amd64') && !alias.includes('/arm64') && !alias.includes('/i386')) {
+      alias = `${alias}/amd64`;
     }
+
+    // All LXC images live on images.linuxcontainers.org
+    const serverUrl = 'https://images.linuxcontainers.org';
 
     // Get active storage pool
     const { LxdStorageService } = require('../lxd/lxdStorageService');
     const pools = await LxdStorageService.list(nodeId);
     const activePool = pools.find((p: any) => p.name === 'default') || pools[0];
     const poolName = activePool ? activePool.name : 'default';
-
-    // 1. Create container skeleton
-    await LxdClient.request(nodeId, '/1.0/instances', 'POST', {
-      name,
-      source: {
-        type: 'image',
-        mode: 'pull',
-        server: serverUrl,
-        protocol: 'simplestreams',
-        alias: alias
-      },
-      profiles: ['default']
-    });
 
     const userData = ProvisioningEngine.generateCloudConfig({
       hostname: config.hostname,
@@ -146,8 +142,16 @@ export class LxdContainerService {
       locale: config.locale
     });
 
-    // 2. Set limits & specs
-    await LxdClient.request(nodeId, `/1.0/instances/${name}`, 'PATCH', {
+    // Create container with image pull + config + devices in a single call
+    await LxdClient.request(nodeId, '/1.0/instances', 'POST', {
+      name,
+      source: {
+        type: 'image',
+        mode: 'pull',
+        server: serverUrl,
+        protocol: 'simplestreams',
+        alias: alias
+      },
       config: {
         'limits.cpu': String(config.cores),
         'limits.memory': `${config.memory}MB`,
@@ -160,7 +164,8 @@ export class LxdContainerService {
           type: 'disk',
           size: `${config.diskSizeGb}GiB`
         }
-      }
+      },
+      profiles: ['default']
     });
 
     // 3. Start container

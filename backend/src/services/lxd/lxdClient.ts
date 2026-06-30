@@ -91,7 +91,7 @@ export class LxdClient {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 20000
+        timeout: 120000
       });
 
       const res = await client.request({
@@ -124,7 +124,7 @@ export class LxdClient {
       baseURL: 'http://localhost'
     });
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 300; i++) {
       try {
         const res = await client.get(`/1.0/operations/${opId}`);
         const op = res.data.metadata;

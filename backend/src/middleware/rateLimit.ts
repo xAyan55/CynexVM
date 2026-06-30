@@ -10,6 +10,7 @@ export const authLimiter = rateLimit({
   message: { error: 'Too many authentication attempts. Please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, trustProxy: false },
 });
 
 /**
@@ -22,4 +23,5 @@ export const apiLimiter = rateLimit({
   message: { error: 'Too many API requests from this client. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, trustProxy: false },
 });
