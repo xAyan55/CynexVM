@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DataTable } from '../components/DataTable';
 import { Wizard } from '../components/Wizard';
-import { Plus, Play, Square, RotateCw, Pause } from 'lucide-react';
+import { Plus, Play, Square, RotateCw, Pause, Trash2 } from 'lucide-react';
 
 interface Instance {
   id: string;
@@ -53,6 +53,20 @@ export const AdminInstances: React.FC = () => {
     } catch (_) {}
   };
 
+  const handleDeleteInstance = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to permanently delete VPS "${name}"? All virtual disk data will be destroyed.`)) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        fetchInstances();
+      }
+    } catch (_) {}
+  };
+
   const columns = [
     { header: 'ID', accessor: 'vmid' as const, sortable: true },
     { header: 'Name', accessor: 'name' as const, sortable: true },
@@ -70,9 +84,9 @@ export const AdminInstances: React.FC = () => {
     { header: 'Cores', accessor: 'cpuCores' as const, sortable: true },
     { header: 'Memory', accessor: (row: Instance) => `${row.memoryMb} MB`, sortable: true },
     {
-      header: 'Power controls',
+      header: 'Actions',
       accessor: (row: Instance) => (
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
           <button 
             onClick={() => handlePowerAction(row.id, 'start')}
             className="p-1 hover:bg-white/5 rounded text-neutral-400 hover:text-white"
@@ -100,6 +114,13 @@ export const AdminInstances: React.FC = () => {
             title="Suspend"
           >
             <Pause size={12} />
+          </button>
+          <button 
+            onClick={() => handleDeleteInstance(row.id, row.name)}
+            className="p-1 hover:bg-rose-500/10 rounded text-rose-500 hover:text-rose-450 ml-2"
+            title="Destroy"
+          >
+            <Trash2 size={12} />
           </button>
         </div>
       )
@@ -132,7 +153,15 @@ export const AdminInstances: React.FC = () => {
             searchField="name" 
             searchPlaceholder="Search instances..." 
             bulkActions={[
-              { label: 'Stop Selected', action: (items) => items.forEach(i => handlePowerAction(i.id, 'stop')) }
+              { label: 'Stop Selected', action: (items) => items.forEach(i => handlePowerAction(i.id, 'stop')) },
+              { 
+                label: 'Destroy Selected', 
+                action: (items) => {
+                  if (confirm(`Are you sure you want to permanently delete these ${items.length} instances?`)) {
+                    items.forEach(i => handleDeleteInstance(i.id, i.name));
+                  }
+                }
+              }
             ]}
           />
         )}
