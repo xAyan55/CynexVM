@@ -21,7 +21,8 @@ interface FileManagerProps {
 }
 
 export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
-  const [currentPath, setCurrentPath] = useState('/');
+  const [currentPath, setCurrentPath] = useState('/root');
+  const [pathInput, setPathInput] = useState('/root');
   const [items, setItems] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
 
   useEffect(() => {
     loadDirectory(currentPath);
+    setPathInput(currentPath);
   }, [currentPath]);
 
   const loadDirectory = async (path: string) => {
@@ -272,15 +274,37 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
 
       {/* Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-white/5 border border-neutral-200/10 dark:border-white/5 rounded-2xl text-xs">
-        {/* Breadcrumb path */}
-        <div className="flex items-center gap-1.5 text-neutral-400 font-mono">
-          <button onClick={() => setCurrentPath('/')} className="hover:text-white font-semibold">/</button>
-          {currentPath.split('/').filter(Boolean).map((part, index) => (
-            <React.Fragment key={part}>
-              <ChevronRight size={12} className="text-neutral-600" />
-              <button onClick={() => handleBreadcrumbClick(index)} className="hover:text-white truncate max-w-[120px]">{part}</button>
-            </React.Fragment>
-          ))}
+        <div className="flex items-center gap-3">
+          {/* Breadcrumb path */}
+          <div className="flex items-center gap-1 text-neutral-400 font-mono border border-neutral-200/10 dark:border-white/5 px-2 py-1 rounded-xl bg-neutral-900/20 shrink-0">
+            <button onClick={() => setCurrentPath('/')} className="hover:text-white font-semibold">/</button>
+            {currentPath.split('/').filter(Boolean).map((part, index) => (
+              <React.Fragment key={part}>
+                <ChevronRight size={10} className="text-neutral-600" />
+                <button onClick={() => handleBreadcrumbClick(index)} className="hover:text-white truncate max-w-[100px]">{part}</button>
+              </React.Fragment>
+            ))}
+          </div>
+
+          {/* Editable Path Input */}
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (pathInput.trim()) {
+                setCurrentPath(pathInput.trim());
+              }
+            }}
+            className="flex items-center gap-1.5"
+          >
+            <input 
+              type="text" 
+              value={pathInput}
+              onChange={e => setPathInput(e.target.value)}
+              className="al-input py-1 px-3 w-48 font-mono text-[11px] bg-neutral-900/40"
+              placeholder="Go to path..."
+            />
+            <button type="submit" className="al-btn al-btn-secondary py-1 px-2 text-[10px] uppercase font-bold tracking-wider">Go</button>
+          </form>
         </div>
 
         {/* Tools and triggers */}
