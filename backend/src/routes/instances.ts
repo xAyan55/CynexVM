@@ -688,6 +688,7 @@ JobService.registerWorker('instance.deploy', async (job) => {
       logMessage: `ROLLBACK TRIGGERED: ${err.message}`,
       logLevel: 'error'
     });
+    throw err;
   } finally {
     LockManager.release(lockKey, 'wizard_deploy');
   }
@@ -742,6 +743,7 @@ JobService.registerWorker('instance.reinstall', async (job) => {
       logMessage: `Reinstallation failed: ${err.message}`,
       logLevel: 'error'
     });
+    throw err;
   } finally {
     LockManager.release(lockKey, 'reinstall');
   }

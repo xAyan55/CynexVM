@@ -102,31 +102,8 @@ export class LxdContainerService {
   public static async create(nodeId: string | null, config: ContainerConfig): Promise<void> {
     const name = `cynex-${config.vmid}`;
     
-    // Resolve image alias with architecture suffix for simplestreams
-    let alias = 'ubuntu/22.04';
-    if (config.ostemplate) {
-      if (config.ostemplate.toLowerCase().includes('debian')) {
-        alias = 'debian/12';
-      } else if (config.ostemplate.toLowerCase().includes('alpine')) {
-        alias = 'alpine/3.19';
-      } else if (config.ostemplate.toLowerCase().includes('centos')) {
-        alias = 'centos/9-Stream';
-      } else if (config.ostemplate.toLowerCase().includes('rocky')) {
-        alias = 'rockylinux/9';
-      } else if (config.ostemplate.toLowerCase().includes('fedora')) {
-        alias = 'fedora/40';
-      } else if (config.ostemplate.includes('/')) {
-        alias = config.ostemplate.replace('images:', '');
-      }
-    }
-
-    // Append architecture if not already present
-    if (!alias.includes('/amd64') && !alias.includes('/arm64') && !alias.includes('/i386')) {
-      alias = `${alias}/amd64`;
-    }
-
-    // All LXC images live on the official Canonical LXD server
-    const serverUrl = 'https://images.lxd.canonical.com';
+    const { LxdImageService } = require('./lxdImageService');
+    const { serverUrl, alias } = LxdImageService.resolveImageConfig(config.ostemplate);
 
     // Get active storage pool
     const { LxdStorageService } = require('../lxd/lxdStorageService');

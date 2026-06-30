@@ -32,37 +32,60 @@ export class LxdImageService {
   }
 
   /**
-   * Resolves a user-facing OS template name to a proper simplestreams alias
+   * Resolves a user-facing OS template name to the proper simplestreams registry and alias
    */
-  private static resolveAlias(rawAlias: string): string {
-    let alias = rawAlias.replace('images:', '');
+  public static resolveImageConfig(ostemplate: string): { serverUrl: string; alias: string } {
+    let serverUrl = 'https://images.lxd.canonical.com';
+    let alias = 'ubuntu/22.04/amd64';
 
-    // Map common names to correct simplestreams aliases
-    if (alias === 'ubuntu/22.04' || alias === 'ubuntu') alias = 'ubuntu/22.04';
-    if (alias === 'debian/12' || alias === 'debian') alias = 'debian/12';
-    if (alias === 'alpine/3.19' || alias === 'alpine') alias = 'alpine/3.19';
+    const template = (ostemplate || 'ubuntu/22.04').toLowerCase();
 
-    // Append architecture if not already present
-    if (!alias.includes('/amd64') && !alias.includes('/arm64') && !alias.includes('/i386')) {
-      alias = `${alias}/amd64`;
+    if (template.includes('ubuntu')) {
+      serverUrl = 'https://cloud-images.ubuntu.com/releases';
+      let version = '22.04';
+      if (template.includes('20.04') || template.includes('focal')) {
+        version = '20.04';
+      } else if (template.includes('24.04') || template.includes('noble')) {
+        version = '24.04';
+      }
+      alias = `${version}/amd64`;
+    } else if (template.includes('debian')) {
+      let ver = '12';
+      if (template.includes('11') || template.includes('bullseye')) {
+        ver = '11';
+      }
+      alias = `debian/${ver}/amd64`;
+    } else if (template.includes('alpine')) {
+      alias = 'alpine/3.21/amd64';
+    } else if (template.includes('centos')) {
+      alias = 'centos/9-Stream/amd64';
+    } else if (template.includes('rocky')) {
+      alias = 'rockylinux/9/amd64';
+    } else if (template.includes('fedora')) {
+      alias = 'fedora/40/amd64';
+    } else {
+      alias = ostemplate.replace('images:', '');
+      if (!alias.includes('/amd64') && !alias.includes('/arm64') && !alias.includes('/i386')) {
+        alias = `${alias}/amd64`;
+      }
     }
 
-    return alias;
+    return { serverUrl, alias };
   }
 
   /**
    * Pulls/Downloads a remote OS image alias into the local cache if missing
    */
-  public static async downloadImage(nodeId: string | null, alias: string): Promise<void> {
-    const resolvedAlias = this.resolveAlias(alias);
+  public static async downloadImage(nodeId: string | null, ostemplate: string): Promise<void> {
+    const { serverUrl, alias } = this.resolveImageConfig(ostemplate);
 
     await LxdClient.request(nodeId, '/1.0/images', 'POST', {
       source: {
         type: 'image',
         mode: 'pull',
-        server: 'https://images.lxd.canonical.com',
+        server: serverUrl,
         protocol: 'simplestreams',
-        alias: resolvedAlias
+        alias: alias
       },
       public: false
     });
