@@ -60,7 +60,7 @@ export class LxdImageService {
       source: {
         type: 'image',
         mode: 'pull',
-        server: 'https://images.linuxcontainers.org',
+        server: 'https://images.lxd.canonical.com',
         protocol: 'simplestreams',
         alias: resolvedAlias
       },

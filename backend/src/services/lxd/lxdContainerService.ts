@@ -125,8 +125,8 @@ export class LxdContainerService {
       alias = `${alias}/amd64`;
     }
 
-    // All LXC images live on images.linuxcontainers.org
-    const serverUrl = 'https://images.linuxcontainers.org';
+    // All LXC images live on the official Canonical LXD server
+    const serverUrl = 'https://images.lxd.canonical.com';
 
     // Get active storage pool
     const { LxdStorageService } = require('../lxd/lxdStorageService');
