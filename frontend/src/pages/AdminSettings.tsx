@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Globe, Shield, Settings as SetIcon, Image, AlertTriangle } from 'lucide-react';
+import { Mail, Globe, Shield, Settings as SetIcon, Image, Save } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const AdminSettings: React.FC = () => {
@@ -138,216 +138,242 @@ export const AdminSettings: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl pb-12">
-      <div className="px-8 pt-5">
-        <h1 className="text-base font-medium text-neutral-800 dark:text-white">Branding & System Configuration</h1>
-        <p className="mt-0.5 text-sm text-neutral-500">Configure SMTP servers, custom brand aesthetics, user registration policies, and diagnostic webhooks.</p>
+    <div className="space-y-6 max-w-7xl pb-12">
+      {/* Sticky-like Header with Save Trigger */}
+      <div className="flex flex-col sm:flex-row sm:items-center px-8 pt-5 justify-between gap-4">
+        <div>
+          <h1 className="text-base font-medium text-neutral-800 dark:text-white">Branding & System Configuration</h1>
+          <p className="mt-0.5 text-sm text-neutral-500">Configure SMTP servers, custom brand aesthetics, user registration policies, and diagnostic webhooks.</p>
+        </div>
+        <button 
+          type="submit" 
+          form="settings-form"
+          disabled={saving}
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white rounded-xl text-xs font-semibold shadow transition disabled:opacity-40 shrink-0"
+        >
+          <Save size={14} /> {saving ? 'Saving...' : 'Save Configuration'}
+        </button>
       </div>
 
       <div className="px-8 mt-5">
-        <form onSubmit={handleSave} className="space-y-6">
+        <form id="settings-form" onSubmit={handleSave} className="space-y-6">
           {success && (
             <p className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-semibold">
               Configuration and branding changes saved successfully!
             </p>
           )}
 
-          {/* Section 1: Panel branding settings */}
-          <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
-            <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
-              <SetIcon size={16} /> Panel settings
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 px-5 py-5 text-xs">
-              <div>
-                <label className="block text-neutral-400 mb-1">Site Title (Branding)</label>
-                <input 
-                  type="text" 
-                  className="w-full al-input"
-                  value={panelName} 
-                  onChange={e => setPanelName(e.target.value)} 
-                  required 
-                />
+          {/* Two Column Layout Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            
+            {/* Left Column: Branding, Site custom configurations */}
+            <div className="space-y-6">
+              
+              {/* Section 1: Panel settings */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
+                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
+                  <SetIcon size={16} /> Panel Settings
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Site Title (Branding)</label>
+                    <input 
+                      type="text" 
+                      className="w-full al-input"
+                      value={panelName} 
+                      onChange={e => setPanelName(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Welcome Banner Message</label>
+                    <input 
+                      type="text" 
+                      className="w-full al-input"
+                      value={welcomeMessage} 
+                      onChange={e => setWelcomeMessage(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-neutral-400 mb-1">User Registration Toggle</label>
+                    <select 
+                      className="w-full al-input"
+                      value={registrationEnabled} 
+                      onChange={e => setRegistrationEnabled(e.target.value)}
+                    >
+                      <option value="true">Enabled (Open to Public)</option>
+                      <option value="false">Disabled (Invite Only)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Maintenance Mode</label>
+                    <select 
+                      className="w-full al-input"
+                      value={maintenanceMode} 
+                      onChange={e => setMaintenanceMode(e.target.value)}
+                    >
+                      <option value="false">Active (Online)</option>
+                      <option value="true">Offline (Maintenance)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-neutral-400 mb-1">Welcome Banner Message</label>
-                <input 
-                  type="text" 
-                  className="w-full al-input"
-                  value={welcomeMessage} 
-                  onChange={e => setWelcomeMessage(e.target.value)} 
-                  required 
-                />
+              {/* Section 2: Custom Assets */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
+                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
+                  <Image size={16} /> Custom Branding Assets
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Logo Image URL</label>
+                    <input 
+                      type="url" 
+                      placeholder="https://example.com/logo.png"
+                      className="w-full al-input"
+                      value={logoUrl} 
+                      onChange={e => setLogoUrl(e.target.value)} 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Favicon URL</label>
+                    <input 
+                      type="url" 
+                      placeholder="https://example.com/favicon.ico"
+                      className="w-full al-input"
+                      value={faviconUrl} 
+                      onChange={e => setFaviconUrl(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-neutral-400 mb-1">Login split wallpaper URL</label>
+                    <input 
+                      type="url" 
+                      placeholder="https://example.com/login-bg.jpg"
+                      className="w-full al-input"
+                      value={loginImageUrl} 
+                      onChange={e => setLoginImageUrl(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-neutral-400 mb-1">Registration split wallpaper URL</label>
+                    <input 
+                      type="url" 
+                      placeholder="https://example.com/register-bg.jpg"
+                      className="w-full al-input"
+                      value={registerImageUrl} 
+                      onChange={e => setRegisterImageUrl(e.target.value)} 
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-neutral-400 mb-1">User Registration Toggle</label>
-                <select 
-                  className="w-full al-input"
-                  value={registrationEnabled} 
-                  onChange={e => setRegistrationEnabled(e.target.value)}
-                >
-                  <option value="true">Enabled (Open to Public)</option>
-                  <option value="false">Disabled (Invite Only)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-neutral-400 mb-1">Maintenance Mode</label>
-                <select 
-                  className="w-full al-input"
-                  value={maintenanceMode} 
-                  onChange={e => setMaintenanceMode(e.target.value)}
-                >
-                  <option value="false">Active (Online)</option>
-                  <option value="true">Offline (Maintenance)</option>
-                </select>
-              </div>
             </div>
-          </div>
 
-          {/* Section 2: Custom Assets */}
-          <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
-            <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
-              <Image size={16} /> Custom Branding Assets
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 px-5 py-5 text-xs">
-              <div>
-                <label className="block text-neutral-400 mb-1">Logo Image URL</label>
-                <input 
-                  type="url" 
-                  placeholder="https://example.com/logo.png"
-                  className="w-full al-input"
-                  value={logoUrl} 
-                  onChange={e => setLogoUrl(e.target.value)} 
-                />
-              </div>
+            {/* Right Column: Mailers, SSO Integration, Webhooks */}
+            <div className="space-y-6">
 
-              <div>
-                <label className="block text-neutral-400 mb-1">Favicon URL</label>
-                <input 
-                  type="url" 
-                  placeholder="https://example.com/favicon.ico"
-                  className="w-full al-input"
-                  value={faviconUrl} 
-                  onChange={e => setFaviconUrl(e.target.value)} 
-                />
-              </div>
-
-              <div>
-                <label className="block text-neutral-400 mb-1">Login split wallpaper URL</label>
-                <input 
-                  type="url" 
-                  placeholder="https://example.com/login-bg.jpg"
-                  className="w-full al-input"
-                  value={loginImageUrl} 
-                  onChange={e => setLoginImageUrl(e.target.value)} 
-                />
+              {/* Section 3: SMTP Card */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
+                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
+                  <Mail size={16} /> SMTP Transactional Mailer
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">SMTP Hostname</label>
+                    <input type="text" className="w-full al-input" value={smtpHost} onChange={e => setSmtpHost(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">SMTP Port</label>
+                    <input type="number" className="w-full al-input" value={smtpPort} onChange={e => setSmtpPort(parseInt(e.target.value, 10))} />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">SMTP Username</label>
+                    <input type="text" className="w-full al-input" value={smtpUser} onChange={e => setSmtpUser(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">SMTP Password</label>
+                    <input type="password" className="w-full al-input" value={smtpPass} onChange={e => setSmtpPass(e.target.value)} placeholder="••••••••••••" />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-neutral-400 mb-1">Registration split wallpaper URL</label>
-                <input 
-                  type="url" 
-                  placeholder="https://example.com/register-bg.jpg"
-                  className="w-full al-input"
-                  value={registerImageUrl} 
-                  onChange={e => setRegisterImageUrl(e.target.value)} 
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: SMTP Card */}
-          <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
-            <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
-              <Mail size={16} /> SMTP Transactional Mailer
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 px-5 py-5 text-xs">
-              <div>
-                <label className="block text-neutral-400 mb-1">SMTP Hostname</label>
-                <input type="text" className="w-full al-input" value={smtpHost} onChange={e => setSmtpHost(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-neutral-400 mb-1">SMTP Port</label>
-                <input type="number" className="w-full al-input" value={smtpPort} onChange={e => setSmtpPort(parseInt(e.target.value, 10))} />
-              </div>
-              <div>
-                <label className="block text-neutral-400 mb-1">SMTP Username</label>
-                <input type="text" className="w-full al-input" value={smtpUser} onChange={e => setSmtpUser(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-neutral-400 mb-1">SMTP Password</label>
-                <input type="password" className="w-full al-input" value={smtpPass} onChange={e => setSmtpPass(e.target.value)} placeholder="••••••••••••" />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 4: Discord OAuth Client */}
-          <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
-            <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
-              <Globe size={16} /> Discord Single Sign-On (OAuth)
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 px-5 py-5 text-xs">
-              <div>
-                <label className="block text-neutral-400 mb-1">Client ID</label>
-                <input type="text" className="w-full al-input" value={discordId} onChange={e => setDiscordId(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-neutral-400 mb-1">Client Secret Token</label>
-                <input type="password" className="w-full al-input" value={discordSecret} onChange={e => setDiscordSecret(e.target.value)} placeholder="••••••••••••••••••••••••••••••••" />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 5: Webhooks config */}
-          <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
-            <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
-              <Shield size={16} /> Developer Webhooks Endpoint
-            </h2>
-            <div className="px-5 py-5 space-y-4">
-              <div className="flex gap-3">
-                <input 
-                  type="text" 
-                  placeholder="https://api.domain.com/webhooks" 
-                  className="flex-1 al-input text-xs" 
-                  value={newWebhook} 
-                  onChange={e => setNewWebhook(e.target.value)} 
-                />
-                <button type="button" onClick={handleAddWebhook} className="al-btn al-btn-primary py-2 text-xs">Add Webhook</button>
+              {/* Section 4: Discord OAuth Client */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
+                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
+                  <Globe size={16} /> Discord Single Sign-On (OAuth)
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Client ID</label>
+                    <input type="text" className="w-full al-input" value={discordId} onChange={e => setDiscordId(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Client Secret Token</label>
+                    <input type="password" className="w-full al-input" value={discordSecret} onChange={e => setDiscordSecret(e.target.value)} placeholder="••••••••••••••••••••••••••••••••" />
+                  </div>
+                </div>
               </div>
 
-              <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden text-xs">
-                <table className="w-full text-left">
-                  <thead className="bg-neutral-50 dark:bg-neutral-800/50 text-neutral-400">
-                    <tr>
-                      <th className="p-3">Webhook URL Target</th>
-                      <th className="p-3">Event Topic</th>
-                      <th className="p-3 text-right">Delete</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
-                    {webhooks.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} className="p-4 text-center text-neutral-500">No webhooks configured.</td>
-                      </tr>
-                    ) : (
-                      webhooks.map(w => (
-                        <tr key={w.id}>
-                          <td className="p-3 font-mono">{w.url}</td>
-                          <td className="p-3 font-medium uppercase text-blue-400">{w.event}</td>
-                          <td className="p-3 text-right">
-                            <button type="button" onClick={() => setWebhooks(webhooks.filter(x => x.id !== w.id))} className="text-red-500 hover:text-red-400">
-                              Delete
-                            </button>
-                          </td>
+              {/* Section 5: Webhooks config */}
+              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm">
+                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
+                  <Shield size={16} /> Developer Webhooks Endpoint
+                </h2>
+                <div className="px-5 py-5 space-y-4">
+                  <div className="flex gap-3">
+                    <input 
+                      type="text" 
+                      placeholder="https://api.domain.com/webhooks" 
+                      className="flex-1 al-input text-xs" 
+                      value={newWebhook} 
+                      onChange={e => setNewWebhook(e.target.value)} 
+                    />
+                    <button type="button" onClick={handleAddWebhook} className="al-btn al-btn-primary py-2 text-xs">Add Webhook</button>
+                  </div>
+
+                  <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-neutral-50 dark:bg-neutral-800/50 text-neutral-400">
+                        <tr>
+                          <th className="p-3">Webhook URL Target</th>
+                          <th className="p-3">Event Topic</th>
+                          <th className="p-3 text-right">Delete</th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                        {webhooks.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="p-4 text-center text-neutral-500">No webhooks configured.</td>
+                          </tr>
+                        ) : (
+                          webhooks.map(w => (
+                            <tr key={w.id}>
+                              <td className="p-3 font-mono">{w.url}</td>
+                              <td className="p-3 font-medium uppercase text-blue-400">{w.event}</td>
+                              <td className="p-3 text-right">
+                                <button type="button" onClick={() => setWebhooks(webhooks.filter(x => x.id !== w.id))} className="text-red-500 hover:text-red-400">
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
+
             </div>
+
           </div>
 
           <button 
