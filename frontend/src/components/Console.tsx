@@ -24,6 +24,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
 
     const term = new XTerm({
       cursorBlink: true,
+      convertEol: true,
       theme: {
         background: '#09090B',
         foreground: '#F3F4F6',
