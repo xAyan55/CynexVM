@@ -21,7 +21,7 @@ interface FileManagerProps {
 }
 
 export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
-  const [currentPath, setCurrentPath] = useState('/root');
+  const [currentPath, setCurrentPath] = useState('/');
   const [items, setItems] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -274,7 +274,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
       <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-white/5 border border-neutral-200/10 dark:border-white/5 rounded-2xl text-xs">
         {/* Breadcrumb path */}
         <div className="flex items-center gap-1.5 text-neutral-400 font-mono">
-          <button onClick={() => setCurrentPath('/root')} className="hover:text-white font-semibold">root</button>
+          <button onClick={() => setCurrentPath('/')} className="hover:text-white font-semibold">/</button>
           {currentPath.split('/').filter(Boolean).map((part, index) => (
             <React.Fragment key={part}>
               <ChevronRight size={12} className="text-neutral-600" />
@@ -352,7 +352,7 @@ export const FileManager: React.FC<FileManagerProps> = ({ instanceId }) => {
           <div className="space-y-1 font-medium">
             <div className="flex items-center gap-2 p-1.5 rounded-lg bg-white/5 text-white">
               <Folder size={13} className="text-blue-500" />
-              <span>/root</span>
+              <span>/</span>
             </div>
             {items.filter(i => i.isDirectory).map(item => (
               <div 
