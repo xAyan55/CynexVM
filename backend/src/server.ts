@@ -153,7 +153,15 @@ io.on('connection', (socket: Socket) => {
       socket.emit('terminal.log', `\r\nAttaching to container ${containerName}...\r\n`);
 
       // Spawn lxc exec with interactive bash shell
-      const proc = spawn('/snap/bin/lxc', ['exec', containerName, '--', '/bin/bash'], {
+      const proc = spawn('/snap/bin/lxc', [
+        'exec', 
+        containerName, 
+        '--env', 'TERM=xterm-256color',
+        '--env', 'HOME=/root',
+        '--', 
+        '/bin/bash', 
+        '-i'
+      ], {
         env: { ...process.env, TERM: 'xterm-256color' }
       });
 
