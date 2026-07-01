@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { Sidebar } from './components/Sidebar';
 import { CommandPalette } from './components/CommandPalette';
+import { NotificationBell } from './components/NotificationDrawer';
 import { Search } from 'lucide-react';
 
 // Public/Auth Pages
@@ -17,6 +18,7 @@ import { EmailVerification } from './pages/EmailVerification';
 import { Dashboard } from './pages/Dashboard';
 import { InstanceDetails } from './pages/InstanceDetails';
 import { Profile } from './pages/Profile';
+import { NotificationSettings } from './pages/NotificationSettings';
 
 // Admin Panel Pages
 import { Nodes } from './pages/Nodes';
@@ -28,6 +30,7 @@ import { TemplatesImages } from './pages/TemplatesImages';
 import { AdminSettings } from './pages/AdminSettings';
 import { JobsQueues } from './pages/JobsQueues';
 import { AdminApiKeys } from './pages/AdminApiKeys';
+import { AdminNotifications } from './pages/AdminNotifications';
 
 // Page loading spinner matching Airlink's preparing experience screen
 const LoadingScreen: React.FC = () => {
@@ -86,27 +89,24 @@ const AppLayout: React.FC = () => {
           {/* Page column container with header offset */}
           <div id="colcont" className="flex-1 lg:pl-56 flex flex-col min-w-0">
             {/* Top Fixed Header Navigation */}
-            <div className="fixed top-0 left-0 lg:left-56 right-0 z-40 flex h-16 shrink-0 items-center gap-x-4 bg-white/8 dark:bg-[#141414]/8 backdrop-blur-xl border-b border-neutral-200/30 dark:border-white/5 px-4 sm:gap-x-6 sm:px-4 lg:px-4">
-              <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-                <div className="relative flex flex-1 flex-col">
-                  
-                  {/* Search Bar Input (triggers palette) */}
-                  <div 
-                    onClick={() => setSearchOpen(true)}
-                    className="lg:-ml-2 flex items-center w-fit mt-3 px-4 py-2 h-10 rounded-xl border border-neutral-300 dark:border-white/5 active:scale-100 duration-200 hover:border-neutral-400 dark:hover:border-neutral-300/10 bg-transparent text-neutral-800 dark:text-white cursor-pointer"
-                    role="search"
-                  >
-                    <Search className="h-5 w-5 text-neutral-400 shrink-0" />
-                    <span className="bg-transparent border-transparent ml-2 text-sm text-zinc-500 font-normal select-none pr-8">
-                      Search
-                    </span>
-                    <div className="ml-2 px-1 py-0.5 text-[10px] w-[55px] font-medium text-neutral-700 dark:text-neutral-400 bg-neutral-200 dark:bg-neutral-800 rounded-md border border-neutral-300 dark:border-neutral-700 text-center shrink-0">
-                      CTRL + K
-                    </div>
-                  </div>
-
+            <div className="fixed top-0 left-0 lg:left-56 right-0 z-40 flex h-16 shrink-0 items-center justify-between bg-white/8 dark:bg-[#141414]/8 backdrop-blur-xl border-b border-neutral-200/30 dark:border-white/5 px-4 sm:px-6 lg:px-8">
+              {/* Search Bar Input (triggers palette) */}
+              <div 
+                onClick={() => setSearchOpen(true)}
+                className="flex items-center w-fit px-4 py-2 h-10 rounded-xl border border-neutral-300 dark:border-white/5 active:scale-100 duration-200 hover:border-neutral-400 dark:hover:border-neutral-300/10 bg-transparent text-neutral-800 dark:text-white cursor-pointer"
+                role="search"
+              >
+                <Search className="h-5 w-5 text-neutral-400 shrink-0" />
+                <span className="bg-transparent border-transparent ml-2 text-sm text-zinc-500 font-normal select-none pr-8">
+                  Search
+                </span>
+                <div className="ml-2 px-1 py-0.5 text-[10px] w-[55px] font-medium text-neutral-700 dark:text-neutral-400 bg-neutral-200 dark:bg-neutral-800 rounded-md border border-neutral-300 dark:border-neutral-700 text-center shrink-0">
+                  CTRL + K
                 </div>
               </div>
+
+              {/* Real-time Notification Bell */}
+              <NotificationBell />
             </div>
 
             {/* Routed Content Viewport */}
@@ -151,6 +151,7 @@ export const App: React.FC = () => {
             <Route path="/" element={<Dashboard />} />
             <Route path="/instances/:id" element={<InstanceDetails />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/notifications" element={<NotificationSettings />} />
             
             {/* Admin only subroutes */}
             <Route path="/admin/dashboard" element={<AdminRoute element={<AdminDashboard />} />} />
@@ -162,6 +163,7 @@ export const App: React.FC = () => {
             <Route path="/admin/settings" element={<AdminRoute element={<AdminSettings />} />} />
             <Route path="/admin/tasks" element={<AdminRoute element={<JobsQueues />} />} />
             <Route path="/admin/apikeys" element={<AdminRoute element={<AdminApiKeys />} />} />
+            <Route path="/admin/notifications" element={<AdminRoute element={<AdminNotifications />} />} />
           </Route>
 
           {/* Catch-all redirects */}

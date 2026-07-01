@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   LayoutDashboard, Server, Settings, ShieldAlert, LogOut, 
-  Users, HardDrive, RotateCw, MonitorPlay, User, Key
+  Users, HardDrive, RotateCw, MonitorPlay, User, Key, Bell, Megaphone
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -12,6 +12,7 @@ export const Sidebar: React.FC = () => {
   const userLinks = [
     { to: '/', label: 'Instances', icon: MonitorPlay },
     { to: '/profile', label: 'My Profile', icon: User },
+    { to: '/profile/notifications', label: 'Notifications', icon: Bell },
   ];
 
   const adminLinks = [
@@ -20,6 +21,7 @@ export const Sidebar: React.FC = () => {
     { to: '/admin/instances', label: 'Global Instances', icon: MonitorPlay },
     { to: '/admin/nodes', label: 'Host Nodes', icon: Server },
     { to: '/admin/templates', label: 'OS Templates', icon: HardDrive },
+    { to: '/admin/notifications', label: 'Alerts & Broadcasts', icon: Megaphone },
     { to: '/admin/apikeys', label: 'API Keys', icon: Key },
     { to: '/admin/audit-logs', label: 'Audit Logs', icon: ShieldAlert },
     { to: '/admin/settings', label: 'Settings', icon: Settings },

@@ -8,6 +8,7 @@ import { NodeScheduler, SchedulerStrategy } from '../services/scheduler';
 import { LockManager } from '../services/lockManager';
 import { TaskService } from '../services/taskService';
 import { JobService } from '../services/jobService';
+import { NotificationService } from '../services/notification/notificationService';
 
 const router = Router();
 
@@ -206,6 +207,9 @@ router.post('/', authenticate, requirePermission('instance.create'), async (req:
       lockKey
     });
 
+    // Notify of deployment start
+    await NotificationService.notify(userId || null, 'deployment.started', { instance: name, node: node.name });
+
     return res.status(202).json({
       message: 'VPS deployment background task enqueued.',
       taskId: task.id
@@ -315,6 +319,9 @@ router.post('/:id/start', authenticate, requirePermission('instance.start'), asy
         data: { status: 'running' }
       });
 
+      // Trigger start notification
+      await NotificationService.notify(instance.userId || null, 'instance.started', { instance: instance.name, instanceId: instance.id });
+
       // Auto-apply current vps_motd setting on boot (asynchronously)
       (async () => {
         try {
@@ -375,6 +382,9 @@ router.post('/:id/stop', authenticate, requirePermission('instance.stop'), async
         where: { id: instance.id },
         data: { status: 'stopped' }
       });
+
+      // Trigger stop notification
+      await NotificationService.notify(instance.userId || null, 'instance.stopped', { instance: instance.name, instanceId: instance.id });
     } finally {
       LockManager.release(instance.id, 'stop');
     }
@@ -408,6 +418,9 @@ router.post('/:id/reboot', authenticate, requirePermission('instance.reboot'), a
 
     try {
       await LxdContainerService.setStatus(instance.nodeId, instance.vmid, 'restart');
+
+      // Trigger reboot notification
+      await NotificationService.notify(instance.userId || null, 'instance.rebooted', { instance: instance.name, instanceId: instance.id });
     } finally {
       LockManager.release(instance.id, 'reboot');
     }
@@ -445,6 +458,9 @@ router.post('/:id/kill', authenticate, async (req: AuthenticatedRequest, res) =>
         where: { id: instance.id },
         data: { status: 'stopped' }
       });
+
+      // Trigger force kill notification
+      await NotificationService.notify(instance.userId || null, 'instance.killed', { instance: instance.name, instanceId: instance.id });
     } finally {
       LockManager.release(instance.id, 'kill');
     }
@@ -480,6 +496,9 @@ router.post('/:id/freeze', authenticate, async (req: AuthenticatedRequest, res) 
         where: { id: instance.id },
         data: { status: 'frozen' }
       });
+
+      // Trigger suspend/freeze notification
+      await NotificationService.notify(instance.userId || null, 'instance.suspended', { instance: instance.name, instanceId: instance.id });
     } finally {
       LockManager.release(instance.id, 'freeze');
     }
@@ -515,6 +534,9 @@ router.post('/:id/unfreeze', authenticate, async (req: AuthenticatedRequest, res
         where: { id: instance.id },
         data: { status: 'running' }
       });
+
+      // Trigger start/unfreeze notification
+      await NotificationService.notify(instance.userId || null, 'instance.started', { instance: instance.name, instanceId: instance.id });
     } finally {
       LockManager.release(instance.id, 'unfreeze');
     }
@@ -588,6 +610,9 @@ router.delete('/:id', authenticate, requirePermission('instance.delete'), async 
     try {
       await LxdContainerService.delete(instance.nodeId, instance.vmid);
       await db.instance.delete({ where: { id: instance.id } });
+
+      // Trigger delete notification
+      await NotificationService.notify(instance.userId || null, 'instance.deleted', { instance: instance.name });
 
       await db.auditLog.create({
         data: {
@@ -742,6 +767,10 @@ JobService.registerWorker('instance.deploy', async (job) => {
       }
     });
 
+    // Notify of creation and deployment completion
+    await NotificationService.notify(job.data.userId || null, 'instance.created', { instance: name, instanceId: instance.id });
+    await NotificationService.notify(job.data.userId || null, 'deployment.completed', { instance: name, instanceId: instance.id });
+
     TaskService.updateTask(taskId, {
       status: 'completed',
       progress: 100,
@@ -755,6 +784,9 @@ JobService.registerWorker('instance.deploy', async (job) => {
     try {
       await LxdContainerService.delete(nodeId, vmid);
     } catch (_) {}
+
+    // Notify of deployment failure
+    await NotificationService.notify(job.data.userId || null, 'deployment.failed', { instance: name, error: err.message });
 
     TaskService.updateTask(taskId, {
       status: 'failed',
@@ -802,6 +834,9 @@ JobService.registerWorker('instance.reinstall', async (job) => {
       password: instance.password || 'admin'
     });
 
+    // Notify of reinstallation success
+    await NotificationService.notify(instance.userId || null, 'deployment.completed', { instance: instance.name, instanceId: instance.id });
+
     TaskService.updateTask(taskId, {
       status: 'completed',
       progress: 100,
@@ -811,6 +846,12 @@ JobService.registerWorker('instance.reinstall', async (job) => {
     });
 
   } catch (err: any) {
+    // Notify of reinstallation failure
+    try {
+      const inst = await db.instance.findUnique({ where: { id: instanceId } });
+      await NotificationService.notify(inst?.userId || null, 'deployment.failed', { instance: inst?.name || 'Unknown', error: err.message });
+    } catch (_) {}
+
     TaskService.updateTask(taskId, {
       status: 'failed',
       failedReason: err.message,

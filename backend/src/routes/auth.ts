@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { db } from '../db';
 import { CONFIG } from '../config';
 import { authLimiter } from '../middleware/rateLimit';
+import { NotificationService } from '../services/notification/notificationService';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth';
 import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
@@ -77,6 +78,9 @@ router.post('/register', authLimiter, async (req, res) => {
       }
     });
 
+    // Notify user of registration
+    await NotificationService.notify(newUser.id, 'user.registered', { user: newUser.username });
+
     return res.status(201).json({ message: 'User registered successfully. Please log in.' });
   } catch (err: any) {
     console.error('Registration error:', err);
@@ -127,6 +131,9 @@ router.post('/login', authLimiter, async (req, res) => {
         where: { id: user.id },
         data: dataToUpdate
       });
+
+      // Notify user of failed login attempt
+      await NotificationService.notify(user.id, 'user.login_failed', { user: user.username, ip: req.ip || 'unknown' });
 
       return res.status(401).json({ error: 'Invalid username/email or password' });
     }
@@ -183,6 +190,9 @@ router.post('/login', authLimiter, async (req, res) => {
         severity: 'info'
       }
     });
+
+    // Notify user of login
+    await NotificationService.notify(user.id, 'user.login', { user: user.username, ip: req.ip || 'unknown' });
 
     return res.status(200).json({
       accessToken,
@@ -555,6 +565,10 @@ router.put('/profile', authenticate, async (req: AuthenticatedRequest, res) => {
       }
     });
 
+    if (email && email !== req.user.email) {
+      await NotificationService.notify(req.user.id, 'user.email_changed', { email });
+    }
+
     return res.status(200).json({
       message: 'Profile updated successfully.',
       user: {
@@ -598,6 +612,9 @@ router.put('/password', authenticate, async (req: AuthenticatedRequest, res) => 
       where: { id: req.user.id },
       data: { passwordHash, passwordChangedAt: new Date() }
     });
+
+    // Notify user of password change
+    await NotificationService.notify(req.user.id, 'user.password_changed', {});
 
     return res.status(200).json({ message: 'Password updated successfully.' });
   } catch (err: any) {
@@ -728,6 +745,9 @@ router.post('/apikeys', authenticate, async (req: AuthenticatedRequest, res) => 
       }
     });
 
+    // Notify user of API Token creation
+    await NotificationService.notify(req.user.id, 'user.api_token_created', {});
+
     return res.status(201).json({
       message: 'API Key generated successfully.',
       key: {
@@ -758,6 +778,10 @@ router.delete('/apikeys/:id', authenticate, async (req: AuthenticatedRequest, re
     }
 
     await db.apiKey.delete({ where: { id: req.params.id } });
+
+    // Notify user of API Token revocation
+    await NotificationService.notify(req.user.id, 'user.api_token_deleted', {});
+
     return res.status(200).json({ message: 'API Key revoked successfully.' });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to revoke API key.' });

@@ -37,6 +37,8 @@ model User {
   groupMemberships   UserGroupMember[]
   roles              UserRole[]
   instances          Instance[]
+  notifications      Notification[]
+  notificationPreference NotificationPreference?
 }
 
 model Role {
@@ -336,4 +338,67 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id           String   @id @default(uuid())
+  userId       String?
+  title        String
+  message      String
+  category     String
+  priority     String
+  icon         String?
+  color        String?
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  readAt       DateTime?
+  actionUrl    String?
+  metadata     String?  // JSON string
+  sourceEvent  String?
+  expiration   DateTime?
+  deliveries   NotificationDelivery[]
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NotificationPreference {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  desktopEnabled      Boolean  @default(true)
+  soundEnabled        Boolean  @default(true)
+  soundProfile        String   @default("default") // "default" | "success" | "warning" | "error" | "critical" | "silent"
+  emailEnabled        Boolean  @default(true)
+  discordEnabled      Boolean  @default(true)
+  discordWebhookUrl   String?
+  webhookEnabled      Boolean  @default(true)
+  webhookUrl          String? // Generic webhook
+  mutedCategories     String   @default("[]") // JSON list of muted categories
+  muteUntil           DateTime?
+  retentionDays       Int      @default(30)
+  eventPreferences    String   @default("{}") // JSON string of per-event channel settings
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NotificationDelivery {
+  id             String   @id @default(uuid())
+  notificationId String
+  channel        String   // "panel" | "websocket" | "email" | "discord" | "webhook"
+  status         String   // "success" | "failed" | "pending"
+  error          String?
+  retryCount     Int      @default(0)
+  maxAttempts    Int      @default(5)
+  retryAfter     DateTime?
+  deliveredAt    DateTime @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+}
+
+model Announcement {
+  id              String    @id @default(uuid())
+  title           String
+  message         String
+  type            String    // "banner" | "maintenance" | "emergency"
+  targetAudience  String    // "all" | "admins" | "roles" | "users"
+  targetValue     String?   // comma-separated list of target role names or user IDs
+  scheduledStart  DateTime?
+  scheduledEnd    DateTime?
+  createdAt       DateTime  @default(now())
 }

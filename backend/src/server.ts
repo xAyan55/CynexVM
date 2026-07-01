@@ -16,11 +16,13 @@ import instanceRoutes from './routes/instances';
 import fileRoutes from './routes/files';
 import settingRoutes from './routes/settings';
 import auditLogRoutes from './routes/auditLogs';
+import notificationRoutes from './routes/notifications';
 
 // Services
 import { LxdService } from './services/lxdService';
 import { ReconciliationService } from './services/reconciliation';
 import { db } from './db';
+import { SocketService } from './services/socketService';
 
 const app = express();
 app.set('trust proxy', true);
@@ -33,6 +35,7 @@ const io = new Server(server, {
     methods: ['GET', 'POST']
   }
 });
+SocketService.setIo(io);
 
 // Security & Parsing Middleware
 app.use(helmet({
@@ -70,6 +73,7 @@ app.use('/api/v1/instances', instanceRoutes);
 app.use('/api/v1/instances/:id/files', fileRoutes);
 app.use('/api/v1/settings', settingRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
 
 // Folder management API
 app.patch('/api/v1/instances/:id/folder', async (req, res) => {
@@ -275,6 +279,17 @@ io.on('connection', (socket: Socket) => {
       clearInterval(metricsInterval);
       metricsInterval = null;
     }
+  });
+
+  socket.on('user.auth', (params: { token?: string }) => {
+    if (!params.token) return;
+    try {
+      const decoded = jwt.verify(params.token, CONFIG.JWT_SECRET) as any;
+      if (decoded && decoded.userId) {
+        socket.join(`user:${decoded.userId}`);
+        console.log(`[Socket] User ${decoded.userId} subscribed to room: user:${decoded.userId}`);
+      }
+    } catch (_) {}
   });
 
   socket.on('disconnect', () => {

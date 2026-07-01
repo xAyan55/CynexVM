@@ -95,6 +95,24 @@ export class TaskService {
     task.durationMs = Date.now() - task.createdAt.getTime();
     if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
       task.completedAt = new Date();
+
+      // Hook into NotificationService to spawn system notifications
+      const targetUserId = task.userId;
+      const status = task.status;
+      const name = task.name;
+      const failedReason = task.failedReason;
+      process.nextTick(async () => {
+        try {
+          const { NotificationService } = require('./notification/notificationService');
+          if (targetUserId) {
+            if (status === 'completed') {
+              await NotificationService.notify(targetUserId, 'task.completed', { task: name });
+            } else if (status === 'failed') {
+              await NotificationService.notify(targetUserId, 'task.failed', { task: name, error: failedReason || 'Unknown error' });
+            }
+          }
+        } catch (_) {}
+      });
     }
 
     this.tasks.set(taskId, task);
