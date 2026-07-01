@@ -94,31 +94,14 @@ export const InstanceDetails: React.FC = () => {
   // Password reset & OS Reinstall
   const [newRootPassword, setNewRootPassword] = useState('');
   const [updatingPassword, setUpdatingPassword] = useState(false);
-  const [reinstallTemplate, setReinstallTemplate] = useState('');
+  const [reinstallTemplate, setReinstallTemplate] = useState('images:ubuntu/22.04');
   const [reinstalling, setReinstalling] = useState(false);
-  const [images, setImages] = useState<any[]>([]);
 
-  useEffect(() => {
-    if (activeTab === 'settings') {
-      fetchImages();
-    }
-  }, [activeTab]);
-
-  const fetchImages = async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/v1/images', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setImages(data);
-        if (data.length > 0) {
-          setReinstallTemplate(data[0].aliases?.[0] || data[0].fingerprint);
-        }
-      }
-    } catch (_) {}
-  };
+  const templates = [
+    { name: 'Ubuntu 22.04 LTS (Jammy)', path: 'images:ubuntu/22.04' },
+    { name: 'Debian 12 Bookworm', path: 'images:debian/12' },
+    { name: 'Alpine 3.19 Standard', path: 'images:alpine/3.19' }
+  ];
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,6 +204,9 @@ export const InstanceDetails: React.FC = () => {
         setFirewallRules(data.firewallRules || []);
         setNotes(data.notes || '');
         setTags(data.tags?.map((t: any) => t.tag?.name) || []);
+        if (data.osTemplate) {
+          setReinstallTemplate(data.osTemplate);
+        }
       } else {
         navigate('/');
       }
@@ -764,18 +750,11 @@ export const InstanceDetails: React.FC = () => {
                   className="w-full px-3 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-800/20 focus:border-blue-500 focus:outline-none rounded-xl text-neutral-850 dark:text-white transition"
                   required
                 >
-                  {images.length === 0 ? (
-                    <option value="">No cached images found</option>
-                  ) : (
-                    images.map(img => {
-                      const aliasName = img.aliases?.[0] || img.fingerprint;
-                      return (
-                        <option key={img.fingerprint} value={aliasName}>
-                          {aliasName}
-                        </option>
-                      );
-                    })
-                  )}
+                  {templates.map(t => (
+                    <option key={t.path} value={t.path}>
+                      {t.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <button 
