@@ -1,6 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Volume2, Bell, Shield, Mail, Globe, Clock, Settings, VolumeX, Eye } from 'lucide-react';
-import { DEFAULT_EVENT_PREFERENCES } from '../../../backend/src/services/notification/notificationPreferences';
+
+const DEFAULT_EVENT_PREFERENCES: Record<string, any> = {
+  'instance.created': { panel: true, websocket: true, email: true, discord: false, webhook: true },
+  'instance.deleted': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'instance.started': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'instance.stopped': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'instance.rebooted': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'instance.killed': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'instance.suspended': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'deployment.started': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'deployment.completed': { panel: true, websocket: true, email: true, discord: false, webhook: true },
+  'deployment.failed': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'backup.started': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'backup.completed': { panel: true, websocket: true, email: true, discord: false, webhook: true },
+  'backup.failed': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'snapshot.created': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'snapshot.restored': { panel: true, websocket: true, email: true, discord: false, webhook: false },
+  'snapshot.deleted': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'image.download_finished': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'image.download_failed': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'node.online': { panel: true, websocket: true, email: true, discord: false, webhook: true },
+  'node.offline': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'node.high_cpu': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'node.high_ram': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'node.low_disk': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'node.maintenance': { panel: true, websocket: true, email: true, discord: false, webhook: false },
+  'user.registered': { panel: true, websocket: true, email: true, discord: false, webhook: false },
+  'user.login': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'user.login_failed': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'user.password_changed': { panel: true, websocket: true, email: true, discord: false, webhook: false },
+  'user.email_changed': { panel: true, websocket: true, email: true, discord: false, webhook: false },
+  'user.api_token_created': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'user.api_token_deleted': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'system.announcement': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'system.maintenance': { panel: true, websocket: true, email: true, discord: true, webhook: true },
+  'system.update_available': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'task.completed': { panel: true, websocket: true, email: false, discord: false, webhook: false },
+  'task.failed': { panel: true, websocket: true, email: true, discord: true, webhook: true }
+};
 
 // Simple event mapping names for human-readable display
 const EVENT_LABELS: Record<string, string> = {
