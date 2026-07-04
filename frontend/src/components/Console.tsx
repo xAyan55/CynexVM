@@ -9,7 +9,7 @@ import { SerializeAddon } from 'xterm-addon-serialize';
 import 'xterm/css/xterm.css';
 import { useSocket } from '../context/SocketContext';
 import {
-  Play, Square, RotateCcw, Maximize2, Minimize2,
+  Maximize2, Minimize2,
   Download, Search as SearchIcon, X, RefreshCw,
   Terminal as TerminalIcon, Plus, AlertCircle, Wifi, WifiOff,
   Clock, Copy, Check,
@@ -22,7 +22,17 @@ interface ConsoleProps {
   actionLoading?: string | null;
 }
 
-interface TermTab {
+interface TermInstance {
+  term: Terminal;
+  fitAddon: FitAddon;
+  searchAddon: SearchAddon;
+  sessionId?: string;
+  containerName?: string;
+  dataUnsub?: () => void;
+  resizeUnsub?: () => void;
+}
+
+interface TabInfo {
   id: string;
   label: string;
   containerName?: string;
@@ -58,11 +68,13 @@ const getToken = () => localStorage.getItem('accessToken');
 export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAction, actionLoading }) => {
   const socket = useSocket();
 
-  // Terminal state
-  const [tabs, setTabs] = useState<TermTab[]>([{ id: 'main', label: 'Terminal 1' }]);
+  const [tabs, setTabs] = useState<TabInfo[]>([{ id: 'main', label: 'Terminal 1' }]);
   const [activeTab, setActiveTab] = useState('main');
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+
   const terminalRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const xtermInstances = useRef<Map<string, { term: Terminal; fitAddon: FitAddon; searchAddon: SearchAddon; sessionId?: string }>>(new Map());
+  const xtermInstances = useRef<Map<string, TermInstance>>(new Map());
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -72,8 +84,6 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
   const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
   const [searchWholeWord, setSearchWholeWord] = useState(false);
   const [searchRegex, setSearchRegex] = useState(false);
-  const [matchCount, setMatchCount] = useState(0);
-  const [matchIndex, setMatchIndex] = useState(0);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [latency, setLatency] = useState(0);
@@ -84,22 +94,41 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<HTMLDivElement>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastPingRef = useRef<number>(0);
   const tabCountRef = useRef(1);
+  const pendingSessionsRef = useRef(new Map<string, string>());
 
   const getActiveTerminal = useCallback(() => {
-    return xtermInstances.current.get(activeTab);
-  }, [activeTab]);
+    return xtermInstances.current.get(activeTabRef.current);
+  }, []);
 
-  const focusTerminal = useCallback(() => {
-    const inst = getActiveTerminal();
-    if (inst) inst.term.focus();
-  }, [getActiveTerminal]);
+  const getTerminalBySessionId = useCallback((sessionId: string) => {
+    for (const [tid, inst] of xtermInstances.current) {
+      if (inst.sessionId === sessionId) return { tabId: tid, inst };
+    }
+    return null;
+  }, []);
 
-  // Create a new terminal session
-  const createTerminalSession = useCallback((tabId: string, container?: HTMLDivElement) => {
-    if (!socket || !container) return;
+  const connectSession = useCallback((tabId: string) => {
+    if (!socket) return;
+    const inst = xtermInstances.current.get(tabId);
+    if (!inst) return;
+    const token = getToken();
+    socket.emit('terminal.create', {
+      instanceId,
+      token,
+      cols: inst.term.cols,
+      rows: inst.term.rows,
+    });
+  }, [socket, instanceId]);
 
+  const reconnectAllSessions = useCallback(() => {
+    if (!socket) return;
+    // Query backend for existing sessions. The onSessions handler
+    // will either reconnect to existing sessions or create fresh ones.
+    socket.emit('terminal.sessions');
+  }, [socket]);
+
+  const createTerminal = useCallback((tabId: string, container: HTMLDivElement) => {
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
@@ -110,105 +139,85 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
       fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", ui-monospace, monospace',
       fontSize: 14,
       lineHeight: 1.5,
-      letterSpacing: 0,
       scrollback: 100000,
       allowProposedApi: true,
-      smoothScrollDuration: 0,
-      windowsMode: false,
     });
 
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon();
     const webLinksAddon = new WebLinksAddon();
-
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
     term.loadAddon(webLinksAddon);
 
-    try {
-      const unicodeAddon = new Unicode11Addon();
-      term.loadAddon(unicodeAddon);
-    } catch (_) {}
+    try { term.loadAddon(new Unicode11Addon()); } catch (_) {}
 
     term.open(container);
     fitAddon.fit();
 
-    // WebGL renderer with Canvas fallback
     try {
-      const webglAddon = new WebglAddon();
-      term.loadAddon(webglAddon);
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-      });
+      const webgl = new WebglAddon();
+      term.loadAddon(webgl);
+      webgl.onContextLoss(() => webgl.dispose());
     } catch (_) {}
 
-    xtermInstances.current.set(tabId, { term, fitAddon, searchAddon });
+    const inst: TermInstance = { term, fitAddon, searchAddon };
+    xtermInstances.current.set(tabId, inst);
 
-    // Connect to backend
-    const token = getToken();
-    socket.emit('terminal.create', {
-      instanceId,
-      token,
-      cols: term.cols,
-      rows: term.rows,
-    });
-
-    setIsConnected(true);
-    setConnectionError(null);
-    lastPingRef.current = Date.now();
-
-    // Input handling
-    term.onData((data: string) => {
-      const inst = xtermInstances.current.get(tabId);
-      if (inst?.sessionId) {
-        socket.emit('terminal.input', { sessionId: inst.sessionId, data });
+    // Wire input and resize to socket
+    const dataSub = term.onData((data: string) => {
+      const i = xtermInstances.current.get(tabId);
+      if (i?.sessionId && socket) {
+        socket.emit('terminal.input', { sessionId: i.sessionId, data });
       }
     });
-
-    // Resize handling
-    term.onResize((size) => {
-      const inst = xtermInstances.current.get(tabId);
-      if (inst?.sessionId) {
-        socket.emit('terminal.resize', { sessionId: inst.sessionId, cols: size.cols, rows: size.rows });
+    const resizeSub = term.onResize((size) => {
+      const i = xtermInstances.current.get(tabId);
+      if (i?.sessionId && socket) {
+        socket.emit('terminal.resize', { sessionId: i.sessionId, cols: size.cols, rows: size.rows });
       }
     });
+    inst.dataUnsub = () => { dataSub.dispose(); };
+    inst.resizeUnsub = () => { resizeSub.dispose(); };
 
-    return term;
-  }, [socket, instanceId]);
+    return inst;
+  }, [socket]);
 
-  // Initialize the first terminal
-  useEffect(() => {
-    if (!socket) return;
-    const container = terminalRefs.current.get('main');
-    if (!container) return;
-    createTerminalSession('main', container);
-    return () => {
-      socket.emit('terminal.close');
-      xtermInstances.current.forEach((inst, id) => {
-        inst.term.dispose();
-      });
-      xtermInstances.current.clear();
-    };
-  }, [socket, instanceId, createTerminalSession]);
-
-  // Socket event handlers
+  // ─── Init: create main terminal and register socket handlers ───
   useEffect(() => {
     if (!socket) return;
 
-    const onReady = (data: { sessionId: string; containerName: string }) => {
-      const inst = xtermInstances.current.get(activeTab);
+    const mainContainer = terminalRefs.current.get('main');
+    if (!mainContainer) return;
+
+    // Create terminal only if not already created (handles strict mode double-run)
+    if (!xtermInstances.current.has('main')) {
+      createTerminal('main', mainContainer);
+    }
+
+    // Register ALL socket event handlers
+    const onReady = (data: { sessionId: string; containerName?: string }) => {
+      const pendingTabId = pendingSessionsRef.current.get(data.sessionId);
+      const targetTabId = pendingTabId || activeTabRef.current;
+      pendingSessionsRef.current.delete(data.sessionId);
+
+      const inst = xtermInstances.current.get(targetTabId);
       if (inst) {
         inst.sessionId = data.sessionId;
-        setTabs(prev => prev.map(t => t.id === activeTab ? { ...t, containerName: data.containerName } : t));
+        inst.containerName = data.containerName;
+        setTabs(prev => prev.map(t =>
+          t.id === targetTabId ? { ...t, containerName: data.containerName } : t
+        ));
+        inst.term.focus();
       }
       setIsConnected(true);
       setIsReconnecting(false);
       setConnectionError(null);
     };
 
-    const onData = (data: string) => {
-      const inst = xtermInstances.current.get(activeTab);
-      if (inst) inst.term.write(data);
+    const onData = (data: { sessionId: string; data: string }) => {
+      const match = getTerminalBySessionId(data.sessionId);
+      if (match) match.inst.term.write(data.data);
     };
 
     const onError = (data: { message: string }) => {
@@ -217,17 +226,54 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     };
 
     const onExit = (data: { sessionId: string; exitCode: number }) => {
-      const inst = xtermInstances.current.get(activeTab);
-      if (inst && inst.sessionId === data.sessionId) {
-        inst.term.write(`\r\n\x1b[90m[Session ended with exit code ${data.exitCode}]\x1b[0m\r\n`);
+      const match = getTerminalBySessionId(data.sessionId);
+      if (match) {
+        match.inst.term.write(`\r\n\x1b[90m[Session ended with exit code ${data.exitCode}]\x1b[0m\r\n`);
       }
     };
 
     const onWarn = (data: { sessionId: string; message: string }) => {
-      const inst = xtermInstances.current.get(activeTab);
-      if (inst && inst.sessionId === data.sessionId) {
-        inst.term.write(`\r\n\x1b[33m${data.message}\x1b[0m\r\n`);
+      const match = getTerminalBySessionId(data.sessionId);
+      if (match) {
+        match.inst.term.write(`\r\n\x1b[33m${data.message}\x1b[0m\r\n`);
       }
+    };
+
+    const onSessions = (sessions: Array<{ id: string; instanceId: string; containerName?: string }>) => {
+      // If we have existing sessions on the backend, try to reconnect each tab
+      if (sessions.length > 0) {
+        const usedSessionIds = new Set<string>();
+        for (const [tabId, inst] of xtermInstances.current) {
+          // Find a session for this tab that hasn't been taken
+          const match = sessions.find(s =>
+            s.instanceId === instanceId && !usedSessionIds.has(s.id)
+          );
+          if (match) {
+            usedSessionIds.add(match.id);
+            pendingSessionsRef.current.set(match.id, tabId);
+            socket.emit('terminal.reconnect', { sessionId: match.id });
+          } else if (!inst.sessionId) {
+            // No matching backend session, create fresh
+            connectSession(tabId);
+          }
+        }
+      } else {
+        // No existing sessions, create fresh ones for all tabs
+        for (const [tabId, inst] of xtermInstances.current) {
+          if (!inst.sessionId) connectSession(tabId);
+        }
+      }
+    };
+
+    const onDisconnect = () => {
+      setIsConnected(false);
+      setIsReconnecting(true);
+    };
+
+    const onConnect = () => {
+      setIsReconnecting(false);
+      setIsConnected(true);
+      reconnectAllSessions();
     };
 
     socket.on('terminal.ready', onReady);
@@ -235,28 +281,13 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     socket.on('terminal.error', onError);
     socket.on('terminal.exit', onExit);
     socket.on('terminal.warn', onWarn);
+    socket.on('terminal.sessions', onSessions);
+    socket.on('disconnect', onDisconnect);
+    socket.on('connect', onConnect);
 
-    // Reconnect handling
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-      setIsReconnecting(true);
-    });
-
-    socket.on('connect', () => {
-      setIsReconnecting(false);
-      setIsConnected(true);
-      // Re-create terminal session
-      const inst = xtermInstances.current.get(activeTab);
-      if (inst) {
-        const token = getToken();
-        socket.emit('terminal.create', {
-          instanceId,
-          token,
-          cols: inst.term.cols,
-          rows: inst.term.rows,
-        });
-      }
-    });
+    // Check for existing sessions on backend (e.g., after SPA navigation)
+    // reconnectAllSessions will attach to existing sessions or create fresh ones
+    socket.emit('terminal.sessions');
 
     return () => {
       socket.off('terminal.ready', onReady);
@@ -264,151 +295,114 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
       socket.off('terminal.error', onError);
       socket.off('terminal.exit', onExit);
       socket.off('terminal.warn', onWarn);
+      socket.off('terminal.sessions', onSessions);
+      socket.off('disconnect', onDisconnect);
+      socket.off('connect', onConnect);
+      // Pending session mappings are no longer valid
+      pendingSessionsRef.current.clear();
+      // Dispose all terminal subscriptions and instances
+      for (const [_, inst] of xtermInstances.current) {
+        inst.dataUnsub?.();
+        inst.resizeUnsub?.();
+        inst.term.dispose();
+      }
+      xtermInstances.current.clear();
     };
-  }, [socket, instanceId, activeTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, instanceId]);
 
-  // Fit terminal on resize
+  // Fit on resize
   useEffect(() => {
-    const handleResize = () => {
-      xtermInstances.current.forEach((inst) => {
+    const fit = () => {
+      xtermInstances.current.forEach(inst => {
         try { inst.fitAddon.fit(); } catch (_) {}
       });
     };
-
-    const observer = new ResizeObserver(handleResize);
-    if (containerRef.current) observer.observe(containerRef.current);
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', handleResize);
-    };
+    const obs = new ResizeObserver(fit);
+    if (containerRef.current) obs.observe(containerRef.current);
+    window.addEventListener('resize', fit);
+    return () => { obs.disconnect(); window.removeEventListener('resize', fit); };
   }, []);
 
-  // Session duration timer
+  // Session duration
   useEffect(() => {
     if (!isConnected) return;
-    durationIntervalRef.current = setInterval(() => {
-      setSessionDuration(prev => prev + 1);
-    }, 1000);
-    return () => {
-      if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
-    };
+    durationIntervalRef.current = setInterval(() => setSessionDuration(p => p + 1), 1000);
+    return () => { if (durationIntervalRef.current) clearInterval(durationIntervalRef.current); };
   }, [isConnected]);
 
   // Latency ping
   useEffect(() => {
     if (!socket) return;
-    const pingInterval = setInterval(() => {
+    const interval = setInterval(() => {
       if (isConnected) {
         const start = Date.now();
         socket.emit('ping');
-        socket.once('pong', () => {
-          setLatency(Date.now() - start);
-        });
+        socket.once('pong', () => setLatency(Date.now() - start));
       }
     }, 5000);
-    return () => clearInterval(pingInterval);
+    return () => clearInterval(interval);
   }, [socket, isConnected]);
 
-  // Global keyboard shortcuts
+  // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+Shift+F: Search
+    const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === 'F') {
         e.preventDefault();
-        setShowSearch(prev => !prev);
-        if (!showSearch) setTimeout(() => searchInputRef.current?.focus(), 100);
+        setShowSearch(p => { if (!p) setTimeout(() => searchInputRef.current?.focus(), 100); return !p; });
       }
-      // Ctrl+Shift+P: Shortcuts
-      if (e.ctrlKey && e.shiftKey && e.key === 'P') {
-        e.preventDefault();
-        setShowShortcuts(prev => !prev);
-      }
-      // F11: Fullscreen
-      if (e.key === 'F11') {
-        e.preventDefault();
-        toggleFullscreen();
-      }
-      // ESC: Exit fullscreen
-      if (e.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false);
-      }
+      if (e.ctrlKey && e.shiftKey && e.key === 'P') { e.preventDefault(); setShowShortcuts(p => !p); }
+      if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
+      if (e.key === 'Escape' && isFullscreen) setIsFullscreen(false);
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showSearch, isFullscreen]);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isFullscreen, showSearch]);
 
-  // Close context menu on click outside
   useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
+    const click = () => setContextMenu(null);
+    document.addEventListener('click', click);
+    return () => document.removeEventListener('click', click);
   }, []);
 
   const toggleFullscreen = () => {
-    if (!isFullscreen) {
-      if (fullscreenRef.current?.requestFullscreen) {
-        fullscreenRef.current.requestFullscreen();
-      }
-      setIsFullscreen(true);
-      setTimeout(() => {
-        xtermInstances.current.forEach((inst) => {
-          try { inst.fitAddon.fit(); } catch (_) {}
-        });
-      }, 200);
-    } else {
-      if (document.exitFullscreen) document.exitFullscreen();
-      setIsFullscreen(false);
-      setTimeout(() => {
-        xtermInstances.current.forEach((inst) => {
-          try { inst.fitAddon.fit(); } catch (_) {}
-        });
-      }, 200);
+    const next = !isFullscreen;
+    setIsFullscreen(next);
+    if (next && fullscreenRef.current?.requestFullscreen) {
+      fullscreenRef.current.requestFullscreen();
+    } else if (!next && document.exitFullscreen) {
+      document.exitFullscreen();
     }
+    setTimeout(() => {
+      xtermInstances.current.forEach(inst => { try { inst.fitAddon.fit(); } catch (_) {} });
+    }, 200);
   };
 
   const searchNext = () => {
     const inst = getActiveTerminal();
     if (!inst) return;
-    const options = {
-      regex: searchRegex,
-      wholeWord: searchWholeWord,
-      caseSensitive: searchCaseSensitive,
-    };
-    inst.searchAddon.findNext(searchValue, options);
+    inst.searchAddon.findNext(searchValue, { regex: searchRegex, wholeWord: searchWholeWord, caseSensitive: searchCaseSensitive });
   };
 
   const searchPrev = () => {
     const inst = getActiveTerminal();
     if (!inst) return;
-    const options = {
-      regex: searchRegex,
-      wholeWord: searchWholeWord,
-      caseSensitive: searchCaseSensitive,
-    };
-    inst.searchAddon.findPrevious(searchValue, options);
+    inst.searchAddon.findPrevious(searchValue, { regex: searchRegex, wholeWord: searchWholeWord, caseSensitive: searchCaseSensitive });
   };
 
   const handleCopy = () => {
     const inst = getActiveTerminal();
     if (!inst) return;
-    const selection = inst.term.getSelection();
-    if (selection) {
-      navigator.clipboard.writeText(selection).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
-    }
+    const sel = inst.term.getSelection();
+    if (sel) navigator.clipboard.writeText(sel).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    setContextMenu(null);
   };
 
   const handlePaste = async () => {
     const inst = getActiveTerminal();
-    if (!inst || !inst.sessionId) return;
-    try {
-      const text = await navigator.clipboard.readText();
-      socket?.emit('terminal.input', { sessionId: inst.sessionId, data: text });
-    } catch {}
+    if (!inst?.sessionId || !socket) return;
+    try { socket.emit('terminal.input', { sessionId: inst.sessionId, data: await navigator.clipboard.readText() }); } catch {}
+    setContextMenu(null);
   };
 
   const handleDownload = () => {
@@ -421,28 +415,24 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `terminal-${instanceId}-${Date.now()}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = `terminal-${instanceId}-${Date.now()}.log`;
+    a.click(); URL.revokeObjectURL(url);
+    setContextMenu(null);
   };
 
-  const handleClear = () => {
-    const inst = getActiveTerminal();
-    if (inst) inst.term.clear();
-  };
+  const handleClear = () => { getActiveTerminal()?.term.clear(); setContextMenu(null); };
 
   const addTab = () => {
     tabCountRef.current += 1;
     const id = `tab-${tabCountRef.current}`;
-    const newTab: TermTab = { id, label: `Terminal ${tabCountRef.current}` };
-    setTabs(prev => [...prev, newTab]);
+    setTabs(prev => [...prev, { id, label: `Terminal ${tabCountRef.current}` }]);
     setActiveTab(id);
-
-    // Create terminal in next tick after DOM renders
     setTimeout(() => {
       const container = terminalRefs.current.get(id);
-      if (container) createTerminalSession(id, container);
+      if (container && socket) {
+        createTerminal(id, container);
+        connectSession(id);
+      }
     }, 50);
   };
 
@@ -451,6 +441,8 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     const inst = xtermInstances.current.get(tabId);
     if (inst) {
       if (inst.sessionId) socket?.emit('terminal.close', { sessionId: inst.sessionId });
+      inst.dataUnsub?.();
+      inst.resizeUnsub?.();
       inst.term.dispose();
       xtermInstances.current.delete(tabId);
     }
@@ -461,35 +453,27 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     }
   };
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY });
+  const handleContextMenu = (e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }); };
+
+  const formatDuration = (s: number) => {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h > 0 ? `${h}h ${m}m ${sec}s` : m > 0 ? `${m}m ${sec}s` : `${sec}s`;
   };
 
-  const formatDuration = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
-  };
-
-  const getPlaceholderRef = (tabId: string) => (el: HTMLDivElement | null) => {
+  const getRef = (tabId: string) => (el: HTMLDivElement | null) => {
     if (el) terminalRefs.current.set(tabId, el);
     else terminalRefs.current.delete(tabId);
   };
 
   return (
     <div ref={fullscreenRef} className={`flex flex-col ${isFullscreen ? 'fixed inset-0 z-[9999] bg-[#0a0a0b]' : ''}`}>
-      {/* Terminal Header */}
+      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 bg-[#0d0d0e] border-b border-zinc-800/60 select-none shrink-0">
-        {/* Tabs */}
         <div className="flex items-center gap-0.5 overflow-x-auto">
           {tabs.map(tab => (
             <div
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => { setActiveTab(tab.id); setContextMenu(null); }}
               className={`group flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-t-md cursor-pointer transition-colors shrink-0 ${
                 activeTab === tab.id
                   ? 'bg-[#0a0a0b] text-zinc-100 border-t border-l border-r border-zinc-800'
@@ -508,191 +492,91 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
               )}
             </div>
           ))}
-          <button
-            onClick={addTab}
-            className="ml-1 p-1 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
-          >
+          <button onClick={addTab} className="ml-1 p-1 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition">
             <Plus size={14} />
           </button>
         </div>
-
-        {/* Actions */}
         <div className="flex items-center gap-1">
-          <button onClick={() => setShowSearch(prev => !prev)}
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
-            title="Search (Ctrl+Shift+F)">
-            <SearchIcon size={13} />
-          </button>
-          <button onClick={handleDownload}
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
-            title="Download Logs">
-            <Download size={13} />
-          </button>
-          <button onClick={handleClear}
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
-            title="Clear">
-            <X size={13} />
-          </button>
-          <button onClick={toggleFullscreen}
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
-            title="Fullscreen (F11)">
+          <button onClick={() => setShowSearch(p => !p)} className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition" title="Search (Ctrl+Shift+F)"><SearchIcon size={13} /></button>
+          <button onClick={handleDownload} className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition" title="Download Logs"><Download size={13} /></button>
+          <button onClick={handleClear} className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition" title="Clear"><X size={13} /></button>
+          <button onClick={toggleFullscreen} className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition" title="Fullscreen (F11)">
             {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
-          <button onClick={() => setShowShortcuts(true)}
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition text-[10px] font-mono"
-            title="Shortcuts (Ctrl+Shift+P)">
-            ⌨
-          </button>
+          <button onClick={() => setShowShortcuts(p => !p)} className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition text-[10px] font-mono" title="Shortcuts (Ctrl+Shift+P)">⌨</button>
         </div>
       </div>
 
-      {/* Search Bar */}
+      {/* Search */}
       {showSearch && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-[#121214] border-b border-zinc-800/60">
           <SearchIcon size={12} className="text-zinc-500 shrink-0" />
-          <input
-            ref={searchInputRef}
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') searchNext(); if (e.key === 'Escape') setShowSearch(false); }}
-            placeholder="Find..."
-            className="flex-1 bg-transparent text-xs text-zinc-200 border-none outline-none placeholder-zinc-600"
-          />
-          <span className="text-[10px] text-zinc-600 shrink-0">
-            {matchCount > 0 ? `${matchIndex + 1}/${matchCount}` : ''}
-          </span>
+          <input ref={searchInputRef} value={searchValue} onChange={e => setSearchValue(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') searchNext(); if (e.key === 'Escape') setShowSearch(false); }}
+            placeholder="Find..." className="flex-1 bg-transparent text-xs text-zinc-200 border-none outline-none placeholder-zinc-600" />
+          <span className="text-[10px] text-zinc-600 shrink-0"></span>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => { setSearchCaseSensitive(!searchCaseSensitive); }}
-              className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${searchCaseSensitive ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'}`}
-              title="Case Sensitive"
-            >
-              Aa
-            </button>
-            <button
-              onClick={() => { setSearchWholeWord(!searchWholeWord); }}
-              className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${searchWholeWord ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'}`}
-              title="Whole Word"
-            >
-              W
-            </button>
-            <button
-              onClick={() => { setSearchRegex(!searchRegex); }}
-              className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${searchRegex ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'}`}
-              title="Regex"
-            >
-              .*
-            </button>
+            <button onClick={() => setSearchCaseSensitive(p => !p)} className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${searchCaseSensitive ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'}`} title="Case Sensitive">Aa</button>
+            <button onClick={() => setSearchWholeWord(p => !p)} className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${searchWholeWord ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'}`} title="Whole Word">W</button>
+            <button onClick={() => setSearchRegex(p => !p)} className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${searchRegex ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-600 hover:text-zinc-400'}`} title="Regex">.*</button>
           </div>
-          <button onClick={searchPrev} className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition" title="Previous">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-          </button>
-          <button onClick={searchNext} className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition" title="Next">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-          </button>
-          <button onClick={() => setShowSearch(false)} className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition">
-            <X size={12} />
-          </button>
+          <button onClick={searchPrev} className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg></button>
+          <button onClick={searchNext} className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
+          <button onClick={() => setShowSearch(false)} className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition"><X size={12} /></button>
         </div>
       )}
 
-      {/* Terminal Container */}
-      <div
-        ref={containerRef}
-        className="flex-1 relative min-h-[400px] bg-[#0a0a0b]"
-        onContextMenu={handleContextMenu}
-      >
-        {/* Reconnect overlay */}
+      {/* Terminal */}
+      <div ref={containerRef} className="flex-1 relative min-h-[400px] bg-[#0a0a0b]" onContextMenu={handleContextMenu}>
         {(isReconnecting || !isConnected) && !connectionError && (
           <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0b]/80 z-10 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-2">
               <RefreshCw size={20} className="text-blue-400 animate-spin" />
-              <span className="text-xs text-zinc-500">
-                {isReconnecting ? 'Reconnecting...' : 'Connecting...'}
-              </span>
+              <span className="text-xs text-zinc-500">{isReconnecting ? 'Reconnecting...' : 'Connecting...'}</span>
             </div>
           </div>
         )}
-
-        {/* Error overlay */}
         {connectionError && (
           <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0b]/80 z-10 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-2 px-6">
               <AlertCircle size={20} className="text-red-400" />
               <span className="text-xs text-red-400 text-center">{connectionError}</span>
-              <button
-                onClick={() => {
-                  setConnectionError(null);
-                  const token = getToken();
-                  socket?.emit('terminal.create', { instanceId, token, cols: 80, rows: 24 });
-                }}
-                className="mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-medium transition"
-              >
+              <button onClick={() => { setConnectionError(null); connectSession(activeTabRef.current); }}
+                className="mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-medium transition">
                 Retry
               </button>
             </div>
           </div>
         )}
-
-        {/* Terminal instances (one per tab) */}
         {tabs.map(tab => (
-          <div
-            key={tab.id}
-            ref={getPlaceholderRef(tab.id)}
+          <div key={tab.id} ref={getRef(tab.id)}
             className={`absolute inset-0 ${activeTab === tab.id ? 'z-1' : 'z-0 pointer-events-none opacity-0'}`}
-          />
+            onClick={() => { xtermInstances.current.get(tab.id)?.term.focus(); setContextMenu(null); }} />
         ))}
       </div>
 
       {/* Status Bar */}
       <div className="flex items-center justify-between px-3 py-1 bg-[#121214] border-t border-zinc-800/60 text-[10px] text-zinc-500 select-none shrink-0">
         <div className="flex items-center gap-3">
-          {/* Connection status */}
           <div className="flex items-center gap-1">
-            {isConnected ? (
-              <Wifi size={10} className="text-emerald-400" />
-            ) : isReconnecting ? (
-              <RefreshCw size={10} className="text-yellow-400 animate-spin" />
-            ) : (
-              <WifiOff size={10} className="text-red-400" />
-            )}
+            {isConnected ? <Wifi size={10} className="text-emerald-400" /> : isReconnecting ? <RefreshCw size={10} className="text-yellow-400 animate-spin" /> : <WifiOff size={10} className="text-red-400" />}
             <span className={isConnected ? 'text-emerald-400' : isReconnecting ? 'text-yellow-400' : 'text-red-400'}>
               {isConnected ? 'Connected' : isReconnecting ? 'Reconnecting...' : 'Disconnected'}
             </span>
           </div>
-          {/* Latency */}
-          <div className="flex items-center gap-1">
-            <span className="text-zinc-600">⇄</span>
-            <span>{latency > 0 ? `${latency}ms` : '—'}</span>
-          </div>
-          {/* Duration */}
-          <div className="flex items-center gap-1">
-            <Clock size={10} />
-            <span>{formatDuration(sessionDuration)}</span>
-          </div>
+          <div className="flex items-center gap-1"><span className="text-zinc-600">⇄</span><span>{latency > 0 ? `${latency}ms` : '—'}</span></div>
+          <div className="flex items-center gap-1"><Clock size={10} /><span>{formatDuration(sessionDuration)}</span></div>
         </div>
         <div className="flex items-center gap-3">
-          {/* Rows/Cols */}
-          {(() => {
-            const inst = getActiveTerminal();
-            return inst ? (
-              <span>{inst.term.rows}×{inst.term.cols}</span>
-            ) : null;
-          })()}
-          {/* Container info */}
-          {tabs.find(t => t.id === activeTab)?.containerName && (
-            <span className="text-zinc-600">{tabs.find(t => t.id === activeTab)?.containerName}</span>
-          )}
+          {(() => { const i = getActiveTerminal(); return i ? <span>{i.term.rows}×{i.term.cols}</span> : null; })()}
+          {tabs.find(t => t.id === activeTab)?.containerName && <span className="text-zinc-600">{tabs.find(t => t.id === activeTab)?.containerName}</span>}
         </div>
       </div>
 
       {/* Context Menu */}
       {contextMenu && (
-        <div
-          ref={contextRef}
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          className="fixed z-[99999] bg-[#18181b] border border-zinc-800 rounded-lg shadow-2xl py-1 min-w-[180px]"
-        >
+        <div ref={contextRef} style={{ left: contextMenu.x, top: contextMenu.y }}
+          className="fixed z-[99999] bg-[#18181b] border border-zinc-800 rounded-lg shadow-2xl py-1 min-w-[180px]">
           {[
             { label: 'Copy', shortcut: 'Ctrl+Shift+C', action: handleCopy },
             { label: 'Paste', shortcut: 'Ctrl+Shift+V', action: handlePaste },
@@ -700,19 +584,14 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
             { label: 'Clear Terminal', action: handleClear },
             { label: 'Download Output', action: handleDownload },
             { type: 'divider' },
-            { label: 'Search', shortcut: 'Ctrl+Shift+F', action: () => setShowSearch(true) },
-            { label: 'New Terminal Tab', action: addTab },
+            { label: 'Search', shortcut: 'Ctrl+Shift+F', action: () => { setShowSearch(true); setContextMenu(null); } },
+            { label: 'New Terminal Tab', action: () => { addTab(); setContextMenu(null); } },
             { type: 'divider' },
-            { label: 'Select All', action: () => { const inst = getActiveTerminal(); if (inst) inst.term.selectAll(); } },
+            { label: 'Select All', action: () => { getActiveTerminal()?.term.selectAll(); setContextMenu(null); } },
           ].map((item: any, i) =>
-            item.type === 'divider' ? (
-              <div key={i} className="my-1 border-t border-zinc-800" />
-            ) : (
-              <button
-                key={i}
-                onClick={() => { item.action(); setContextMenu(null); }}
-                className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700/50 transition-colors"
-              >
+            item.type === 'divider' ? <div key={i} className="my-1 border-t border-zinc-800" /> : (
+              <button key={i} onClick={item.action}
+                className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700/50 transition-colors">
                 <span>{item.label}</span>
                 {item.shortcut && <span className="text-zinc-600 text-[9px] font-mono ml-4">{item.shortcut}</span>}
               </button>
@@ -721,15 +600,13 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
         </div>
       )}
 
-      {/* Keyboard Shortcuts Dialog */}
+      {/* Shortcuts */}
       {showShortcuts && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}>
           <div className="bg-[#18181b] border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
               <h3 className="text-sm font-semibold text-zinc-100">Keyboard Shortcuts</h3>
-              <button onClick={() => setShowShortcuts(false)} className="text-zinc-500 hover:text-zinc-300 transition">
-                <X size={16} />
-              </button>
+              <button onClick={() => setShowShortcuts(false)} className="text-zinc-500 hover:text-zinc-300 transition"><X size={16} /></button>
             </div>
             <div className="p-5 space-y-3">
               {[
@@ -738,15 +615,12 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
                 { keys: 'Ctrl+Shift+C', desc: 'Copy' },
                 { keys: 'Ctrl+Shift+V', desc: 'Paste' },
                 { keys: 'Ctrl+L', desc: 'Clear Terminal' },
-                { keys: 'Ctrl+K', desc: 'Clear to End' },
                 { keys: 'F11', desc: 'Toggle Fullscreen' },
                 { keys: 'Esc', desc: 'Exit Fullscreen / Close Search' },
-              ].map((shortcut, i) => (
+              ].map((sc, i) => (
                 <div key={i} className="flex items-center justify-between">
-                  <span className="text-xs text-zinc-300">{shortcut.desc}</span>
-                  <kbd className="px-2 py-0.5 bg-zinc-800 rounded text-[10px] font-mono text-zinc-400 border border-zinc-700">
-                    {shortcut.keys}
-                  </kbd>
+                  <span className="text-xs text-zinc-300">{sc.desc}</span>
+                  <kbd className="px-2 py-0.5 bg-zinc-800 rounded text-[10px] font-mono text-zinc-400 border border-zinc-700">{sc.keys}</kbd>
                 </div>
               ))}
             </div>
@@ -754,11 +628,9 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
         </div>
       )}
 
-      {/* Copied toast */}
       {copied && (
         <div className="fixed bottom-6 right-6 z-[99999] flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs shadow-2xl animate-in">
-          <Check size={14} />
-          Copied to clipboard
+          <Check size={14} /> Copied to clipboard
         </div>
       )}
     </div>

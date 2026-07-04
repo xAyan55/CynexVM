@@ -2,6 +2,7 @@ import { Socket } from 'socket.io';
 import { db } from '../db';
 import jwt from 'jsonwebtoken';
 import { CONFIG } from '../config';
+import { SocketService } from './socketService';
 
 const pty = require('node-pty');
 
@@ -20,8 +21,8 @@ interface PtySession {
 
 class TerminalManager {
   private sessions: Map<string, PtySession> = new Map();
-  private readonly SESSION_TIMEOUT = 30 * 60 * 1000; // 30 min
-  private readonly CLEANUP_INTERVAL = 60 * 1000; // 1 min
+  private readonly SESSION_TIMEOUT = 30 * 60 * 1000;
+  private readonly CLEANUP_INTERVAL = 60 * 1000;
 
   constructor() {
     setInterval(() => this.cleanup(), this.CLEANUP_INTERVAL);
@@ -34,7 +35,6 @@ class TerminalManager {
     cols: number,
     rows: number,
   ): Promise<{ sessionId: string; error?: string }> {
-    // Authenticate
     const decoded = this.verifyToken(token);
     if (!decoded || !decoded.userId) {
       return { sessionId: '', error: 'Unauthorized: invalid token' };
@@ -61,16 +61,8 @@ class TerminalManager {
     const containerName = `cynex-${instance.vmid}`;
     const sessionId = `${socket.id}-${Date.now()}`;
 
-    // Check LXD path
-    const lxdPaths = [
-      '/snap/bin/lxc',
-      '/var/snap/lxd/common/lxd/unix.socket',
-      '/usr/bin/lxc',
-    ];
-
     const lxcBinary = this.findLxcBinary();
 
-    // Create PTY: spawn lxc exec inside a proper PTY
     const term = pty.spawn(lxcBinary, [
       'exec',
       containerName,
@@ -78,6 +70,7 @@ class TerminalManager {
       '--env', 'HOME=/root',
       '--env', 'LANG=en_US.UTF-8',
       '--env', 'LC_ALL=en_US.UTF-8',
+      '--env', 'COLORTERM=truecolor',
       '--',
       '/bin/login',
       '-f', 'root',
@@ -86,7 +79,11 @@ class TerminalManager {
       cols: cols || 80,
       rows: rows || 24,
       cwd: '/root',
-      env: { ...process.env, TERM: 'xterm-256color' },
+      env: {
+        ...process.env,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+      },
     });
 
     const session: PtySession = {
@@ -103,41 +100,20 @@ class TerminalManager {
     };
 
     this.sessions.set(sessionId, session);
-    this.resetTimeout(sessionId);
+    this.resetTimeout(session);
 
-    // PTY output -> Socket
+    const io = SocketService.getIo();
+
     term.onData((data: string) => {
       session.lastActivity = new Date();
-      this.resetTimeout(sessionId);
-      socket.emit('terminal.data', data);
+      this.resetTimeout(session);
+      // Use io.to() so data follows the socket even after migration
+      io?.to(session.socketId).emit('terminal.data', { sessionId, data });
     });
 
-    // PTY exit
     term.onExit(({ exitCode, signal }: { exitCode: number; signal: number }) => {
-      socket.emit('terminal.exit', { sessionId, exitCode, signal });
+      io?.to(session.socketId).emit('terminal.exit', { sessionId, exitCode, signal });
       this.destroySession(sessionId);
-    });
-
-    // Socket input -> PTY
-    socket.on('terminal.input', (data: string) => {
-      const sess = this.sessions.get(sessionId);
-      if (sess && !sess.pty.destroyed) {
-        sess.lastActivity = new Date();
-        this.resetTimeout(sessionId);
-        sess.pty.write(data);
-      }
-    });
-
-    // Socket resize -> PTY
-    socket.on('terminal.resize', (size: { cols: number; rows: number }) => {
-      const sess = this.sessions.get(sessionId);
-      if (sess && !sess.pty.destroyed) {
-        sess.cols = size.cols || sess.cols;
-        sess.rows = size.rows || sess.rows;
-        try {
-          sess.pty.resize(size.cols, size.rows);
-        } catch (_) {}
-      }
     });
 
     socket.emit('terminal.ready', { sessionId, containerName });
@@ -151,6 +127,10 @@ class TerminalManager {
     }
 
     return { sessionId };
+  }
+
+  private getCurrentSocketId(sessionId: string): string {
+    return this.sessions.get(sessionId)?.socketId || '';
   }
 
   resize(sessionId: string, cols: number, rows: number): boolean {
@@ -170,7 +150,7 @@ class TerminalManager {
     const session = this.sessions.get(sessionId);
     if (!session || session.pty.destroyed) return false;
     session.lastActivity = new Date();
-    this.resetTimeout(sessionId);
+    this.resetTimeout(session);
     session.pty.write(data);
     return true;
   }
@@ -194,7 +174,7 @@ class TerminalManager {
     for (const id of toDelete) this.destroySession(id);
   }
 
-  getInfo(sessionId: string): any {
+  getSession(sessionId: string): { sessionId: string; instanceId: string; containerName: string; createdAt: Date; lastActivity: Date; cols: number; rows: number; socketId: string } | null {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
     return {
@@ -205,6 +185,7 @@ class TerminalManager {
       lastActivity: session.lastActivity,
       cols: session.cols,
       rows: session.rows,
+      socketId: session.socketId,
     };
   }
 
@@ -219,7 +200,36 @@ class TerminalManager {
       containerName: s.containerName,
       createdAt: s.createdAt,
       lastActivity: s.lastActivity,
+      cols: s.cols,
+      rows: s.rows,
     }));
+  }
+
+  migrateSession(socket: Socket, sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.pty.destroyed) return false;
+
+    // Verify token
+    const decoded = this.verifyTokenFromSocket(socket);
+    if (!decoded || !decoded.userId || session.userId !== decoded.userId) return false;
+
+    const oldSocketId = session.socketId;
+    session.socketId = socket.id;
+    session.lastActivity = new Date();
+    this.resetTimeout(session);
+
+    return true;
+  }
+
+  private verifyTokenFromSocket(socket: Socket): any {
+    // Extract token from auth handshake or query
+    const token = socket.handshake?.auth?.token || socket.handshake?.query?.token;
+    if (!token) return null;
+    try {
+      return jwt.verify(token as string, CONFIG.JWT_SECRET);
+    } catch {
+      return null;
+    }
   }
 
   private verifyToken(token?: string): any {
@@ -242,20 +252,25 @@ class TerminalManager {
     return '/snap/bin/lxc';
   }
 
-  private resetTimeout(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
+  private resetTimeout(session: PtySession): void {
     if (session.timeout) clearTimeout(session.timeout);
     session.timeout = setTimeout(() => {
-      const sock = require('socket.io');
-      // Emit warning before closing
-      const { SocketService } = require('./socketService');
-      SocketService.getIo()?.to(session.socketId)?.emit('terminal.warn', {
-        sessionId,
-        message: 'Session idle timeout reached. Terminal will close.',
-      });
-      this.destroySession(sessionId);
+      const io = SocketService.getIo();
+      if (io) {
+        io.to(session.socketId).emit('terminal.warn', {
+          sessionId: this.findSessionIdBySession(session),
+          message: 'Session idle timeout reached. Terminal will close.',
+        });
+      }
+      this.destroySession(this.findSessionIdBySession(session));
     }, this.SESSION_TIMEOUT);
+  }
+
+  private findSessionIdBySession(target: PtySession): string {
+    for (const [id, s] of this.sessions) {
+      if (s === target) return id;
+    }
+    return '';
   }
 
   private cleanup(): void {

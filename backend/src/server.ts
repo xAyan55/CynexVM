@@ -137,7 +137,7 @@ io.on('connection', (socket: Socket) => {
   console.log(`[Socket] Client connected: ${socket.id}`);
   let metricsInterval: NodeJS.Timeout | null = null;
 
-  // 1. Enterprise Terminal via node-pty (proper PTY, no "no job control")
+  // 1. Enterprise Terminal via node-pty
   socket.on('terminal.create', async (params: {
     instanceId: string;
     token?: string;
@@ -156,23 +156,15 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
-  // terminal.input and terminal.resize are handled inside createSession
-  // (listeners are scoped per sessionId)
-
-  socket.on('terminal.resize', (size: { sessionId?: string; cols: number; rows: number }) => {
-    // If no sessionId, resize all sessions for this socket
-    if (size.sessionId) {
-      terminalManager.resize(size.sessionId, size.cols, size.rows);
-    } else {
-      const sessions = terminalManager.listSessions(socket.id);
-      for (const s of sessions) {
-        terminalManager.resize(s.id, size.cols, size.rows);
-      }
-    }
+  // All session-scoped dispatch is handled via sessionId
+  socket.on('terminal.input', (params: { sessionId: string; data: string }) => {
+    const ok = terminalManager.write(params.sessionId, params.data);
+    if (!ok) socket.emit('terminal.error', { message: 'Session not found or closed' });
   });
 
-  socket.on('terminal.input', (params: { sessionId: string; data: string }) => {
-    terminalManager.write(params.sessionId, params.data);
+  socket.on('terminal.resize', (params: { sessionId: string; cols: number; rows: number }) => {
+    const ok = terminalManager.resize(params.sessionId, params.cols, params.rows);
+    if (!ok) socket.emit('terminal.error', { message: 'Session not found for resize' });
   });
 
   socket.on('terminal.close', (params?: { sessionId?: string }) => {
@@ -183,9 +175,31 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
-  socket.on('terminal.list', () => {
+  // List active sessions for this socket
+  socket.on('terminal.sessions', () => {
     const sessions = terminalManager.listSessions(socket.id);
     socket.emit('terminal.sessions', sessions);
+  });
+
+  // Get info about a specific session
+  socket.on('terminal.session.info', (params: { sessionId: string }) => {
+    const info = terminalManager.getSession(params.sessionId);
+    if (info) {
+      socket.emit('terminal.session.info', info);
+    } else {
+      socket.emit('terminal.error', { message: 'Session not found' });
+    }
+  });
+
+  // Reconnect: migrate session from old socket to new socket
+  socket.on('terminal.reconnect', (params: { sessionId: string }) => {
+    const ok = terminalManager.migrateSession(socket, params.sessionId);
+    if (ok) {
+      const info = terminalManager.getSession(params.sessionId);
+      socket.emit('terminal.ready', info);
+    } else {
+      socket.emit('terminal.error', { message: 'Cannot reconnect: session not found or unauthorized' });
+    }
   });
 
   // 2. Real-time Live Metrics Streaming
@@ -277,7 +291,8 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('disconnect', () => {
     if (metricsInterval) clearInterval(metricsInterval);
-    terminalManager.destroySocketSessions(socket.id);
+    // Don't destroy sessions — they persist for reconnect via terminal.reconnect.
+    // The session timeout (30 min) cleans up truly abandoned sessions.
     console.log(`[Socket] Client disconnected: ${socket.id}`);
   });
 });
