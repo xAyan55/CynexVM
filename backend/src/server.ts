@@ -4,10 +4,10 @@ import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import jwt from 'jsonwebtoken';
 import { CONFIG } from './config';
 import { apiLimiter } from './middleware/rateLimit';
+import { terminalManager } from './services/terminalService';
 
 // Routes imports
 import authRoutes from './routes/auth';
@@ -136,103 +136,56 @@ async function checkSocketAuth(instanceId: string, token?: string): Promise<bool
 io.on('connection', (socket: Socket) => {
   console.log(`[Socket] Client connected: ${socket.id}`);
   let metricsInterval: NodeJS.Timeout | null = null;
-  let terminalProcess: ChildProcessWithoutNullStreams | null = null;
 
-  // 1. Terminal via lxc exec (direct container shell, no SSH)
-  socket.on('terminal.init', async (params: { instanceId: string; token?: string }) => {
-    try {
-      // 1. Clean up any existing terminal session on this socket first
-      if (terminalProcess) {
-        try {
-          terminalProcess.kill();
-        } catch (_) {}
-        terminalProcess = null;
-      }
-      socket.removeAllListeners('terminal.input');
-      socket.removeAllListeners('terminal.resize');
-
-      const authorized = await checkSocketAuth(params.instanceId, params.token);
-      if (!authorized) {
-        return socket.emit('terminal.log', '\r\n*** ERROR: Unauthorized access to container terminal ***\r\n');
-      }
-
-      const instance = await db.instance.findUnique({
-        where: { id: params.instanceId },
-        include: { node: true }
-      });
-
-      if (!instance) {
-        return socket.emit('terminal.log', '\r\n*** ERROR: Container not found ***\r\n');
-      }
-
-      const containerName = `cynex-${instance.vmid}`;
-      socket.emit('terminal.log', `\r\nAttaching to container ${containerName}...\r\n`);
-
-      // Spawn lxc exec with interactive bash shell
-      const proc = spawn('/snap/bin/lxc', [
-        'exec', 
-        containerName, 
-        '--env', 'TERM=xterm-256color',
-        '--env', 'HOME=/root',
-        '--', 
-        '/bin/bash', 
-        '-i'
-      ], {
-        env: { ...process.env, TERM: 'xterm-256color' }
-      });
-
-      terminalProcess = proc;
-
-      proc.stdout.on('data', (data: Buffer) => {
-        socket.emit('terminal.data', data.toString('utf8'));
-      });
-
-      proc.stderr.on('data', (data: Buffer) => {
-        socket.emit('terminal.data', data.toString('utf8'));
-      });
-
-      proc.on('close', (code: number | null) => {
-        socket.emit('terminal.log', `\r\n*** Session ended (exit ${code}) ***\r\n`);
-        if (terminalProcess === proc) {
-          terminalProcess = null;
-        }
-      });
-
-      proc.on('error', (err: Error) => {
-        socket.emit('terminal.log', `\r\n*** Failed to attach: ${err.message} ***\r\n`);
-        if (terminalProcess === proc) {
-          terminalProcess = null;
-        }
-      });
-
-      // Relay user keystrokes to the container shell
-      socket.on('terminal.input', (data: string) => {
-        if (proc && !proc.killed) {
-          proc.stdin.write(data);
-        }
-      });
-
-      socket.on('terminal.resize', (size: { cols: number; rows: number }) => {
-        if (proc && !proc.killed) {
-          // Send resize signal dynamically to LXD terminal descriptor
-          // (Can also use standard ioctl write or window adjustment)
-        }
-      });
-
-    } catch (err: any) {
-      socket.emit('terminal.log', `\r\n*** Connection error: ${err.message} ***\r\n`);
+  // 1. Enterprise Terminal via node-pty (proper PTY, no "no job control")
+  socket.on('terminal.create', async (params: {
+    instanceId: string;
+    token?: string;
+    cols?: number;
+    rows?: number;
+  }) => {
+    const result = await terminalManager.createSession(
+      socket,
+      params.instanceId,
+      params.token,
+      params.cols || 80,
+      params.rows || 24,
+    );
+    if (result.error) {
+      socket.emit('terminal.error', { message: result.error });
     }
   });
 
-  socket.on('terminal.close', () => {
-    if (terminalProcess) {
-      try {
-        terminalProcess.kill();
-      } catch (_) {}
-      terminalProcess = null;
+  // terminal.input and terminal.resize are handled inside createSession
+  // (listeners are scoped per sessionId)
+
+  socket.on('terminal.resize', (size: { sessionId?: string; cols: number; rows: number }) => {
+    // If no sessionId, resize all sessions for this socket
+    if (size.sessionId) {
+      terminalManager.resize(size.sessionId, size.cols, size.rows);
+    } else {
+      const sessions = terminalManager.listSessions(socket.id);
+      for (const s of sessions) {
+        terminalManager.resize(s.id, size.cols, size.rows);
+      }
     }
-    socket.removeAllListeners('terminal.input');
-    socket.removeAllListeners('terminal.resize');
+  });
+
+  socket.on('terminal.input', (params: { sessionId: string; data: string }) => {
+    terminalManager.write(params.sessionId, params.data);
+  });
+
+  socket.on('terminal.close', (params?: { sessionId?: string }) => {
+    if (params?.sessionId) {
+      terminalManager.destroySession(params.sessionId);
+    } else {
+      terminalManager.destroySocketSessions(socket.id);
+    }
+  });
+
+  socket.on('terminal.list', () => {
+    const sessions = terminalManager.listSessions(socket.id);
+    socket.emit('terminal.sessions', sessions);
   });
 
   // 2. Real-time Live Metrics Streaming
@@ -324,9 +277,7 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('disconnect', () => {
     if (metricsInterval) clearInterval(metricsInterval);
-    if (terminalProcess && !terminalProcess.killed) {
-      terminalProcess.kill();
-    }
+    terminalManager.destroySocketSessions(socket.id);
     console.log(`[Socket] Client disconnected: ${socket.id}`);
   });
 });
