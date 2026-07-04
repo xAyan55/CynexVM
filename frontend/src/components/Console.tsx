@@ -323,6 +323,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     socket.emit('terminal.sessions');
 
     return () => {
+      // Unregister socket handlers FIRST so no more events arrive during unmount
       socket.off('terminal.ready', onReady);
       socket.off('terminal.data', onData);
       socket.off('terminal.error', onError);
@@ -331,13 +332,12 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
       socket.off('terminal.sessions', onSessions);
       socket.off('disconnect', onDisconnect);
       socket.off('connect', onConnect);
-      // Pending session mappings are no longer valid
       pendingSessionsRef.current.clear();
-      // Dispose all terminal subscriptions and instances
+      // Dispose terminals — dispose() can throw (WebGL state, race), so guard each
       for (const [_, inst] of xtermInstances.current) {
         inst.dataUnsub?.();
         inst.resizeUnsub?.();
-        inst.term.dispose();
+        try { inst.term.dispose(); } catch (_) {}
       }
       xtermInstances.current.clear();
     };
@@ -363,14 +363,15 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
   // Latency ping
   useEffect(() => {
     if (!socket) return;
+    let cancelled = false;
     const interval = setInterval(() => {
       if (isConnected) {
         const start = Date.now();
         socket.emit('ping');
-        socket.once('pong', () => setLatency(Date.now() - start));
+        socket.once('pong', () => { if (!cancelled) setLatency(Date.now() - start); });
       }
     }, 5000);
-    return () => clearInterval(interval);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [socket, isConnected]);
 
   // Keyboard shortcuts
@@ -472,7 +473,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
       if (inst.sessionId) socket?.emit('terminal.close', { sessionId: inst.sessionId });
       inst.dataUnsub?.();
       inst.resizeUnsub?.();
-      inst.term.dispose();
+      try { inst.term.dispose(); } catch (_) {}
       xtermInstances.current.delete(tabId);
     }
     setTabs(prev => prev.filter(t => t.id !== tabId));

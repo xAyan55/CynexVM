@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { Sidebar } from './components/Sidebar';
 import { CommandPalette } from './components/CommandPalette';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { NotificationBell } from './components/NotificationDrawer';
 import { Search } from 'lucide-react';
 
@@ -113,7 +114,9 @@ const AppLayout: React.FC = () => {
             {/* Routed Content Viewport */}
             <main id="page-content" className="flex-1 overflow-y-auto pt-16">
               <div className="px-12 pt-6 pb-8">
-                <Outlet />
+                <ErrorBoundary>
+                  <Outlet />
+                </ErrorBoundary>
               </div>
             </main>
           </div>
