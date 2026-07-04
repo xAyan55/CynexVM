@@ -31,18 +31,14 @@ interface TabInfo {
   containerName?: string;
 }
 
-// ─── Terminal CSS normalization ──────────────────────────────────────────────
-// Only prevents external spacing inheritance. Does NOT override xterm's
-// own inline row heights (controlled by lineHeight: 1.0 in Terminal options).
-const TERMINAL_CSS = `
-  .xterm { height: 100%; }
-  .xterm-rows { letter-spacing: 0 !important; }
-  .xterm-rows > div { padding: 0 !important; margin: 0 !important; }
-  .xterm-rows span { padding: 0 !important; margin: 0 !important; vertical-align: baseline !important; }
-`;
-const styleSheet = document.createElement('style');
-styleSheet.textContent = TERMINAL_CSS;
-document.head.appendChild(styleSheet);
+// ─── Safe CSS injection ─────────────────────────────────────────────────────
+try {
+  if (typeof document !== 'undefined' && document.head) {
+    const s = document.createElement('style');
+    s.textContent = '.xterm{height:100%}.xterm-rows{letter-spacing:0!important}.xterm-rows>div{padding:0!important;margin:0!important}.xterm-rows span{padding:0!important;margin:0!important;vertical-align:baseline!important}';
+    document.head.appendChild(s);
+  }
+} catch (_) { /* style injection is non-critical */ }
 
 const fitAll = (insts: Map<string, TermInstance>) => {
   requestAnimationFrame(() => {
@@ -60,10 +56,10 @@ interface ConsoleProps {
 }
 
 const TERM_THEME = {
-  background: '#0a0a0b',
+  background: '#171716',
   foreground: '#e4e4e7',
   cursor: '#a1a1aa',
-  cursorAccent: '#0a0a0b',
+  cursorAccent: '#171716',
   selectionBackground: '#3b82f680',
   selectionForeground: '#ffffff',
   black: '#18181b',
@@ -499,7 +495,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
   };
 
   return (
-    <div ref={fullscreenRef} className={`flex flex-col ${isFullscreen ? 'fixed inset-0 z-[9999] bg-[#0a0a0b]' : ''}`}>
+    <div ref={fullscreenRef} className={`flex flex-col ${isFullscreen ? 'fixed inset-0 z-[9999] bg-[#171716]' : ''}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 bg-[#0d0d0e] border-b border-zinc-800/60 select-none shrink-0">
         <div className="flex items-center gap-0.5 overflow-x-auto">
@@ -509,7 +505,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
               onClick={() => { setActiveTab(tab.id); setContextMenu(null); }}
               className={`group flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-t-md cursor-pointer transition-colors shrink-0 ${
                 activeTab === tab.id
-                  ? 'bg-[#0a0a0b] text-zinc-100 border-t border-l border-r border-zinc-800'
+                  ? 'bg-[#171716] text-zinc-100 border-t border-l border-r border-zinc-800'
                   : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
               }`}
             >
@@ -561,11 +557,11 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
 
       {/* Terminal — rendering-critical: no line-height or spacing inheritance */}
       <div ref={containerRef}
-        className="flex-1 relative min-h-[400px] bg-[#0a0a0b]"
+        className="flex-1 relative min-h-[600px] bg-[#171716]"
         style={{ lineHeight: 'normal', letterSpacing: 0, wordSpacing: 0, fontVariant: 'normal' }}
         onContextMenu={handleContextMenu}>
         {(isReconnecting || !isConnected) && !connectionError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0b]/80 z-10 backdrop-blur-sm">
+          <div className="absolute inset-0 flex items-center justify-center bg-[#171716]/80 z-10 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-2">
               <RefreshCw size={20} className="text-blue-400 animate-spin" />
               <span className="text-xs text-zinc-500">{isReconnecting ? 'Reconnecting...' : 'Connecting...'}</span>
@@ -573,7 +569,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
           </div>
         )}
         {connectionError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0b]/80 z-10 backdrop-blur-sm">
+          <div className="absolute inset-0 flex items-center justify-center bg-[#171716]/80 z-10 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-2 px-6">
               <AlertCircle size={20} className="text-red-400" />
               <span className="text-xs text-red-400 text-center">{connectionError}</span>
