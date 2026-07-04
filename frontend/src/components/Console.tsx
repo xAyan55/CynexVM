@@ -32,25 +32,13 @@ interface TabInfo {
 }
 
 // ─── Terminal CSS normalization ──────────────────────────────────────────────
+// Only prevents external spacing inheritance. Does NOT override xterm's
+// own inline row heights (controlled by lineHeight: 1.0 in Terminal options).
 const TERMINAL_CSS = `
   .xterm { height: 100%; }
-  .xterm-screen { padding: 0 !important; margin: 0 !important; }
-  .xterm-rows { padding: 0 !important; margin: 0 !important; }
-  .xterm-rows > div {
-    line-height: 1.0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    height: calc(1em * 1.0) !important;
-  }
-  .xterm-rows span {
-    line-height: 1.0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    vertical-align: baseline !important;
-  }
-  .xterm-cursor-layer {
-    height: 100% !important;
-  }
+  .xterm-rows { letter-spacing: 0 !important; }
+  .xterm-rows > div { padding: 0 !important; margin: 0 !important; }
+  .xterm-rows span { padding: 0 !important; margin: 0 !important; vertical-align: baseline !important; }
 `;
 const styleSheet = document.createElement('style');
 styleSheet.textContent = TERMINAL_CSS;
