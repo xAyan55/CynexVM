@@ -17,6 +17,7 @@ import fileRoutes from './routes/files';
 import settingRoutes from './routes/settings';
 import auditLogRoutes from './routes/auditLogs';
 import notificationRoutes from './routes/notifications';
+import automationRoutes from './routes/automation';
 
 // Services
 import { LxdService } from './services/lxdService';
@@ -74,6 +75,7 @@ app.use('/api/v1/instances/:id/files', fileRoutes);
 app.use('/api/v1/settings', settingRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/automation', automationRoutes);
 
 // Folder management API
 app.patch('/api/v1/instances/:id/folder', async (req, res) => {
@@ -288,6 +290,34 @@ io.on('connection', (socket: Socket) => {
       if (decoded && decoded.userId) {
         socket.join(`user:${decoded.userId}`);
         console.log(`[Socket] User ${decoded.userId} subscribed to room: user:${decoded.userId}`);
+      }
+    } catch (_) {}
+  });
+
+  // 3. Automation real-time events
+  socket.on('automation.subscribe', async (params: { instanceId: string; token?: string }) => {
+    try {
+      if (!params.token) return;
+      const decoded = jwt.verify(params.token, CONFIG.JWT_SECRET) as any;
+      if (!decoded || !decoded.userId) return;
+
+      const user = await db.user.findUnique({
+        where: { id: decoded.userId },
+        include: { roles: { include: { role: true } } },
+      });
+      if (!user) return;
+
+      const roleName = user.roles[0]?.role.name || 'User';
+
+      if (roleName === 'Admin') {
+        socket.join(`automation:admin`);
+        return;
+      }
+
+      const instance = await db.instance.findUnique({ where: { id: params.instanceId } });
+      if (!instance) return;
+      if (instance.userId === user.id) {
+        socket.join(`automation:instance:${params.instanceId}`);
       }
     } catch (_) {}
   });

@@ -4,11 +4,12 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { Console } from '../components/Console';
 import { FileManager } from '../components/FileManager';
+import { AutomationPage } from './AutomationPage';
 import { 
   Terminal as TermIcon, Folder, Globe, ShieldCheck, Settings as SetIcon,
   ArrowLeft, Trash2, Cpu, HardDrive, Shield, RefreshCw, Layers, ListFilter, 
   ClipboardCheck, Tag, Activity, Clock, Wifi, WifiOff, ArrowDownToLine, ArrowUpFromLine,
-  Play, Square, RotateCcw, Skull, Pause
+  Play, Square, RotateCcw, Skull, Pause, Timer
 } from 'lucide-react';
 
 // Sparkline for live metric visualization
@@ -306,6 +307,7 @@ export const InstanceDetails: React.FC = () => {
     { id: 'files', label: 'Files', icon: Folder },
     { id: 'network', label: 'Networking', icon: Globe },
     { id: 'backups', label: 'Backups', icon: ShieldCheck },
+    { id: 'automation', label: 'Automation', icon: Timer },
     { id: 'activity', label: 'Activity & Notes', icon: ClipboardCheck },
     { id: 'settings', label: 'Settings', icon: SetIcon }
   ];
@@ -666,7 +668,12 @@ export const InstanceDetails: React.FC = () => {
         </div>
       )}
 
-      {/* 5. ACTIVITY & NOTES TAB */}
+      {/* 5. AUTOMATION TAB */}
+      {activeTab === 'automation' && (
+        <AutomationPage />
+      )}
+
+      {/* 6. ACTIVITY & NOTES TAB */}
       {activeTab === 'activity' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-sm space-y-4">

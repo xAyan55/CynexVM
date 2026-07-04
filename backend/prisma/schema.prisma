@@ -37,6 +37,7 @@ model User {
   groupMemberships   UserGroupMember[]
   roles              UserRole[]
   instances          Instance[]
+  automationTasks    AutomationTask[]
   notifications      Notification[]
   notificationPreference NotificationPreference?
 }
@@ -231,6 +232,7 @@ model Instance {
   snapshots        Snapshot[]
   firewallRules    FirewallRule[]
   tags             InstanceTag[]
+  automationTasks  AutomationTask[]
 }
 
 model Tag {
@@ -401,4 +403,101 @@ model Announcement {
   scheduledStart  DateTime?
   scheduledEnd    DateTime?
   createdAt       DateTime  @default(now())
+}
+
+// ============================================================
+// Automation Engine Models
+// ============================================================
+
+// Task types as string (SQLite doesn't support enums):
+// POWER_START, POWER_STOP, POWER_RESTART, POWER_FORCE_STOP, POWER_FREEZE, POWER_UNFREEZE
+// STORAGE_BACKUP, STORAGE_SNAPSHOT, STORAGE_DELETE_OLD_BACKUPS, STORAGE_DELETE_OLD_SNAPSHOTS
+// MAINTENANCE_REINSTALL_OS, MAINTENANCE_UPDATE_PACKAGES, MAINTENANCE_CHANGE_HOSTNAME
+// EXECUTION_SHELL_COMMAND
+
+// Schedule types: ONCE, DAILY, WEEKLY, MONTHLY, CUSTOM_CRON
+
+model AutomationTask {
+  id                String                  @id @default(uuid())
+  name              String
+  description       String?
+  taskType          String                  // POWER_START, etc.
+  scheduleType      String?                 // ONCE, DAILY, WEEKLY, MONTHLY, CUSTOM_CRON
+  cronExpression    String?                 // Custom cron expression
+  timezone          String                  @default("UTC")
+  retries           Int                     @default(0)
+  retryDelay        Int                     @default(60000) // ms between retries
+  timeout           Int                     @default(300000) // max execution time in ms
+  enabled           Boolean                 @default(true)
+  notifyOnSuccess   Boolean                 @default(true)
+  notifyOnFailure   Boolean                 @default(true)
+  status            String                  @default("ACTIVE") // ACTIVE, INACTIVE, PAUSED
+  
+  // Task payload
+  shellCommand      String?                 // For EXECUTION_SHELL_COMMAND
+  hostname          String?                 // For MAINTENANCE_CHANGE_HOSTNAME
+  deleteOlderThan   Int?                    // For delete old backups/snapshots (days)
+  
+  // Chain support
+  parentTaskId      String?                 // Part of a task chain
+  parentTask        AutomationTask?         @relation("TaskChain", fields: [parentTaskId], references: [id])
+  childTasks        AutomationTask[]        @relation("TaskChain")
+  chainStep         Int?                    // Order in chain
+  stopOnFailure     Boolean                 @default(true)
+  
+  // Relations
+  instanceId        String
+  instance          Instance                @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs              AutomationRun[]
+  nextRunAt         DateTime?
+  lastRunAt         DateTime?
+  lastRunStatus     String?                 // QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED, RETRYING
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([instanceId])
+  @@index([userId])
+  @@index([status])
+  @@index([nextRunAt])
+  @@index([parentTaskId])
+}
+
+model AutomationRun {
+  id                String                  @id @default(uuid())
+  taskId            String
+  task              AutomationTask          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  status            String                  @default("QUEUED") // QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED, RETRYING
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  duration          Int?                    // milliseconds
+  exitCode          Int?
+  consoleOutput     String?                 // Captured shell output
+  errorMessage      String?
+  triggeredBy       String                  @default("schedule") // "schedule" | "manual" | "chain"
+  attempt           Int                     @default(1)
+  maxAttempts       Int                     @default(1)
+  
+  // For manual runs
+  triggeredByUserId String?
+  logs              AutomationLog[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([taskId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AutomationLog {
+  id                String                  @id @default(uuid())
+  runId             String
+  run               AutomationRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  level             String                  @default("info") // "info" | "warn" | "error" | "debug"
+  message           String
+  timestamp         DateTime                @default(now())
+
+  @@index([runId])
+  @@index([timestamp])
 }

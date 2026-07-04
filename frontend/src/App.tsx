@@ -31,6 +31,7 @@ import { AdminSettings } from './pages/AdminSettings';
 import { JobsQueues } from './pages/JobsQueues';
 import { AdminApiKeys } from './pages/AdminApiKeys';
 import { AdminNotifications } from './pages/AdminNotifications';
+import { AdminAutomation } from './pages/AdminAutomation';
 
 // Page loading spinner matching Airlink's preparing experience screen
 const LoadingScreen: React.FC = () => {
@@ -164,6 +165,7 @@ export const App: React.FC = () => {
             <Route path="/admin/tasks" element={<AdminRoute element={<JobsQueues />} />} />
             <Route path="/admin/apikeys" element={<AdminRoute element={<AdminApiKeys />} />} />
             <Route path="/admin/notifications" element={<AdminRoute element={<AdminNotifications />} />} />
+            <Route path="/admin/automation" element={<AdminRoute element={<AdminAutomation />} />} />
           </Route>
 
           {/* Catch-all redirects */}

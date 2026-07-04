@@ -3,6 +3,7 @@ import { CONFIG } from './config';
 import { db } from './db';
 import { NotificationDispatcher } from './services/notification/notificationDispatcher';
 import { NotificationService } from './services/notification/notificationService';
+import { SchedulerService } from './services/automation/SchedulerService';
 
 async function main() {
   try {
@@ -12,6 +13,9 @@ async function main() {
 
     // Start background notification processors
     NotificationDispatcher.startPoller();
+
+    // Start the Automation Scheduler
+    await SchedulerService.start();
     
     // Clean expired notifications hourly
     setInterval(() => {
