@@ -31,14 +31,14 @@ interface TabInfo {
   containerName?: string;
 }
 
-// ─── Safe CSS injection ─────────────────────────────────────────────────────
+// Ensure .xterm fills its container (needed for viewport sizing)
 try {
   if (typeof document !== 'undefined' && document.head) {
     const s = document.createElement('style');
-    s.textContent = '.xterm{height:100%}.xterm-rows{letter-spacing:0!important}.xterm-rows>div{padding:0!important;margin:0!important}.xterm-rows span{padding:0!important;margin:0!important;vertical-align:baseline!important}';
+    s.textContent = '.xterm{height:100%}';
     document.head.appendChild(s);
   }
-} catch (_) { /* style injection is non-critical */ }
+} catch (_) {}
 
 const fitAll = (insts: Map<string, TermInstance>) => {
   requestAnimationFrame(() => {
@@ -155,7 +155,7 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
       theme: TERM_THEME,
       fontFamily: '"JetBrains Mono", "Geist Mono", "IBM Plex Mono", monospace',
       fontSize: 14,
-      lineHeight: 1.0,
+      lineHeight: 1.2,
       letterSpacing: 0,
       scrollback: 100000,
       allowProposedApi: true,
