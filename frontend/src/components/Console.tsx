@@ -15,13 +15,6 @@ import {
   Clock, Copy, Check,
 } from 'lucide-react';
 
-interface ConsoleProps {
-  instanceId: string;
-  status: string;
-  onPowerAction: (action: string) => Promise<void>;
-  actionLoading?: string | null;
-}
-
 interface TermInstance {
   term: Terminal;
   fitAddon: FitAddon;
@@ -36,6 +29,46 @@ interface TabInfo {
   id: string;
   label: string;
   containerName?: string;
+}
+
+// ─── Terminal CSS normalization ──────────────────────────────────────────────
+const TERMINAL_CSS = `
+  .xterm { height: 100%; }
+  .xterm-screen { padding: 0 !important; margin: 0 !important; }
+  .xterm-rows { padding: 0 !important; margin: 0 !important; }
+  .xterm-rows > div {
+    line-height: 1.0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: calc(1em * 1.0) !important;
+  }
+  .xterm-rows span {
+    line-height: 1.0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    vertical-align: baseline !important;
+  }
+  .xterm-cursor-layer {
+    height: 100% !important;
+  }
+`;
+const styleSheet = document.createElement('style');
+styleSheet.textContent = TERMINAL_CSS;
+document.head.appendChild(styleSheet);
+
+const fitAll = (insts: Map<string, TermInstance>) => {
+  requestAnimationFrame(() => {
+    insts.forEach(inst => {
+      try { inst.fitAddon.fit(); } catch (_) {}
+    });
+  });
+};
+
+interface ConsoleProps {
+  instanceId: string;
+  status: string;
+  onPowerAction: (action: string) => Promise<void>;
+  actionLoading?: string | null;
 }
 
 const TERM_THEME = {
@@ -136,11 +169,14 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
       convertEol: true,
       allowTransparency: true,
       theme: TERM_THEME,
-      fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", ui-monospace, monospace',
+      fontFamily: '"JetBrains Mono", "Geist Mono", "IBM Plex Mono", monospace',
       fontSize: 14,
-      lineHeight: 1.5,
+      lineHeight: 1.0,
+      letterSpacing: 0,
       scrollback: 100000,
       allowProposedApi: true,
+      drawBoldTextInBrightColors: false,
+      minimumContrastRatio: 1,
     });
 
     const fitAddon = new FitAddon();
@@ -153,13 +189,26 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     try { term.loadAddon(new Unicode11Addon()); } catch (_) {}
 
     term.open(container);
-    fitAddon.fit();
+    // Fit after DPI-aware open
+    requestAnimationFrame(() => { fitAddon.fit(); });
 
-    try {
-      const webgl = new WebglAddon();
-      term.loadAddon(webgl);
-      webgl.onContextLoss(() => webgl.dispose());
-    } catch (_) {}
+    // WebGL with proper recovery
+    let webgl: WebglAddon | null = null;
+    const tryWebgl = () => {
+      try {
+        webgl = new WebglAddon();
+        term.loadAddon(webgl);
+        webgl.onContextLoss(() => {
+          webgl?.dispose();
+          webgl = null;
+          // Retry WebGL after a delay
+          setTimeout(tryWebgl, 3000);
+        });
+      } catch (_) {
+        // Canvas fallback (already active)
+      }
+    };
+    tryWebgl();
 
     const inst: TermInstance = { term, fitAddon, searchAddon };
     xtermInstances.current.set(tabId, inst);
@@ -311,13 +360,9 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, instanceId]);
 
-  // Fit on resize
+  // Fit on resize — uses requestAnimationFrame for pixel-perfect alignment
   useEffect(() => {
-    const fit = () => {
-      xtermInstances.current.forEach(inst => {
-        try { inst.fitAddon.fit(); } catch (_) {}
-      });
-    };
+    const fit = () => fitAll(xtermInstances.current);
     const obs = new ResizeObserver(fit);
     if (containerRef.current) obs.observe(containerRef.current);
     window.addEventListener('resize', fit);
@@ -373,9 +418,9 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     } else if (!next && document.exitFullscreen) {
       document.exitFullscreen();
     }
-    setTimeout(() => {
-      xtermInstances.current.forEach(inst => { try { inst.fitAddon.fit(); } catch (_) {} });
-    }, 200);
+    // Fit after fullscreen transition in next frame, then again after browser settles
+    fitAll(xtermInstances.current);
+    setTimeout(() => fitAll(xtermInstances.current), 300);
   };
 
   const searchNext = () => {
@@ -526,8 +571,11 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
         </div>
       )}
 
-      {/* Terminal */}
-      <div ref={containerRef} className="flex-1 relative min-h-[400px] bg-[#0a0a0b]" onContextMenu={handleContextMenu}>
+      {/* Terminal — rendering-critical: no line-height or spacing inheritance */}
+      <div ref={containerRef}
+        className="flex-1 relative min-h-[400px] bg-[#0a0a0b]"
+        style={{ lineHeight: 'normal', letterSpacing: 0, wordSpacing: 0, fontVariant: 'normal' }}
+        onContextMenu={handleContextMenu}>
         {(isReconnecting || !isConnected) && !connectionError && (
           <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0b]/80 z-10 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-2">
