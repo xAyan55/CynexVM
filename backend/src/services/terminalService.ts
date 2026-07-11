@@ -64,6 +64,12 @@ class TerminalManager {
 
     const type = (instance.type || 'LXC').toLowerCase() as 'lxc' | 'kvm' | 'qemu';
 
+    // KVM/QEMU: kill any existing console session for this domain first
+    // virsh console only allows one active connection per domain.
+    if (type === 'kvm' || type === 'qemu') {
+      this.destroyDomainSession(domainName);
+    }
+
     let term: any;
     let typeLabel: string;
 
@@ -186,6 +192,17 @@ class TerminalManager {
       } catch (_) {}
     }
     this.sessions.delete(sessionId);
+  }
+
+  /**
+   * Destroys any active session for a given domain name (used for KVM virsh console).
+   * virsh console only permits one active connection per domain.
+   */
+  destroyDomainSession(domainName: string): void {
+    const toDelete = Array.from(this.sessions.entries())
+      .filter(([_, s]) => s.containerName === domainName && (s.type === 'kvm' || s.type === 'qemu'))
+      .map(([id]) => id);
+    for (const id of toDelete) this.destroySession(id);
   }
 
   destroySocketSessions(socketId: string): void {
