@@ -287,7 +287,7 @@ model VmConfiguration {
   smbiosUuid           String?
   smbiosOemStrings     String   @default("[]") // JSON array
   bootOrder            String   @default("[\"disk\"]") // JSON array
-  uefi                 Boolean  @default(true)
+  uefi                 Boolean  @default(false)
   legacyBios           Boolean  @default(false)
   secureBoot           Boolean  @default(false)
   tpm                  Boolean  @default(false)

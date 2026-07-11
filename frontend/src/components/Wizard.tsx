@@ -131,7 +131,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             cpuCores,
             memoryMb,
             guestAgent: true,
-            uefi: true,
+            uefi: false,
           } : undefined,
           cloudInit: type === 'KVM' ? {
             enabled: true,

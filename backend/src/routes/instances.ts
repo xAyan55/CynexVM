@@ -1101,7 +1101,7 @@ JobService.registerWorker('instance.deploy', async (job) => {
             cpuSockets: vmConfig?.cpuSockets || 1,
             cpuModel: vmConfig?.cpuModel || 'host',
             cpuMode: vmConfig?.cpuMode || 'host-passthrough',
-            uefi: vmConfig?.uefi !== false,
+            uefi: vmConfig?.uefi === true,
             legacyBios: !!vmConfig?.legacyBios,
             tpm: !!vmConfig?.tpm,
             secureBoot: !!vmConfig?.secureBoot,
