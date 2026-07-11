@@ -12,6 +12,7 @@ interface PtySession {
   userId: string;
   socketId: string;
   containerName: string;
+  type: 'lxc' | 'kvm' | 'qemu';
   createdAt: Date;
   lastActivity: Date;
   timeout: NodeJS.Timeout | null;
@@ -58,40 +59,61 @@ class TerminalManager {
       return { sessionId: '', error: 'Forbidden: you do not own this instance' };
     }
 
-    const containerName = `cynex-${instance.vmid}`;
+    const domainName = `cynex-${instance.vmid}`;
     const sessionId = `${socket.id}-${Date.now()}`;
 
-    const lxcBinary = this.findLxcBinary();
+    const type = (instance.type || 'LXC').toLowerCase() as 'lxc' | 'kvm' | 'qemu';
 
-    const term = pty.spawn(lxcBinary, [
-      'exec',
-      containerName,
-      '--env', 'TERM=xterm-256color',
-      '--env', 'HOME=/root',
-      '--env', 'LANG=en_US.UTF-8',
-      '--env', 'LC_ALL=en_US.UTF-8',
-      '--env', 'COLORTERM=truecolor',
-      '--',
-      '/bin/login',
-      '-f', 'root',
-    ], {
-      name: 'xterm-256color',
-      cols: cols || 80,
-      rows: rows || 24,
-      cwd: '/root',
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-      },
-    });
+    let term: any;
+    let typeLabel: string;
+
+    if (type === 'lxc') {
+      // LXC container: use lxc exec
+      const lxcBinary = this.findLxcBinary();
+      term = pty.spawn(lxcBinary, [
+        'exec',
+        domainName,
+        '--env', 'TERM=xterm-256color',
+        '--env', 'HOME=/root',
+        '--env', 'LANG=en_US.UTF-8',
+        '--env', 'LC_ALL=en_US.UTF-8',
+        '--env', 'COLORTERM=truecolor',
+        '--',
+        '/bin/login',
+        '-f', 'root',
+      ], {
+        name: 'xterm-256color',
+        cols: cols || 80,
+        rows: rows || 24,
+        cwd: '/root',
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          COLORTERM: 'truecolor',
+        },
+      });
+      typeLabel = 'LXC container';
+    } else {
+      // KVM/QEMU: use virsh console via serial
+      const virshBinary = this.findVirshBinary();
+      term = pty.spawn(virshBinary, [
+        'console',
+        domainName,
+      ], {
+        name: 'xterm-256color',
+        cols: cols || 80,
+        rows: rows || 24,
+      });
+      typeLabel = 'KVM VM';
+    }
 
     const session: PtySession = {
       pty: term,
       instanceId,
       userId: user.id,
       socketId: socket.id,
-      containerName,
+      containerName: domainName,
+      type,
       createdAt: new Date(),
       lastActivity: new Date(),
       timeout: null,
@@ -107,7 +129,6 @@ class TerminalManager {
     term.onData((data: string) => {
       session.lastActivity = new Date();
       this.resetTimeout(session);
-      // Use io.to() so data follows the socket even after migration
       io?.to(session.socketId).emit('terminal.data', { sessionId, data });
     });
 
@@ -116,7 +137,7 @@ class TerminalManager {
       this.destroySession(sessionId);
     });
 
-    socket.emit('terminal.ready', { sessionId, containerName });
+    socket.emit('terminal.ready', { sessionId, containerName: domainName });
 
     // Rate limit: max 5 sessions per socket
     const socketSessions = Array.from(this.sessions.values()).filter(s => s.socketId === socket.id);
@@ -174,13 +195,14 @@ class TerminalManager {
     for (const id of toDelete) this.destroySession(id);
   }
 
-  getSession(sessionId: string): { sessionId: string; instanceId: string; containerName: string; createdAt: Date; lastActivity: Date; cols: number; rows: number; socketId: string } | null {
+  getSession(sessionId: string): { sessionId: string; instanceId: string; containerName: string; type: string; createdAt: Date; lastActivity: Date; cols: number; rows: number; socketId: string } | null {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
     return {
       sessionId,
       instanceId: session.instanceId,
       containerName: session.containerName,
+      type: session.type,
       createdAt: session.createdAt,
       lastActivity: session.lastActivity,
       cols: session.cols,
@@ -198,6 +220,7 @@ class TerminalManager {
       id,
       instanceId: s.instanceId,
       containerName: s.containerName,
+      type: s.type,
       createdAt: s.createdAt,
       lastActivity: s.lastActivity,
       cols: s.cols,
@@ -222,7 +245,6 @@ class TerminalManager {
   }
 
   private verifyTokenFromSocket(socket: Socket): any {
-    // Extract token from auth handshake or query
     const token = socket.handshake?.auth?.token || socket.handshake?.query?.token;
     if (!token) return null;
     try {
@@ -250,6 +272,17 @@ class TerminalManager {
       } catch {}
     }
     return '/snap/bin/lxc';
+  }
+
+  private findVirshBinary(): string {
+    const fs = require('fs');
+    const candidates = ['/usr/bin/virsh', '/usr/local/bin/virsh'];
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) return p;
+      } catch {}
+    }
+    return '/usr/bin/virsh';
   }
 
   private resetTimeout(session: PtySession): void {
