@@ -430,9 +430,29 @@ export const AdminSettings: React.FC = () => {
                   </div>
                 </div>
 
-                <p className="text-[10px] text-neutral-500 leading-relaxed">
-                  Changes preview instantly. Click <strong>Save Configuration</strong> to persist.
-                </p>
+                {/* Reset to default */}
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] text-neutral-500 leading-relaxed">
+                    Changes preview instantly. Click <strong>Save Configuration</strong> to persist.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaults = ['#0f0f0f', '#1a1a1a', '#e5e5e5', '#f0f0f0'];
+                      setColorBgPrimary(defaults[0]);
+                      setColorBgCard(defaults[1]);
+                      setColorAccent(defaults[2]);
+                      setColorTextPrimary(defaults[3]);
+                      document.documentElement.style.setProperty('--color-pageBg', defaults[0]);
+                      document.documentElement.style.setProperty('--color-cardBg', defaults[1]);
+                      document.documentElement.style.setProperty('--color-accentBlue', defaults[2]);
+                      document.documentElement.style.setProperty('--color-textStrong', defaults[3]);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-700/30 hover:border-red-500/50 text-[11px] text-neutral-400 hover:text-red-400 transition bg-neutral-900/10 dark:bg-black/10"
+                  >
+                    Reset to Default
+                  </button>
+                </div>
               </div>
             </div>
 
