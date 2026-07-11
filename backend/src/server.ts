@@ -5,6 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
+import path from 'path';
 import { CONFIG } from './config';
 import { apiLimiter } from './middleware/rateLimit';
 import { terminalManager } from './services/terminalService';
@@ -222,9 +223,25 @@ setInterval(() => {
   ReconciliationService.run();
 }, 60000);
 
-// Catch-all 404
+// Serve frontend static files
+const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+app.use(express.static(frontendDist));
+
+// SPA fallback — serve index.html for non-API GET requests
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/socket.io/') || req.path.startsWith('/health') || req.path.startsWith('/liveness') || req.path.startsWith('/readiness')) {
+    return next();
+  }
+  res.sendFile(path.join(frontendDist, 'index.html'));
+});
+
+// Catch-all 404 (JSON only for API paths)
 app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'Endpoint not found' });
+  } else {
+    res.status(404).sendFile(path.join(frontendDist, 'index.html'));
+  }
 });
 
 // Centralized error boundary
