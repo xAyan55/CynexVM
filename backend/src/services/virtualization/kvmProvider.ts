@@ -1438,6 +1438,19 @@ async function detectGuestIp(nodeId: string, domainName: string, macAddress: str
     if (match) return match[1];
   }
 
+  // 3.5. Query virsh net-dhcp-leases dynamically for active networks
+  const netListRes = await NodeClient.executeCommand(nodeId, `virsh net-list --name 2>/dev/null || true`);
+  if (netListRes.exitCode === 0) {
+    const nets = netListRes.stdout.trim().split('\n').filter(Boolean);
+    for (const net of nets) {
+      const leases = await NodeClient.executeCommand(nodeId, `virsh net-dhcp-leases ${net} 2>/dev/null | grep -i "${cleanMac}" || true`);
+      if (leases.exitCode === 0 && leases.stdout.trim()) {
+        const match = leases.stdout.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        if (match) return match[1];
+      }
+    }
+  }
+
   // 4. DHCP leases files search
   const dhcpRes = await NodeClient.executeCommand(nodeId, `cat /var/lib/libvirt/dnsmasq/*.leases /var/lib/misc/dnsmasq.leases /var/lib/dnsmasq/*.leases 2>/dev/null | grep -i "${cleanMac}" || true`);
   if (dhcpRes.exitCode === 0 && dhcpRes.stdout.trim()) {
