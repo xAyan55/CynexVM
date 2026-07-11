@@ -104,7 +104,7 @@ export class XmlBuilder {
     <disk type='file' device='cdrom'>
       <driver name='qemu' type='raw'/>
       <source file='${isoPath}'/>
-      <target dev='hd${diskIndexChar}' bus='ide'/>
+      <target dev='sd${diskIndexChar}' bus='sata'/>
       <readonly/>
     </disk>
         `;

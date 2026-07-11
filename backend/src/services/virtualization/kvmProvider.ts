@@ -74,7 +74,7 @@ export class KVMProvider implements VirtualizationProvider {
       );
       
       // Add cloud-init as ISO CDROM
-      disks.push({ name: 'cloudinit', sizeGb: 0, isIso: true, type: 'ide', isoPath: cloudInitIsoPath } as any);
+      disks.push({ name: 'cloudinit', sizeGb: 0, isIso: true, type: 'sata', isoPath: cloudInitIsoPath } as any);
     }
 
     // 3. Compile Domain XML
