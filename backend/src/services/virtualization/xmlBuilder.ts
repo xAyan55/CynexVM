@@ -279,7 +279,7 @@ export class XmlBuilder {
       <target type='serial' port='0'/>
     </console>
     <video>
-      <model type='${vmConfig?.gpuType || 'std'}' vram='16384' heads='1' primary='yes'/>
+      <model type='${vmConfig?.gpuType || 'vga'}' vram='16384' heads='1' primary='yes'/>
     </video>
     <rng model='virtio'>
       <backend model='random'>/dev/urandom</backend>

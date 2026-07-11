@@ -1107,7 +1107,7 @@ JobService.registerWorker('instance.deploy', async (job) => {
             secureBoot: !!vmConfig?.secureBoot,
             machineType: vmConfig?.machineType || 'q35',
             graphicsType: vmConfig?.graphicsType || 'vnc',
-            gpuType: vmConfig?.gpuType || 'std',
+            gpuType: vmConfig?.gpuType || 'vga',
             guestAgent: vmConfig?.guestAgent !== false,
             smbiosManufacturer: vmConfig?.smbiosManufacturer || 'CynexVM',
             smbiosProductName: vmConfig?.smbiosProductName || 'Virtual Machine',

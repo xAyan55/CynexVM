@@ -296,7 +296,7 @@ model VmConfiguration {
   bootDelay            Int      @default(0)
   graphicsType         String   @default("vnc") // "vnc" | "spice" | "serial"
   graphicsResolution   String   @default("1024x768")
-  gpuType              String   @default("std") // "virtio" | "qxl" | "vga"
+  gpuType              String   @default("vga") // "virtio" | "qxl" | "vga"
   exposeDevKvm         Boolean  @default(true)
   enableIntelVtx       Boolean  @default(true)
   enableAmdV           Boolean  @default(true)
