@@ -667,6 +667,27 @@ export const InstanceDetails: React.FC = () => {
                 {instance.status}
               </p>
             </div>
+
+            {/* Guest Agent */}
+            {(instance.type === 'KVM' || instance.type === 'QEMU') && (
+              <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-neutral-200 dark:border-neutral-800/30">
+                <div className="flex items-center gap-2 mb-2">
+                  {liveMetrics?.guestAgent === true ? <Wifi size={14} className="text-emerald-400" /> :
+                   liveMetrics?.guestAgent === false ? <WifiOff size={14} className="text-red-400" /> :
+                   <span className="w-3.5 h-3.5 rounded-full bg-neutral-500" />}
+                  <span className="text-[10px] text-neutral-500 uppercase font-semibold">Guest Agent</span>
+                </div>
+                <p className={`text-lg font-semibold ${
+                  liveMetrics?.guestAgent === true ? 'text-emerald-400' :
+                  liveMetrics?.guestAgent === false ? 'text-red-400' :
+                  'text-neutral-500'
+                }`}>
+                  {liveMetrics?.guestAgent === true ? 'Connected' :
+                   liveMetrics?.guestAgent === false ? 'Not Installed' :
+                   '—'}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Instance Configuration Details */}

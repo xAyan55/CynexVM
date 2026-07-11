@@ -653,28 +653,45 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
         );
       } else if (instance.type === 'KVM' || instance.type === 'QEMU') {
         const { NodeClient } = require('../services/virtualization/nodeClient');
-
         let passwordChanged = false;
         let hadAgent = false;
         const diskPath = `/var/lib/libvirt/images/${containerName}_disk0.qcow2`;
 
-        // --- Tier 1: qemu-guest-agent guest-exec ---
-        const pingRes = await NodeClient.executeCommand(
-          instance.nodeId,
-          `virsh qemu-agent-command ${containerName} '{"execute":"guest-ping"}'`
-        );
-        hadAgent = pingRes.exitCode === 0;
+        // === Tier 1: QEMU Guest Agent (preferred, no reboot needed) ===
+        try {
+          const pingRes = await NodeClient.executeCommand(
+            instance.nodeId,
+            `virsh qemu-agent-command ${containerName} '{"execute":"guest-ping"}'`
+          );
+          hadAgent = pingRes.exitCode === 0;
 
-        if (hadAgent) {
-          const cmd = `virsh qemu-agent-command ${containerName} '{"execute":"guest-exec","arguments":{"path":"/bin/sh","arg":["-c","echo \\"root:${password}\\" | chpasswd"],"capture-output":true}}'`;
-          const execRes = await NodeClient.executeCommand(instance.nodeId, cmd);
-          try {
+          if (hadAgent) {
+            // Use base64 to avoid all shell/JSON quoting issues with passwords
+            const escapedPassword = password.replace(/'/g, "'\\''");
+            const shellCmd = `printf 'root:%s\\n' '${escapedPassword}' | chpasswd`;
+            const payload = JSON.stringify({
+              execute: "guest-exec",
+              arguments: {
+                path: "/bin/sh",
+                arg: ["-c", shellCmd],
+                "capture-output": true
+              }
+            });
+            const b64 = Buffer.from(payload).toString('base64');
+            const cmd = `virsh qemu-agent-command ${containerName} $(echo ${b64} | base64 -d)`;
+            const execRes = await NodeClient.executeCommand(instance.nodeId, cmd);
+
             const parsed = JSON.parse(execRes.stdout);
             const pid = parsed?.return?.pid;
             if (pid) {
               for (let i = 0; i < 10; i++) {
                 await new Promise(r => setTimeout(r, 1000));
-                const statusCmd = `virsh qemu-agent-command ${containerName} '{"execute":"guest-exec-status","arguments":{"pid":${pid}}}'`;
+                const statusPayload = JSON.stringify({
+                  execute: "guest-exec-status",
+                  arguments: { pid }
+                });
+                const statusB64 = Buffer.from(statusPayload).toString('base64');
+                const statusCmd = `virsh qemu-agent-command ${containerName} $(echo ${statusB64} | base64 -d)`;
                 const statusRes = await NodeClient.executeCommand(instance.nodeId, statusCmd);
                 const status = JSON.parse(statusRes.stdout);
                 if (status?.return?.exited) {
@@ -683,114 +700,81 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
                 }
               }
             }
+          }
+        } catch (_) {}
+
+        // === Tier 2: SSH (if VM has known IP and stored password is usable) ===
+        if (!passwordChanged && instance.ipAddress && instance.password) {
+          try {
+            const sshpassCheck = await NodeClient.executeCommand(
+              instance.nodeId,
+              "command -v sshpass && echo yes || echo no"
+            );
+            if (sshpassCheck.stdout.includes('yes')) {
+              const remoteCmd = `printf 'root:%s\\n' '${password.replace(/'/g, "'\\''")}' | chpasswd`;
+              const remoteB64 = Buffer.from(remoteCmd).toString('base64');
+              const sshCmd = `sshpass -p '${instance.password.replace(/'/g, "'\\''")}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${instance.ipAddress} "echo ${remoteB64} | base64 -d | sh" 2>&1`;
+              const sshRes = await NodeClient.executeCommand(instance.nodeId, sshCmd);
+              if (sshRes.exitCode === 0) passwordChanged = true;
+            }
           } catch (_) {}
         }
 
-        // --- Tier 2: virt-customize offline disk modification ---
+        // === Tier 3: libguestfs offline disk modification ===
         if (!passwordChanged) {
-          const checkVirt = await NodeClient.executeCommand(instance.nodeId, 'command -v virt-customize && echo yes || echo no');
-          if (checkVirt.stdout.includes('yes')) {
-            await NodeClient.executeCommand(instance.nodeId, `virsh destroy ${containerName} 2>/dev/null; virsh shutdown ${containerName} 2>/dev/null; sleep 2`);
-            const customizeRes = await NodeClient.executeCommand(
+          try {
+            const checkVirt = await NodeClient.executeCommand(
               instance.nodeId,
-              `virt-customize -a ${diskPath} --root-password password:${password} 2>&1`
+              "command -v virt-customize && echo yes || echo no"
             );
-            if (customizeRes.exitCode === 0) {
-              passwordChanged = true;
-            } else {
-              // Try guestfish as fallback
-              const gfishRes = await NodeClient.executeCommand(
+            if (checkVirt.stdout.includes('yes')) {
+              const stateRes = await NodeClient.executeCommand(
                 instance.nodeId,
-                `guestfish -a ${diskPath} -i sh 'echo "root:${password}" | chpasswd' 2>&1 || guestfish -a ${diskPath} -i passwd-root '${password}' 2>&1`
+                `virsh domstate ${containerName}`
               );
-              if (gfishRes.exitCode === 0) passwordChanged = true;
+              const wasRunning = stateRes.stdout.trim() === 'running';
+
+              if (wasRunning) {
+                await NodeClient.executeCommand(
+                  instance.nodeId,
+                  `virsh destroy ${containerName}`
+                );
+                await new Promise(r => setTimeout(r, 2000));
+              }
+
+              const customizeRes = await NodeClient.executeCommand(
+                instance.nodeId,
+                `virt-customize -a ${diskPath} --root-password password:${password}`
+              );
+
+              if (customizeRes.exitCode === 0) {
+                passwordChanged = true;
+              } else {
+                const gfishRes = await NodeClient.executeCommand(
+                  instance.nodeId,
+                  `guestfish -a ${diskPath} -i passwd-root '${password}'`
+                );
+                if (gfishRes.exitCode === 0) passwordChanged = true;
+              }
+
+              if (wasRunning && passwordChanged) {
+                await NodeClient.executeCommand(
+                  instance.nodeId,
+                  `virsh start ${containerName}`
+                );
+              }
             }
-            if (passwordChanged) {
-              await NodeClient.executeCommand(instance.nodeId, `virsh start ${containerName} 2>/dev/null`);
-            }
-          }
-        }
-
-        // --- Tier 3: cloud-init ISO re-injection + cold reboot ---
-        if (!passwordChanged) {
-          // First check if any ISO creation tool is available
-          const isoCheck = await NodeClient.executeCommand(
-            instance.nodeId,
-            `command -v genisoimage || command -v mkisofs || command -v xorrisofs || echo none`
-          );
-          const isoTool = isoCheck.stdout.trim().split('\n')[0];
-          if (!isoTool || isoTool === 'none') {
-            return res.status(400).json({
-              error: 'Cannot change root password: install genisoimage on this node (apt install genisoimage) or install qemu-guest-agent inside the VM.'
-            });
-          }
-
-          const userData = `#cloud-config\nssh_pwauth: True\ndisable_root: false\nchpasswd:\n  list: root:${password}\n  expire: False\n`;
-          const metaData = `instance-id: ${containerName}-reset-${Date.now()}\nlocal-hostname: ${instance.hostname || instance.name}\n`;
-
-          await NodeClient.executeCommand(instance.nodeId, `mkdir -p /tmp/cloudinit-reset-${instance.vmid}`);
-
-          const writeUser = await NodeClient.executeCommand(instance.nodeId, `echo "${Buffer.from(userData).toString('base64')}" | base64 -d > /tmp/cloudinit-reset-${instance.vmid}/user-data`);
-          if (writeUser.exitCode !== 0) throw new Error('Failed to write cloud-init user-data');
-
-          const writeMeta = await NodeClient.executeCommand(instance.nodeId, `echo "${Buffer.from(metaData).toString('base64')}" | base64 -d > /tmp/cloudinit-reset-${instance.vmid}/meta-data`);
-          if (writeMeta.exitCode !== 0) throw new Error('Failed to write cloud-init meta-data');
-
-          const isoPath = `/var/lib/libvirt/images/${containerName}_reset.iso`;
-          const isoRes = await NodeClient.executeCommand(
-            instance.nodeId,
-            `${isoTool} -output ${isoPath} -volid cidata -joliet -rock /tmp/cloudinit-reset-${instance.vmid}/user-data /tmp/cloudinit-reset-${instance.vmid}/meta-data 2>&1`
-          );
-          if (isoRes.exitCode !== 0) throw new Error('Failed to create cloud-init ISO: ' + isoRes.stderr);
-
-          // Query existing persistent disk targets to avoid conflicts
-          const blkRes = await NodeClient.executeCommand(instance.nodeId, `virsh domblklist ${containerName} --inactive 2>&1`);
-          const usedTargets = new Set<string>();
-          for (const line of blkRes.stdout.split('\n').slice(2)) {
-            const match = line.trim().match(/^sd([a-z])\s/);
-            if (match) usedTargets.add(match[1]);
-          }
-          let diskLetter = 'b';
-          while (usedTargets.has(diskLetter)) {
-            diskLetter = String.fromCharCode(diskLetter.charCodeAt(0) + 1);
-            if (diskLetter > 'z') throw new Error('No available sdX target for cloud-init ISO');
-          }
-          const diskTarget = `sd${diskLetter}`;
-
-          // Attach ISO — use --live to hotplug immediately, --config for persistence
-          const attachFlag = hadAgent ? '--live --config' : '--config';
-          const attachRes = await NodeClient.executeCommand(instance.nodeId, `virsh attach-disk ${containerName} ${isoPath} ${diskTarget} --device cdrom ${attachFlag} 2>&1`);
-          if (attachRes.exitCode !== 0) throw new Error('Failed to attach cloud-init ISO: ' + (attachRes.stderr || attachRes.stdout));
-
-          if (hadAgent) {
-            // Agent works — ask it to clean cloud-init state so it re-runs on next boot
-            await NodeClient.executeCommand(instance.nodeId, `virsh qemu-agent-command ${containerName} '{"execute":"guest-exec","arguments":{"path":"/bin/sh","arg":["-c","rm -rf /var/lib/cloud/*"],"capture-output":false}}' 2>/dev/null`);
-            // Then cold-reboot via agent
-            await NodeClient.executeCommand(instance.nodeId, `virsh qemu-agent-command ${containerName} '{"execute":"guest-shutdown","arguments":{"mode":"reboot"}}' 2>/dev/null`);
-          } else {
-            // No agent — force cold boot (destroy+start, not reboot) so the --config CDROM is picked up
-            const destroyRes = await NodeClient.executeCommand(instance.nodeId, `virsh destroy ${containerName} 2>&1`);
-            if (destroyRes.exitCode !== 0) throw new Error('Failed to stop VM for cloud-init boot: ' + destroyRes.stderr);
-            await new Promise(r => setTimeout(r, 2000));
-            const startRes = await NodeClient.executeCommand(instance.nodeId, `virsh start ${containerName} 2>&1`);
-            if (startRes.exitCode !== 0) throw new Error('Failed to start VM after cloud-init ISO attach: ' + startRes.stderr);
-          }
-
-          await NodeClient.executeCommand(instance.nodeId, `rm -rf /tmp/cloudinit-reset-${instance.vmid}`);
-          passwordChanged = true;
+          } catch (_) {}
         }
 
         if (!passwordChanged) {
+          const hints: string[] = [];
+          if (!hadAgent) hints.push('Install qemu-guest-agent inside the VM (apt install qemu-guest-agent)');
+          hints.push('Install libguestfs-tools on the hypervisor node (apt install libguestfs-tools) for offline password reset');
           return res.status(400).json({
-            error: 'All password change methods failed. Install qemu-guest-agent inside the VM or libguestfs-tools on the node.'
+            error: 'Could not change root password. ' + hints.join('. ')
           });
         }
-
-        // Mark as rebooting — metrics() will transition to starting/running via guest agent check
-        await db.instance.update({
-          where: { id: instance.id },
-          data: { status: 'rebooting' }
-        });
       }
 
       // Update password in local database

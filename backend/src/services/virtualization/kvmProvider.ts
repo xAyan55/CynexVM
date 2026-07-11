@@ -383,11 +383,16 @@ export class KVMProvider implements VirtualizationProvider {
       const memoryUnused = memUnusedMatch ? parseInt(memUnusedMatch[1], 10) * 1024 : 0;
       const memoryUsed = memoryTotal - memoryUnused;
 
-      // Determine guest boot status
+      // Determine guest boot status and guest agent availability
       let resolvedStatus: string;
-      if (['rebooting', 'starting'].includes(instance.status) && virshState === 'running') {
-        const agentOk = await this.checkGuestAgent(node.id, domainName);
-        resolvedStatus = this.resolveBootStatus(virshState, instance.status, agentOk, instance.updatedAt);
+      let guestAgentOk = false;
+      if (virshState === 'running') {
+        guestAgentOk = await this.checkGuestAgent(node.id, domainName);
+        if (['rebooting', 'starting'].includes(instance.status)) {
+          resolvedStatus = this.resolveBootStatus(virshState, instance.status, guestAgentOk, instance.updatedAt);
+        } else {
+          resolvedStatus = virshState;
+        }
       } else {
         resolvedStatus = virshState;
       }
@@ -403,6 +408,7 @@ export class KVMProvider implements VirtualizationProvider {
         netout: netTxBytesMatch ? parseInt(netTxBytesMatch[1], 10) : 0,
         uptime: uptimeMatch ? parseInt(uptimeMatch[1], 10) : 0,
         status: resolvedStatus,
+        guestAgent: virshState === 'running' ? guestAgentOk : null,
         load: [0.15, 0.1, 0.05],
         processes: 25,
       };
@@ -418,6 +424,7 @@ export class KVMProvider implements VirtualizationProvider {
         netout: 0,
         uptime: 0,
         status: 'stopped',
+        guestAgent: null,
         load: [0, 0, 0],
         processes: 0,
       };
