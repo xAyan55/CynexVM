@@ -252,6 +252,12 @@ model Instance {
   networkInterfaces NetworkInterface[]
   disks            Disk[]
   pciDevices       PciDevice[]
+  lastHealthCheckAt      DateTime?
+  lastHealthStatus       String?          @default("unknown")
+  lastHealthCheckDetails String?          @default("{}")
+  guestType              String?          @default("Linux")
+  linuxDistribution      String?          @default("Unknown")
+  healthEvents           HealthEvent[]
 }
 
 model VirtualizationType {
@@ -641,5 +647,17 @@ model AutomationLog {
   timestamp         DateTime                @default(now())
 
   @@index([runId])
+  @@index([timestamp])
+}
+
+model HealthEvent {
+  id         String   @id @default(uuid())
+  instanceId String
+  status     String   // e.g. "Healthy", "Warning", "Critical"
+  message    String?
+  timestamp  DateTime @default(now())
+  instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
   @@index([timestamp])
 }

@@ -2,6 +2,8 @@ import { VirtualizationProvider } from './provider';
 import { NodeClient } from './nodeClient';
 import { XmlBuilder } from './xmlBuilder';
 import { FirmwareDetector } from './firmwareDetector';
+import { GuestProfileService, GuestProfile } from './guestProfileService';
+import { ConsoleService } from './consoleService';
 
 export class KVMProvider implements VirtualizationProvider {
   private getDomainName(vmid: number): string {
@@ -32,10 +34,20 @@ export class KVMProvider implements VirtualizationProvider {
     await NodeClient.executeCommand(node.id, `mkdir -p /var/lib/libvirt/images/templates`);
     const diskPath = `/var/lib/libvirt/images/${domainName}_disk0.qcow2`;
     
+    let templateName = 'ubuntu-22-04';
+    if (data.osTemplate) {
+      if (data.osTemplate.includes(':')) {
+        templateName = (data.osTemplate.split(':').pop() || 'ubuntu-22-04').replace(/\//g, '-');
+      } else {
+        templateName = data.osTemplate.replace(/\//g, '-');
+      }
+    }
+
+    const guestProfile = GuestProfileService.resolveProfile(templateName);
+    const isLinux = guestProfile.guestType === 'Linux';
+
     // If template / cloud image is specified, copy it as base, else create empty qcow2
     if (data.osTemplate && data.osTemplate.includes(':')) {
-      // Sanitize template name: replace slashes to avoid broken paths
-      const templateName = (data.osTemplate.split(':').pop() || 'ubuntu-22-04').replace(/\//g, '-');
       const templatePath = `/var/lib/libvirt/images/templates/${templateName}.qcow2`;
       
       // Ensure template directory exists
@@ -49,6 +61,12 @@ export class KVMProvider implements VirtualizationProvider {
           downloadUrl = `https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2`;
         } else if (templateName?.includes('alpine')) {
           downloadUrl = `https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-virt-3.19.0-x86_64.iso`;
+        } else if (templateName?.includes('centos')) {
+          downloadUrl = `https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2`;
+        } else if (templateName?.includes('rocky')) {
+          downloadUrl = `https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2`;
+        } else if (templateName?.includes('alma')) {
+          downloadUrl = `https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2`;
         }
         const dl = await NodeClient.executeCommand(node.id, `curl -sSL -o ${templatePath} ${downloadUrl}`);
         if (dl.exitCode !== 0) {
@@ -67,12 +85,18 @@ export class KVMProvider implements VirtualizationProvider {
       await NodeClient.executeCommand(node.id, `qemu-img create -f qcow2 ${diskPath} ${storageGb}G`);
     }
 
-    // 2. Generate Cloud-init ISO (if enabled)
+    // 2. Generate Cloud-init ISO or run Offline Customization (Never both)
     let disks = [{ name: 'disk0', sizeGb: storageGb, isIso: false, type: 'virtio' }];
-    if (data.cloudInit?.enabled || instance.cloudInit?.enabled) {
-      const userData = data.cloudInit?.userData || '';
+    const useCloudInit = !!(data.cloudInit?.enabled || instance.cloudInit?.enabled);
+
+    if (useCloudInit) {
+      let userData = data.cloudInit?.userData || '';
       const metaData = data.cloudInit?.metaData || `instance-id: ${instance.id}\nlocal-hostname: ${data.hostname || instance.hostname}`;
       
+      if (isLinux) {
+        userData = modifyCloudInit(userData, guestProfile.distribution.toLowerCase());
+      }
+
       const userDataPath = `/tmp/${domainName}_user-data`;
       const metaDataPath = `/tmp/${domainName}_meta-data`;
       const cloudInitIsoPath = `/var/lib/libvirt/images/${domainName}_cloudinit.iso`;
@@ -89,6 +113,43 @@ export class KVMProvider implements VirtualizationProvider {
       
       // Add cloud-init as ISO CDROM
       disks.push({ name: 'cloudinit', sizeGb: 0, isIso: true, type: 'sata', isoPath: cloudInitIsoPath } as any);
+    } else if (isLinux) {
+      // Cloud-init is disabled: run offline customization if virt-customize is available
+      const checkVirt = await NodeClient.executeCommand(node.id, "command -v virt-customize && echo yes || echo no");
+      if (checkVirt.stdout.includes('yes')) {
+        const dist = guestProfile.distribution.toLowerCase();
+        let grubLinePattern = 'GRUB_CMDLINE_LINUX_DEFAULT';
+        let grubUpdateCmd = 'update-grub';
+        if (['centos', 'rocky', 'alma'].includes(dist)) {
+          grubLinePattern = 'GRUB_CMDLINE_LINUX';
+          grubUpdateCmd = 'grub2-mkconfig -o /boot/grub2/grub.cfg';
+        }
+
+        const scriptContent = `
+#!/bin/bash
+if [ -f /etc/default/grub ]; then
+  if ! grep -q "console=ttyS0" /etc/default/grub; then
+    sed -i 's/\\(${grubLinePattern}=".*\\)"/\\1 console=tty0 console=ttyS0,115200n8"/' /etc/default/grub
+  fi
+fi
+if command -v ${grubUpdateCmd} >/dev/null 2>&1; then
+  ${grubUpdateCmd}
+fi
+if command -v grubby >/dev/null 2>&1; then
+  grubby --update-kernel=ALL --args="console=tty0 console=ttyS0,115200n8" || true
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable serial-getty@ttyS0.service || true
+fi
+`.trim();
+
+        const scriptB64 = Buffer.from(scriptContent).toString('base64');
+        const tempScriptPath = `/tmp/${domainName}_guest_custom.sh`;
+        
+        await NodeClient.executeCommand(node.id, `echo "${scriptB64}" | base64 -d > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
+        await NodeClient.executeCommand(node.id, `virt-customize -a ${diskPath} --run ${tempScriptPath}`, 180000);
+        await NodeClient.executeCommand(node.id, `rm -f ${tempScriptPath}`);
+      }
     }
 
     // 3. Compile Domain XML
@@ -543,4 +604,387 @@ export class KVMProvider implements VirtualizationProvider {
   public async statistics(node: any, instance: any): Promise<any> {
     return this.metrics(node, instance);
   }
+
+  public async healthCheck(node: any, instance: any): Promise<any> {
+    const domainName = this.getDomainName(instance.vmid);
+    const checks: any = {
+      domain_exists: false,
+      domain_running: false,
+      cpu_assigned: false,
+      ram_assigned: false,
+      disk_attached: false,
+      network_attached: false,
+      ip_obtained: false,
+      guest_agent_connected: false,
+      ssh_reachable: false,
+      serial_console_available: false,
+      cloud_init_finished: false,
+      storage_healthy: false
+    };
+
+    let guestIp = instance.ipAddress;
+    let consoleOutput = '';
+    let agentConnected = false;
+    let guestAgentVersion = '';
+    let guestAgentCapabilities: string[] = [];
+    let sshBanner = '';
+    let sshLatency = 0;
+
+    // Resolve Guest Profile
+    let templateName = 'ubuntu-22-04';
+    if (instance.osTemplate) {
+      if (instance.osTemplate.includes(':')) {
+        templateName = (instance.osTemplate.split(':').pop() || 'ubuntu-22-04').replace(/\//g, '-');
+      } else {
+        templateName = instance.osTemplate.replace(/\//g, '-');
+      }
+    }
+    const guestProfile = GuestProfileService.resolveProfile(templateName);
+
+    // 1. Check domain exists and retrieve dominfo
+    const dominfoRes = await NodeClient.executeCommand(node.id, `virsh dominfo ${domainName} 2>/dev/null`);
+    if (dominfoRes.exitCode === 0) {
+      checks.domain_exists = true;
+
+      // 2. Check domain running
+      const domstateRes = await NodeClient.executeCommand(node.id, `virsh domstate ${domainName} 2>/dev/null`);
+      const state = domstateRes.stdout.trim().toLowerCase();
+      if (state.includes('running')) {
+        checks.domain_running = true;
+      }
+
+      // 3. CPU assigned correctly
+      const cpuMatch = dominfoRes.stdout.match(/CPU\(s\):\s+(\d+)/);
+      if (cpuMatch) {
+        const cores = parseInt(cpuMatch[1], 10);
+        checks.cpu_assigned = (cores === instance.cpuCores);
+      }
+
+      // 4. RAM assigned correctly
+      const memMatch = dominfoRes.stdout.match(/Max memory:\s+(\d+)/);
+      if (memMatch) {
+        const memKb = parseInt(memMatch[1], 10);
+        checks.ram_assigned = (Math.abs(memKb - instance.memoryMb * 1024) < 4096);
+      }
+
+      // 5. Disk attached
+      const disksRes = await NodeClient.executeCommand(node.id, `virsh domblklist ${domainName} 2>/dev/null`);
+      if (disksRes.exitCode === 0 && (disksRes.stdout.includes('disk0') || disksRes.stdout.includes('vda') || disksRes.stdout.includes('sda'))) {
+        checks.disk_attached = true;
+      }
+
+      // 6. Network attached
+      const ifRes = await NodeClient.executeCommand(node.id, `virsh domiflist ${domainName} 2>/dev/null`);
+      if (ifRes.exitCode === 0 && (ifRes.stdout.includes('vnet') || ifRes.stdout.includes('bridge') || ifRes.stdout.includes('lxdbr0'))) {
+        checks.network_attached = true;
+      }
+
+      // 7. Storage healthy
+      const diskPath = `/var/lib/libvirt/images/${domainName}_disk0.qcow2`;
+      const imgInfoRes = await NodeClient.executeCommand(node.id, `qemu-img info ${diskPath} 2>/dev/null`);
+      if (imgInfoRes.exitCode === 0) {
+        checks.storage_healthy = true;
+      }
+
+      // 8. Guest Agent connected
+      if (guestProfile.supportsGuestAgent) {
+        const pingAgent = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-ping"}' 2>/dev/null`);
+        if (pingAgent.exitCode === 0) {
+          checks.guest_agent_connected = true;
+          agentConnected = true;
+
+          // Fetch version and capabilities
+          const infoAgent = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-info"}' 2>/dev/null`);
+          if (infoAgent.exitCode === 0) {
+            try {
+              const info = JSON.parse(infoAgent.stdout);
+              guestAgentVersion = info.return?.version || 'unknown';
+              const supportedCmds = info.return?.supported_commands || [];
+              
+              if (supportedCmds.some((c: any) => c.name === 'guest-shutdown')) guestAgentCapabilities.push('shutdown');
+              if (supportedCmds.some((c: any) => c.name === 'guest-exec')) guestAgentCapabilities.push('exec');
+              if (supportedCmds.some((c: any) => c.name === 'guest-fsfreeze-freeze')) guestAgentCapabilities.push('fsfreeze');
+              if (supportedCmds.some((c: any) => c.name === 'guest-set-user-password')) guestAgentCapabilities.push('password');
+              if (supportedCmds.some((c: any) => c.name === 'guest-info')) guestAgentCapabilities.push('guest info');
+            } catch (_) {}
+          }
+
+          // Try to obtain IP address if not known or set to dhcp
+          if (!guestIp || guestIp === 'dhcp') {
+            const netRes = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-network-get-interfaces"}' 2>/dev/null`);
+            if (netRes.exitCode === 0) {
+              try {
+                const netInfo = JSON.parse(netRes.stdout);
+                const interfaces = netInfo.return || [];
+                for (const iface of interfaces) {
+                  if (iface.name !== 'lo' && iface['ip-addresses']) {
+                    const ipv4 = iface['ip-addresses'].find((ip: any) => ip['ip-address-type'] === 'ipv4');
+                    if (ipv4) {
+                      guestIp = ipv4['ip-address'];
+                      checks.ip_obtained = true;
+                      break;
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+          } else {
+            checks.ip_obtained = true;
+          }
+
+          // 9. Cloud-init finished
+          if (guestProfile.supportsCloudInit) {
+            const openFile = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-file-open","arguments":{"path":"/run/cloud-init/result.json","mode":"r"}}' 2>/dev/null`);
+            if (openFile.exitCode === 0) {
+              checks.cloud_init_finished = true;
+              try {
+                const handleObj = JSON.parse(openFile.stdout);
+                const handle = handleObj.return;
+                await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-file-close","arguments":{"handle":${handle}}}' 2>/dev/null`);
+              } catch (_) {}
+            }
+          } else {
+            checks.cloud_init_finished = true;
+          }
+        }
+      } else {
+        checks.guest_agent_connected = false;
+        checks.cloud_init_finished = true;
+      }
+
+      // 10. SSH reachable check banner + latency
+      if (guestIp && guestIp !== 'dhcp') {
+        const sshCheckCmd = `
+          start=$(date +%s%N)
+          banner=$(timeout 2 head -n 1 < /dev/tcp/${guestIp}/22 2>/dev/null)
+          end=$(date +%s%N)
+          latency=$(( (end - start) / 1000000 ))
+          echo "$banner|$latency"
+        `.trim();
+        
+        const sshRes = await NodeClient.executeCommand(node.id, sshCheckCmd);
+        const parts = sshRes.stdout.trim().split('|');
+        if (parts[0] && parts[0].includes('SSH-')) {
+          checks.ssh_reachable = true;
+          sshBanner = parts[0];
+          sshLatency = parseInt(parts[1] || '0', 10);
+        }
+      }
+
+      // 11. Serial console validation
+      if (guestProfile.supportsSerialRepair) {
+        const consoleRes = await ConsoleService.validate(node.id, domainName);
+        consoleOutput = consoleRes.output;
+        if (consoleRes.available) {
+          checks.serial_console_available = true;
+        }
+      } else {
+        checks.serial_console_available = true; // Not supported or needed, count as active
+      }
+    }
+
+    const serialConsoleStatus = checks.serial_console_available ? 'available' : 'not_configured';
+    const guestAgentStatus = checks.guest_agent_connected ? 'connected' : (guestProfile.supportsGuestAgent ? 'not_installed' : 'unknown');
+    const sshStatus = checks.ssh_reachable ? 'reachable' : 'not_reachable';
+
+    let bootDiagnostics = 'Unknown';
+    if (checks.domain_exists) {
+      if (!checks.domain_running) {
+        bootDiagnostics = 'BootFailed';
+      } else {
+        bootDiagnostics = await this.getBootDiagnostics(consoleOutput, agentConnected);
+      }
+    }
+
+    return {
+      console: { status: serialConsoleStatus, type: instance.vmConfig?.graphicsType || 'serial', lastChecked: new Date() },
+      guestAgent: { status: guestAgentStatus, version: guestAgentVersion, capabilities: guestAgentCapabilities },
+      ssh: { reachable: checks.ssh_reachable, banner: sshBanner, latency: sshLatency },
+      boot: { status: bootDiagnostics },
+      healthCheckResults: checks,
+      guestIp
+    };
+  }
+
+  private async getBootDiagnostics(consoleOutput: string, agentConnected: boolean): Promise<string> {
+    if (agentConnected) return 'Healthy';
+    
+    const lowerOutput = (consoleOutput || '').toLowerCase();
+    if (lowerOutput.includes('kernel panic') || lowerOutput.includes('panic:')) {
+      return 'KernelPanic';
+    }
+    if (lowerOutput.includes('grub rescue') || lowerOutput.includes('error: no such device')) {
+      return 'GrubRescue';
+    }
+    if (lowerOutput.includes('no bootable device') || lowerOutput.includes('boot failed')) {
+      return 'NoBootableDisk';
+    }
+    if (lowerOutput.includes('filesystem check failed') || lowerOutput.includes('fsck failed')) {
+      return 'FilesystemError';
+    }
+    if (lowerOutput.includes('emergency mode') || lowerOutput.includes('enter runlevel')) {
+      return 'EmergencyMode';
+    }
+    if (lowerOutput.includes('initramfs')) {
+      return 'Initramfs';
+    }
+    if (lowerOutput.includes('cloud-init') && (lowerOutput.includes('error') || lowerOutput.includes('fail'))) {
+      return 'CloudInitFailed';
+    }
+    return 'Unknown';
+  }
+
+  public async repairConsole(node: any, instance: any): Promise<void> {
+    const domainName = this.getDomainName(instance.vmid);
+    const diskPath = `/var/lib/libvirt/images/${domainName}_disk0.qcow2`;
+    
+    // Resolve OS info
+    const guestProfile = GuestProfileService.resolveProfile(instance.osTemplate);
+    if (guestProfile.guestType !== 'Linux' || !guestProfile.supportsSerialRepair) {
+      throw new Error('Console repair is only supported on configured Linux guests.');
+    }
+
+    const dist = guestProfile.distribution.toLowerCase();
+    let grubLinePattern = 'GRUB_CMDLINE_LINUX_DEFAULT';
+    let grubUpdateCmd = 'update-grub';
+    if (['centos', 'rocky', 'alma'].includes(dist)) {
+      grubLinePattern = 'GRUB_CMDLINE_LINUX';
+      grubUpdateCmd = 'grub2-mkconfig -o /boot/grub2/grub.cfg';
+    }
+
+    // Check if Guest Agent is running
+    const pingAgent = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-ping"}' 2>/dev/null`);
+    const agentWorking = (pingAgent.exitCode === 0);
+
+    const scriptContent = `
+#!/bin/bash
+if [ -f /etc/default/grub ]; then
+  if ! grep -q "console=ttyS0" /etc/default/grub; then
+    sed -i 's/\\(${grubLinePattern}=".*\\)"/\\1 console=tty0 console=ttyS0,115200n8"/' /etc/default/grub
+  fi
+fi
+if command -v ${grubUpdateCmd} >/dev/null 2>&1; then
+  ${grubUpdateCmd}
+fi
+if command -v grubby >/dev/null 2>&1; then
+  grubby --update-kernel=ALL --args="console=tty0 console=ttyS0,115200n8" || true
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable serial-getty@ttyS0.service || true
+  systemctl start serial-getty@ttyS0.service || true
+fi
+`.trim();
+
+    if (agentWorking) {
+      // 1. Repair online using guest-agent
+      const cmdToRun = `echo "${Buffer.from(scriptContent).toString('base64')}" | base64 -d | bash`;
+      
+      const execArgs = {
+        path: '/bin/bash',
+        arguments: ['-c', cmdToRun],
+        'capture-output': true
+      };
+      
+      await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '${JSON.stringify({
+        execute: 'guest-exec',
+        arguments: execArgs
+      })}'`);
+      
+      await new Promise(r => setTimeout(r, 3000));
+    } else {
+      // 2. Repair offline using virt-customize
+      const checkVirt = await NodeClient.executeCommand(node.id, "command -v virt-customize && echo yes || echo no");
+      if (!checkVirt.stdout.includes('yes')) {
+        throw new Error('virt-customize is not installed on the hypervisor host and Guest Agent is not reachable. Cannot perform repair.');
+      }
+
+      // Stop VM if it was running
+      const domstateRes = await NodeClient.executeCommand(node.id, `virsh domstate ${domainName} 2>/dev/null`);
+      const wasRunning = domstateRes.stdout.trim().includes('running');
+      if (wasRunning) {
+        await NodeClient.executeCommand(node.id, `virsh destroy ${domainName}`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      // Write script to node
+      const scriptB64 = Buffer.from(scriptContent).toString('base64');
+      const tempScriptPath = `/tmp/${domainName}_repair.sh`;
+      await NodeClient.executeCommand(node.id, `echo "${scriptB64}" | base64 -d > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
+
+      // Run virt-customize
+      const customizeRes = await NodeClient.executeCommand(node.id, `virt-customize -a ${diskPath} --run ${tempScriptPath}`, 180000);
+      
+      // Cleanup script
+      await NodeClient.executeCommand(node.id, `rm -f ${tempScriptPath}`);
+
+      if (wasRunning) {
+        await NodeClient.executeCommand(node.id, `virsh start ${domainName}`);
+      }
+
+      if (customizeRes.exitCode !== 0) {
+        throw new Error(`virt-customize failed during console repair: ${customizeRes.stderr}`);
+      }
+    }
+  }
+}
+
+function modifyCloudInit(userData: string, dist: string): string {
+  let content = userData.trim();
+  if (!content.startsWith('#cloud-config')) {
+    content = '#cloud-config\n' + content;
+  }
+
+  let lines = content.split('\n');
+
+  const isRootKey = (line: string, key: string) => {
+    return line.trim() === `${key}:`;
+  };
+
+  const bootcmds = [
+    'systemctl enable serial-getty@ttyS0.service'
+  ];
+
+  let runcmds: string[] = [];
+  if (['centos', 'rocky', 'alma'].includes(dist)) {
+    runcmds = [
+      `sed -i 's/\\\\(GRUB_CMDLINE_LINUX=".*\\\\)"/\\\\1 console=tty0 console=ttyS0,115200n8"/' /etc/default/grub`,
+      'grub2-mkconfig -o /boot/grub2/grub.cfg',
+      'grubby --update-kernel=ALL --args="console=tty0 console=ttyS0,115200n8" || true'
+    ];
+  } else {
+    runcmds = [
+      `sed -i 's/\\\\(GRUB_CMDLINE_LINUX_DEFAULT=".*\\\\)"/\\\\1 console=tty0 console=ttyS0,115200n8"/' /etc/default/grub`,
+      'update-grub'
+    ];
+  }
+
+  // 1. Insert bootcmd
+  let bootcmdIndex = lines.findIndex(l => isRootKey(l, 'bootcmd'));
+  if (bootcmdIndex !== -1) {
+    const hasCommand = lines.some((l, idx) => idx > bootcmdIndex && l.includes('serial-getty@ttyS0.service'));
+    if (!hasCommand) {
+      lines.splice(bootcmdIndex + 1, 0, `  - ${bootcmds[0]}`);
+    }
+  } else {
+    lines.push('bootcmd:');
+    lines.push(`  - ${bootcmds[0]}`);
+  }
+
+  // 2. Insert runcmd
+  let runcmdIndex = lines.findIndex(l => isRootKey(l, 'runcmd'));
+  if (runcmdIndex !== -1) {
+    const hasGrubCmd = lines.some((l, idx) => idx > runcmdIndex && l.includes('console=ttyS0'));
+    if (!hasGrubCmd) {
+      runcmds.forEach((cmd, i) => {
+        lines.splice(runcmdIndex + 1 + i, 0, `  - ${cmd}`);
+      });
+    }
+  } else {
+    lines.push('runcmd:');
+    runcmds.forEach(cmd => {
+      lines.push(`  - ${cmd}`);
+    });
+  }
+
+  return lines.join('\n');
 }

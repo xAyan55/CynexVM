@@ -11,6 +11,7 @@ import { JobService } from '../services/jobService';
 import { NotificationService } from '../services/notification/notificationService';
 import { VirtualizationProviderFactory } from '../services/virtualization/provider';
 import { FirmwareDetector } from '../services/virtualization/firmwareDetector';
+import { GuestProfileService } from '../services/virtualization/guestProfileService';
 
 const router = Router();
 
@@ -1168,6 +1169,146 @@ router.get('/:id/metrics', authenticate, async (req: AuthenticatedRequest, res) 
   }
 });
 
+/**
+ * @route   GET /api/v1/instances/:id/health
+ * @desc    Performs and returns a live, dynamic health check run
+ */
+router.get('/:id/health', authenticate, async (req: AuthenticatedRequest, res) => {
+  try {
+    const instance = await db.instance.findUnique({
+      where: { id: req.params.id },
+      include: { node: true, cloudInit: true }
+    });
+    if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    if (typeof (provider as any).healthCheck !== 'function') {
+      return res.status(400).json({ error: 'Health checks not supported on this instance type' });
+    }
+
+    const healthRes = await (provider as any).healthCheck(instance.node, instance);
+
+    let crit = 0;
+    let warn = 0;
+    for (const key of Object.keys(healthRes.healthCheckResults)) {
+      if (key === 'ssh_reachable' || key === 'serial_console_available') {
+        if (!healthRes.healthCheckResults[key]) warn++;
+      } else {
+        if (!healthRes.healthCheckResults[key]) crit++;
+      }
+    }
+    const currentStatus = crit > 0 ? 'critical' : (warn > 0 ? 'warning' : 'healthy');
+
+    // If status changed from last cached status, log HealthEvent
+    if (instance.lastHealthStatus !== currentStatus) {
+      await db.healthEvent.create({
+        data: {
+          instanceId: instance.id,
+          status: currentStatus === 'healthy' ? 'Healthy' : (currentStatus === 'warning' ? 'Warning' : 'Critical'),
+          message: `VM health state changed to ${currentStatus.toUpperCase()}`
+        }
+      });
+    }
+
+    // Cache results
+    await db.instance.update({
+      where: { id: instance.id },
+      data: {
+        lastHealthCheckAt: new Date(),
+        lastHealthStatus: currentStatus,
+        lastHealthCheckDetails: JSON.stringify(healthRes),
+        guestType: instance.guestType || healthRes.guestType || 'Linux',
+        linuxDistribution: instance.linuxDistribution || healthRes.linuxDistribution || 'Unknown'
+      }
+    });
+
+    return res.status(200).json({
+      ...healthRes,
+      status: currentStatus
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch live health metrics' });
+  }
+});
+
+/**
+ * @route   GET /api/v1/instances/:id/health-history
+ * @desc    Retrieves VM health event logs for history timelines
+ */
+router.get('/:id/health-history', authenticate, async (req: AuthenticatedRequest, res) => {
+  try {
+    const events = await db.healthEvent.findMany({
+      where: { instanceId: req.params.id },
+      orderBy: { timestamp: 'desc' },
+      take: 20
+    });
+    return res.status(200).json(events);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to retrieve health history' });
+  }
+});
+
+/**
+ * @route   POST /api/v1/instances/:id/repair-console
+ * @desc    Trigger automated console configuration repair
+ */
+router.post('/:id/repair-console', authenticate, async (req: AuthenticatedRequest, res) => {
+  try {
+    const instance = await db.instance.findUnique({
+      where: { id: req.params.id },
+      include: { node: true, cloudInit: true, vmConfig: true }
+    });
+    if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    if (typeof (provider as any).repairConsole !== 'function') {
+      return res.status(400).json({ error: 'Console repair not supported on this instance type' });
+    }
+
+    await (provider as any).repairConsole(instance.node, instance);
+
+    let healthRes = null;
+    if (typeof (provider as any).healthCheck === 'function') {
+      healthRes = await (provider as any).healthCheck(instance.node, instance);
+      
+      let crit = 0;
+      let warn = 0;
+      for (const key of Object.keys(healthRes.healthCheckResults)) {
+        if (key === 'ssh_reachable' || key === 'serial_console_available') {
+          if (!healthRes.healthCheckResults[key]) warn++;
+        } else {
+          if (!healthRes.healthCheckResults[key]) crit++;
+        }
+      }
+      const currentStatus = crit > 0 ? 'critical' : (warn > 0 ? 'warning' : 'healthy');
+
+      await db.healthEvent.create({
+        data: {
+          instanceId: instance.id,
+          status: currentStatus === 'healthy' ? 'Healthy' : (currentStatus === 'warning' ? 'Warning' : 'Critical'),
+          message: `Console repair routine run. Status: ${currentStatus.toUpperCase()}`
+        }
+      });
+
+      await db.instance.update({
+        where: { id: instance.id },
+        data: {
+          lastHealthCheckAt: new Date(),
+          lastHealthStatus: currentStatus,
+          lastHealthCheckDetails: JSON.stringify(healthRes)
+        }
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Serial console repair executed successfully.',
+      health: healthRes
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to execute serial console repair' });
+  }
+});
+
 // --- Register Background Workers ---
 JobService.registerWorker('instance.deploy', async (job) => {
   const { taskId, nodeId, name, vmid, osTemplate, cpuCores, memoryMb, storageGb, hostname, password, type = 'LXC', vmConfig, cloudInit, disks, networkInterfaces, lockKey } = job.data;
@@ -1227,6 +1368,42 @@ JobService.registerWorker('instance.deploy', async (job) => {
       throw new Error(`Instance failed to boot successfully (Status: ${state})`);
     }
 
+    const guestProfile = GuestProfileService.resolveProfile(osTemplate);
+    let healthDetails = '{}';
+    let healthStatus = 'unknown';
+
+    if (type === 'KVM' || type === 'QEMU') {
+      try {
+        TaskService.updateTask(taskId, {
+          progress: 90,
+          currentStage: 'Verifying',
+          currentStep: 'Running VM Diagnostics & Health Checks...',
+          logMessage: 'Executing hypervisor diagnostic suite...'
+        });
+
+        if (typeof (provider as any).healthCheck === 'function') {
+          const basicInstance = { vmid, osTemplate, cpuCores, memoryMb, ipAddress: 'dhcp', cloudInit };
+          const healthRes = await (provider as any).healthCheck(node, basicInstance);
+          
+          healthDetails = JSON.stringify(healthRes);
+          let warn = 0;
+          let crit = 0;
+          for (const key of Object.keys(healthRes.healthCheckResults)) {
+            if (key === 'ssh_reachable' || key === 'serial_console_available') {
+              if (!healthRes.healthCheckResults[key]) warn++;
+            } else {
+              if (!healthRes.healthCheckResults[key]) crit++;
+            }
+          }
+          if (crit > 0) healthStatus = 'critical';
+          else if (warn > 0) healthStatus = 'warning';
+          else healthStatus = 'healthy';
+        }
+      } catch (healthErr: any) {
+        console.warn('Initial health check failed during deployment:', healthErr.message);
+      }
+    }
+
     // Save metadata in database with all configuration records
     const instance = await db.instance.create({
       data: {
@@ -1241,6 +1418,11 @@ JobService.registerWorker('instance.deploy', async (job) => {
         password,
         status: 'running',
         type,
+        lastHealthCheckAt: new Date(),
+        lastHealthStatus: healthStatus,
+        lastHealthCheckDetails: healthDetails,
+        guestType: guestProfile.guestType,
+        linuxDistribution: guestProfile.distribution,
         vmConfig: type !== 'LXC' ? {
           create: {
             cpuThreads: vmConfig?.cpuThreads || 1,
@@ -1297,6 +1479,15 @@ JobService.registerWorker('instance.deploy', async (job) => {
     // Notify of creation and deployment completion
     await NotificationService.notify(job.data.userId || null, 'instance.created', { instance: name, instanceId: instance.id });
     await NotificationService.notify(job.data.userId || null, 'deployment.completed', { instance: name, instanceId: instance.id });
+
+    // Create initial HealthEvent timeline entry
+    await db.healthEvent.create({
+      data: {
+        instanceId: instance.id,
+        status: healthStatus === 'healthy' ? 'Healthy' : (healthStatus === 'warning' ? 'Warning' : 'Critical'),
+        message: `Deployment validation complete. VM status initialized as ${healthStatus.toUpperCase()}`
+      }
+    });
 
     TaskService.updateTask(taskId, {
       status: 'completed',

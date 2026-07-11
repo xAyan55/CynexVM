@@ -106,6 +106,76 @@ export const InstanceDetails: React.FC = () => {
     { name: 'Alpine 3.19 Standard', path: 'images:alpine/3.19' }
   ];
 
+  // Diagnostics & Host health metrics
+  const [diagnostics, setDiagnostics] = useState<any | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [healthHistory, setHealthHistory] = useState<any[]>([]);
+  const [nodeDiagnostics, setNodeDiagnostics] = useState<any | null>(null);
+  const [nodeDiagnosticsLoading, setNodeDiagnosticsLoading] = useState(false);
+  const [repairingConsole, setRepairingConsole] = useState(false);
+
+  const fetchDiagnostics = async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const res = await fetch(`/api/v1/instances/${id}/health`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setDiagnostics(data);
+      }
+    } catch (_) {}
+    setDiagnosticsLoading(false);
+  };
+
+  const fetchHealthHistory = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const res = await fetch(`/api/v1/instances/${id}/health-history`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setHealthHistory(data);
+      }
+    } catch (_) {}
+  };
+
+  const fetchNodeDiagnostics = async (nodeId: string) => {
+    setNodeDiagnosticsLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const res = await fetch(`/api/v1/nodes/${nodeId}/diagnostics`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setNodeDiagnostics(data);
+      }
+    } catch (_) {}
+    setNodeDiagnosticsLoading(false);
+  };
+
+  const handleRepairConsole = async () => {
+    setRepairingConsole(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/repair-console`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert('Console repair process completed successfully!');
+        fetchDiagnostics();
+        fetchHealthHistory();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to repair console');
+      }
+    } catch (_) {
+      alert('Failed to repair console');
+    }
+    setRepairingConsole(false);
+  };
+
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRootPassword) return;
@@ -165,6 +235,14 @@ export const InstanceDetails: React.FC = () => {
   useEffect(() => {
     fetchInstanceDetails();
   }, [id]);
+
+  useEffect(() => {
+    if (activeTab === 'diagnostics' && instance) {
+      fetchDiagnostics();
+      fetchHealthHistory();
+      fetchNodeDiagnostics(instance.nodeId);
+    }
+  }, [activeTab, instance?.id]);
 
   // Live Socket metrics feed
   useEffect(() => {
@@ -475,6 +553,7 @@ export const InstanceDetails: React.FC = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Activity },
+    { id: 'diagnostics', label: 'Diagnostics', icon: Shield },
     { id: 'console', label: 'Console', icon: TermIcon },
     { id: 'files', label: 'Files', icon: Folder },
     { id: 'network', label: 'Networking', icon: Globe },
@@ -736,6 +815,185 @@ export const InstanceDetails: React.FC = () => {
               Waiting for live metrics from container... Make sure the container is running.
             </div>
           )}
+        </div>
+      )}
+
+      {/* DIAGNOSTICS TAB */}
+      {activeTab === 'diagnostics' && (
+        <div className="space-y-6 text-neutral-800 dark:text-neutral-200">
+          {/* Top Panel: Summary & Repair */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 flex flex-col justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-neutral-800 dark:text-white mb-2">VM Diagnostics Summary</h3>
+                <p className="text-neutral-500 dark:text-neutral-400 text-xs leading-relaxed">
+                  CynexVM monitors the active guest state continuously. If your serial console, ssh daemon, or virtualization interfaces fail, use the repair tool below to automatically restore serial getty service configurations.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={fetchDiagnostics}
+                  disabled={diagnosticsLoading}
+                  className="px-4 py-2 bg-white/5 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-800 dark:text-white rounded-xl text-xs font-semibold transition"
+                >
+                  {diagnosticsLoading ? 'Running checks...' : 'Rerun Diagnostics'}
+                </button>
+                {instance.guestType === 'Linux' && (
+                  <button
+                    onClick={handleRepairConsole}
+                    disabled={repairingConsole}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
+                  >
+                    {repairingConsole ? 'Repairing console...' : 'Repair Serial Console'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Status Cards */}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+              <h4 className="text-xs font-semibold uppercase text-neutral-500">Live Status Details</h4>
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <span className="block text-neutral-500 uppercase text-[9px] mb-0.5">Guest Type</span>
+                  <span className="text-neutral-800 dark:text-white font-medium">{instance.guestType} ({instance.linuxDistribution})</span>
+                </div>
+                <div>
+                  <span className="block text-neutral-500 uppercase text-[9px] mb-0.5">Boot Diagnostics</span>
+                  <span className={`font-semibold ${diagnostics?.boot?.status === 'Healthy' ? 'text-emerald-500' : 'text-amber-500'}`}>
+                    {diagnostics?.boot?.status || 'Unknown'}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-neutral-500 uppercase text-[9px] mb-0.5">SSH latency</span>
+                  <span className="text-neutral-800 dark:text-white font-medium">
+                    {diagnostics?.ssh?.reachable ? `${diagnostics.ssh.latency}ms` : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-neutral-500 uppercase text-[9px] mb-0.5">Console Mode</span>
+                  <span className="text-neutral-800 dark:text-white font-medium">{diagnostics?.console?.type || 'serial'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Lists */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* VM Health Checklist */}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">VM Health Checklist</h3>
+              <div className="space-y-2.5">
+                {diagnostics?.healthCheckResults ? (
+                  Object.entries(diagnostics.healthCheckResults).map(([key, val]: any) => (
+                    <div key={key} className="flex items-center justify-between text-xs py-1 border-b border-neutral-200 dark:border-white/5">
+                      <span className="capitalize text-neutral-500 dark:text-neutral-400 font-mono">{key.replace(/_/g, ' ')}</span>
+                      <span className={`font-bold ${val ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {val ? '✓ Pass' : '✗ Fail'}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-neutral-500 py-6 text-xs">Run diagnostics to load checklist.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Guest Agent Capabilities & SSH */}
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+                <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Guest Agent Details</h3>
+                <div className="text-xs space-y-2">
+                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
+                    <span className="text-neutral-500 dark:text-neutral-400">Agent Status</span>
+                    <span className={`font-semibold capitalize ${diagnostics?.guestAgent?.status === 'connected' ? 'text-emerald-500' : 'text-neutral-500'}`}>
+                      {diagnostics?.guestAgent?.status || 'Unknown'}
+                    </span>
+                  </div>
+                  {diagnostics?.guestAgent?.status === 'connected' && (
+                    <>
+                      <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
+                        <span className="text-neutral-500 dark:text-neutral-400">Version</span>
+                        <span className="text-neutral-800 dark:text-white font-mono">{diagnostics.guestAgent.version}</span>
+                      </div>
+                      <div>
+                        <span className="block text-neutral-500 dark:text-neutral-400 mb-1.5">Capabilities</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {diagnostics.guestAgent.capabilities?.map((c: string) => (
+                            <span key={c} className="bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-white/5 text-[9px] px-2 py-0.5 rounded text-neutral-600 dark:text-neutral-300 font-mono">
+                              ✓ {c}
+                            </span>
+                          )) || 'None'}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* SSH Diagnostics */}
+              <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+                <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">SSH Server Status</h3>
+                <div className="text-xs space-y-2">
+                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
+                    <span className="text-neutral-500 dark:text-neutral-400">Reachable</span>
+                    <span className={`font-semibold ${diagnostics?.ssh?.reachable ? 'text-emerald-500' : 'text-neutral-500'}`}>
+                      {diagnostics?.ssh?.reachable ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  {diagnostics?.ssh?.reachable && (
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500 dark:text-neutral-400">Daemon Banner</span>
+                      <span className="text-neutral-700 dark:text-neutral-300 font-mono text-[10px] truncate max-w-[150px]">{diagnostics.ssh.banner}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Health History Timeline */}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Health Event History</h3>
+              <div className="space-y-4 overflow-y-auto max-h-[300px] pr-1">
+                {healthHistory.length > 0 ? (
+                  healthHistory.map((evt) => (
+                    <div key={evt.id} className="relative pl-4 border-l-2 border-neutral-300 dark:border-neutral-700/50 space-y-1 py-0.5">
+                      <span className={`absolute -left-1.5 top-1.5 w-2.5 h-2.5 rounded-full ${
+                        evt.status === 'Healthy' ? 'bg-emerald-500' :
+                        evt.status === 'Warning' ? 'bg-amber-500' : 'bg-rose-500'
+                      }`} />
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-semibold text-neutral-800 dark:text-white">{evt.status}</span>
+                        <span className="text-neutral-500">{new Date(evt.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-normal">{evt.message}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-neutral-500 py-6 text-xs">No recent health shifts.</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Node Diagnostics (Host Health) */}
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+            <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Hypervisor Host Node Diagnostics</h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {nodeDiagnostics ? (
+                Object.entries(nodeDiagnostics).map(([key, val]: any) => (
+                  <div key={key} className="p-3 bg-neutral-100 dark:bg-neutral-900/50 border border-neutral-200 dark:border-white/5 rounded-xl text-center space-y-1">
+                    <span className="block text-[9px] uppercase text-neutral-500 tracking-wider font-semibold">{key.replace(/_/g, ' ')}</span>
+                    <span className={`block text-xs font-bold ${val ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {val ? '✓ Active' : '✗ Missing'}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-5 text-center text-neutral-500 text-xs py-4">Loading node diagnostic parameters...</div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

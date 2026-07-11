@@ -30,6 +30,8 @@ export interface VirtualizationProvider {
   powerState(node: any, instance: any): Promise<string>;
   information(node: any, instance: any): Promise<any>;
   statistics(node: any, instance: any): Promise<any>;
+  healthCheck?(node: any, instance: any): Promise<any>;
+  repairConsole?(node: any, instance: any): Promise<void>;
 }
 
 import { LXCProvider } from './lxcProvider';

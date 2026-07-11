@@ -247,4 +247,73 @@ router.get('/:id/validate', authenticate, requirePermission('node.read'), async 
   }
 });
 
+/**
+ * @route   GET /api/v1/nodes/:id/diagnostics
+ * @desc    Run hypervisor capability checks (Intel/AMD virt flags, KVM, bridge, tools)
+ */
+router.get('/:id/diagnostics', authenticate, requirePermission('node.read'), async (req, res) => {
+  const { NodeClient } = require('../services/virtualization/nodeClient');
+  try {
+    const node = await db.node.findUnique({ where: { id: req.params.id } });
+    if (!node) return res.status(404).json({ error: 'Node not found' });
+
+    const checks: any = {
+      cpu_virtualization: false,
+      kvm: false,
+      libvirt: false,
+      ovmf: false,
+      storage_pool: false,
+      bridge: false,
+      dhcp_dns: false,
+      virt_customize: false,
+      qemu_img: false,
+      virsh: false
+    };
+
+    // 1. CPU Virtualization
+    const cpuVirt = await NodeClient.executeCommand(node.id, "egrep -c '(vmx|svm)' /proc/cpuinfo 2>/dev/null || echo 0");
+    checks.cpu_virtualization = parseInt(cpuVirt.stdout || '0', 10) > 0;
+
+    // 2. KVM Device
+    const kvmDev = await NodeClient.executeCommand(node.id, "test -c /dev/kvm && test -w /dev/kvm && echo yes || echo no");
+    checks.kvm = kvmDev.stdout.includes('yes');
+
+    // 3. Libvirt Service
+    const libvirtSvc = await NodeClient.executeCommand(node.id, "systemctl is-active libvirtd 2>/dev/null || echo inactive");
+    checks.libvirt = libvirtSvc.stdout.trim() === 'active';
+
+    // 4. OVMF UEFI Firmware
+    const ovmfFiles = await NodeClient.executeCommand(node.id, "ls /usr/share/OVMF/OVMF_CODE.fd /usr/share/qemu/OVMF.fd 2>/dev/null | wc -l");
+    checks.ovmf = parseInt(ovmfFiles.stdout || '0', 10) > 0;
+
+    // 5. Default Storage Pool
+    const poolInfo = await NodeClient.executeCommand(node.id, "virsh pool-info default 2>/dev/null && echo yes || echo no");
+    checks.storage_pool = poolInfo.stdout.includes('yes');
+
+    // 6. Bridge Interface
+    const bridgeInfo = await NodeClient.executeCommand(node.id, "ip link show lxdbr0 2>/dev/null || ip link show virbr0 2>/dev/null || echo no");
+    checks.bridge = !bridgeInfo.stdout.includes('no') && bridgeInfo.stdout.trim().length > 0;
+
+    // 7. DHCP/DNS Service
+    const dhcpInfo = await NodeClient.executeCommand(node.id, "systemctl is-active dnsmasq 2>/dev/null || systemctl is-active systemd-resolved 2>/dev/null || echo inactive");
+    checks.dhcp_dns = dhcpInfo.stdout.trim() === 'active';
+
+    // 8. virt-customize
+    const virtCustomize = await NodeClient.executeCommand(node.id, "command -v virt-customize && echo yes || echo no");
+    checks.virt_customize = virtCustomize.stdout.includes('yes');
+
+    // 9. qemu-img
+    const qemuImg = await NodeClient.executeCommand(node.id, "command -v qemu-img && echo yes || echo no");
+    checks.qemu_img = qemuImg.stdout.includes('yes');
+
+    // 10. virsh
+    const virsh = await NodeClient.executeCommand(node.id, "command -v virsh && echo yes || echo no");
+    checks.virsh = virsh.stdout.includes('yes');
+
+    return res.status(200).json(checks);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to run node diagnostics' });
+  }
+});
+
 export default router;
