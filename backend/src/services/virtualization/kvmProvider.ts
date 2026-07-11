@@ -127,6 +127,12 @@ export class KVMProvider implements VirtualizationProvider {
 
         const scriptContent = `
 #!/bin/bash
+echo -e "nameserver 8.8.8.8\\nnameserver 1.1.1.1" > /etc/resolv.conf
+if [ -f /etc/systemd/resolved.conf ]; then
+  sed -i "s/#DNS=/DNS=8.8.8.8 1.1.1.1/g" /etc/systemd/resolved.conf
+  sed -i "s/DNS=.*/DNS=8.8.8.8 1.1.1.1/g" /etc/systemd/resolved.conf
+  systemctl restart systemd-resolved || true
+fi
 if [ -f /etc/default/grub ]; then
   if ! grep -q "console=ttyS0" /etc/default/grub; then
     sed -i 's/\\(${grubLinePattern}=".*\\)"/\\1 console=tty0 console=ttyS0,115200n8"/' /etc/default/grub
@@ -957,6 +963,12 @@ function modifyCloudInit(userData: string, dist: string): string {
       'update-grub'
     ];
   }
+
+  const dnsCmds = [
+    'echo -e "nameserver 8.8.8.8\\nnameserver 1.1.1.1" > /etc/resolv.conf',
+    'if [ -f /etc/systemd/resolved.conf ]; then sed -i "s/#DNS=/DNS=8.8.8.8 1.1.1.1/g" /etc/systemd/resolved.conf; sed -i "s/DNS=.*/DNS=8.8.8.8 1.1.1.1/g" /etc/systemd/resolved.conf; systemctl restart systemd-resolved || true; fi'
+  ];
+  runcmds = [...runcmds, ...dnsCmds];
 
   // 1. Insert bootcmd
   let bootcmdIndex = lines.findIndex(l => isRootKey(l, 'bootcmd'));
