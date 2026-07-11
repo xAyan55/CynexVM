@@ -20,11 +20,15 @@ export class KVMProvider implements VirtualizationProvider {
     
     // If template / cloud image is specified, copy it as base, else create empty qcow2
     if (data.osTemplate && data.osTemplate.includes(':')) {
-      const templateName = data.osTemplate.split(':').pop();
+      // Sanitize template name: replace slashes to avoid broken paths
+      const templateName = (data.osTemplate.split(':').pop() || 'ubuntu-22-04').replace(/\//g, '-');
       const templatePath = `/var/lib/libvirt/images/templates/${templateName}.qcow2`;
       
+      // Ensure template directory exists
+      await NodeClient.executeCommand(node.id, `mkdir -p /var/lib/libvirt/images/templates`);
+      
       // Auto download if template doesn't exist on host
-      const checkTemplate = await NodeClient.executeCommand(node.id, `ls ${templatePath}`);
+      const checkTemplate = await NodeClient.executeCommand(node.id, `ls ${templatePath} 2>/dev/null`);
       if (checkTemplate.exitCode !== 0) {
         let downloadUrl = `https://cloud-images.ubuntu.com/minimal/releases/jammy/release/ubuntu-22.04-minimal-cloudimg-amd64.img`;
         if (templateName?.includes('debian')) {
@@ -32,11 +36,17 @@ export class KVMProvider implements VirtualizationProvider {
         } else if (templateName?.includes('alpine')) {
           downloadUrl = `https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-virt-3.19.0-x86_64.iso`;
         }
-        await NodeClient.executeCommand(node.id, `curl -sSL -o ${templatePath} ${downloadUrl}`);
+        const dl = await NodeClient.executeCommand(node.id, `curl -sSL -o ${templatePath} ${downloadUrl}`);
+        if (dl.exitCode !== 0) {
+          throw new Error(`Failed to download cloud image: ${dl.stderr}`);
+        }
       }
       
       // Copy template to primary disk
-      await NodeClient.executeCommand(node.id, `cp ${templatePath} ${diskPath}`);
+      const cpRes = await NodeClient.executeCommand(node.id, `cp ${templatePath} ${diskPath}`);
+      if (cpRes.exitCode !== 0) {
+        throw new Error(`Failed to copy template: ${cpRes.stderr}`);
+      }
       await NodeClient.executeCommand(node.id, `qemu-img resize ${diskPath} ${storageGb}G`);
     } else {
       // Create empty disk
