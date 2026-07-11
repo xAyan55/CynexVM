@@ -14,10 +14,13 @@ export class XmlBuilder {
 
     // Boot Loader (BIOS vs UEFI)
     let loaderXml = '';
-    if (vmConfig?.uefi) {
+    if (vmConfig?.uefi && vmConfig?.firmware) {
+      const codePath = vmConfig.firmware.codePath || '/usr/share/OVMF/OVMF_CODE.fd';
+      const varsPath = vmConfig.firmware.varsPath || '/usr/share/OVMF/OVMF_VARS.fd';
+      const nvramPath = vmConfig.firmware.nvramPath || `/var/lib/libvirt/qemu/nvram/${name}_VARS.fd`;
       loaderXml = `
-    <loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE.fd</loader>
-    <nvram>/var/lib/libvirt/qemu/nvram/${name}_VARS.fd</nvram>
+    <loader readonly='yes' type='pflash'>${codePath}</loader>
+    <nvram>${nvramPath}</nvram>
       `;
     }
 

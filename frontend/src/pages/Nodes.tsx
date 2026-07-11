@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Trash2, Pencil, Cpu, HardDrive, Clipboard, Check } from 'lucide-react';
+import { Server, Trash2, Pencil, Cpu, HardDrive, Clipboard, Check, Shield, ShieldAlert, Activity } from 'lucide-react';
 
 interface Node {
   id: string;
@@ -23,6 +23,27 @@ export const Nodes: React.FC = () => {
   const [configPayload, setConfigPayload] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validatingNode, setValidatingNode] = useState<string | null>(null);
+  const [validationResults, setValidationResults] = useState<{
+    status: string;
+    checks: { name: string; status: string; message: string }[];
+    firmware: any;
+  } | null>(null);
+
+  const handleValidateNode = async (nodeId: string) => {
+    setValidatingNode(nodeId);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/nodes/${nodeId}/validate`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setValidationResults(data);
+      }
+    } catch (_) {}
+    setValidatingNode(null);
+  };
 
   // Form states
   const [name, setName] = useState('');
@@ -207,6 +228,14 @@ export const Nodes: React.FC = () => {
                     </span>
                   </td>
                   <td className="p-3 text-right flex items-center justify-end gap-2">
+                    <button 
+                      onClick={() => handleValidateNode(n.id)}
+                      disabled={validatingNode === n.id}
+                      className="text-neutral-400 hover:text-emerald-400 transition disabled:opacity-50"
+                      title="Validate node"
+                    >
+                      {validatingNode === n.id ? <Activity size={14} className="animate-spin" /> : <Shield size={14} />}
+                    </button>
                     <button 
                       onClick={() => setEditNode(n)}
                       className="text-neutral-400 hover:text-white transition"
@@ -395,6 +424,79 @@ export const Nodes: React.FC = () => {
                 onClick={() => setConfigPayload(null)}
                 className="px-4 py-2 bg-white hover:bg-neutral-200 text-neutral-900 rounded-xl font-semibold transition"
               >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Results Modal */}
+      {validationResults && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] border border-neutral-800 rounded-2xl p-6 max-w-xl w-full space-y-4 text-xs text-left max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                {validationResults.status === 'passed' ? (
+                  <Shield size={16} className="text-emerald-400" />
+                ) : (
+                  <ShieldAlert size={16} className="text-amber-400" />
+                )}
+                Node Validation {validationResults.status === 'passed' ? 'Passed' : 'Warnings'}
+              </h3>
+              <button onClick={() => setValidationResults(null)}
+                className="text-neutral-400 hover:text-white">
+                &times;
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {validationResults.checks.map((check, i) => (
+                <div key={i} className={`p-3 rounded-xl border ${
+                  check.status === 'pass' ? 'bg-emerald-500/5 border-emerald-500/20' :
+                  check.status === 'fail' ? 'bg-red-500/5 border-red-500/20' :
+                  'bg-amber-500/5 border-amber-500/20'
+                }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                      check.status === 'pass' ? 'bg-emerald-500/10 text-emerald-400' :
+                      check.status === 'fail' ? 'bg-red-500/10 text-red-400' :
+                      'bg-amber-500/10 text-amber-400'
+                    }`}>{check.status}</span>
+                    <span className="text-white font-medium">{check.name}</span>
+                  </div>
+                  <p className="text-neutral-400 ml-1">{check.message}</p>
+                </div>
+              ))}
+            </div>
+
+            {validationResults.firmware && (
+              <div className="p-3 bg-neutral-800/50 rounded-xl border border-neutral-700">
+                <h4 className="text-white font-medium mb-2">Firmware Details</h4>
+                <div className="space-y-1 text-neutral-400">
+                  <p>UEFI: {validationResults.firmware.uefi?.available ? (
+                    <span className="text-emerald-400">Available ({validationResults.firmware.uefi.codePath})</span>
+                  ) : <span className="text-amber-400">Not installed</span>}</p>
+                  <p>SecureBoot: {validationResults.firmware.secureBoot?.available ? (
+                    <span className="text-emerald-400">Available</span>
+                  ) : <span className="text-neutral-500">Not available</span>}</p>
+                  <p>SeaBIOS: <span className="text-emerald-400">Available (built-in)</span></p>
+                  <p>QEMU: {validationResults.firmware.qemuInstalled ? (
+                    <span className="text-emerald-400">Installed</span>
+                  ) : <span className="text-red-400">Not installed</span>}</p>
+                  <p>libvirt: {validationResults.firmware.libvirtInstalled ? (
+                    <span className="text-emerald-400">Available</span>
+                  ) : <span className="text-red-400">Not available</span>}</p>
+                  {validationResults.firmware.packageHint && (
+                    <p className="text-amber-400 mt-2">Hint: {validationResults.firmware.packageHint}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button onClick={() => setValidationResults(null)}
+                className="px-4 py-2 bg-white hover:bg-neutral-200 text-neutral-900 rounded-xl font-semibold transition">
                 Close
               </button>
             </div>

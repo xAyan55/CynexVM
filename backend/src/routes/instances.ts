@@ -10,6 +10,7 @@ import { TaskService } from '../services/taskService';
 import { JobService } from '../services/jobService';
 import { NotificationService } from '../services/notification/notificationService';
 import { VirtualizationProviderFactory } from '../services/virtualization/provider';
+import { FirmwareDetector } from '../services/virtualization/firmwareDetector';
 
 const router = Router();
 
@@ -1065,6 +1066,17 @@ JobService.registerWorker('instance.deploy', async (job) => {
       currentStep: 'Defining hardware descriptors and allocating storage...',
       logMessage: 'Orchestrating hypervisor setup instructions...'
     });
+
+    // Validate firmware for KVM/QEMU deployments
+    if (type === 'KVM' || type === 'QEMU') {
+      TaskService.updateTask(taskId, {
+        progress: 40,
+        currentStage: 'Validating',
+        currentStep: 'Checking firmware availability...',
+        logMessage: 'Detecting available UEFI/BIOS firmware on node...'
+      });
+      await FirmwareDetector.validateFirmware(nodeId, !!vmConfig?.uefi, vmConfig?.autoFallback !== false);
+    }
 
     // Deploy container or VM via provider
     await provider.create(node, { vmid, name, cpuCores, memoryMb, storageGb, hostname, password, osTemplate }, job.data);

@@ -1,6 +1,7 @@
 import { VirtualizationProvider } from './provider';
 import { NodeClient } from './nodeClient';
 import { XmlBuilder } from './xmlBuilder';
+import { FirmwareDetector } from './firmwareDetector';
 
 export class KVMProvider implements VirtualizationProvider {
   private getDomainName(vmid: number): string {
@@ -13,6 +14,19 @@ export class KVMProvider implements VirtualizationProvider {
     const storageGb = data.storageGb || instance.storageGb || 10;
     const memoryMb = data.memoryMb || instance.memoryMb || 512;
     const cpuCores = data.cpuCores || instance.cpuCores || 1;
+
+    // Validate firmware before proceeding
+    const vmConfig = data.vmConfig || {};
+    const autoFallback = vmConfig.autoFallback !== false;
+    const firmware = await FirmwareDetector.validateFirmware(node.id, !!vmConfig.uefi, autoFallback);
+    if (firmware.firmwareType === 'uefi') {
+      vmConfig.firmware = {
+        codePath: firmware.codePath,
+        varsPath: firmware.varsPath,
+        nvramPath: `/var/lib/libvirt/qemu/nvram/${domainName}_VARS.fd`,
+      };
+    }
+
 
     // 1. Create storage directories and blank QCOW2 disk
     await NodeClient.executeCommand(node.id, `mkdir -p /var/lib/libvirt/images/templates`);
@@ -80,7 +94,7 @@ export class KVMProvider implements VirtualizationProvider {
     // 3. Compile Domain XML
     const xml = XmlBuilder.build(
       { vmid, name: instance.name, id: instance.id, cpuCores, memoryMb, storageGb },
-      data.vmConfig || {},
+      vmConfig,
       disks,
       data.networkInterfaces || [{ bridge: 'lxdbr0', macAddress: '52:54:00:12:34:56', nicModel: 'virtio' }],
       data.pciDevices || []
@@ -104,7 +118,7 @@ export class KVMProvider implements VirtualizationProvider {
     }
 
     // Wait for Guest Agent connection (if guestAgent is true)
-    if (data.vmConfig?.guestAgent) {
+    if (vmConfig?.guestAgent) {
       for (let i = 0; i < 15; i++) {
         const pingAgent = await NodeClient.executeCommand(
           node.id,

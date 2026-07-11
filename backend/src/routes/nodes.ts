@@ -3,6 +3,7 @@ import { db } from '../db';
 import { authenticate, requirePermission } from '../middleware/auth';
 import { CryptoService } from '../services/cryptoService';
 import { LxdService } from '../services/lxdService';
+import { FirmwareDetector } from '../services/virtualization/firmwareDetector';
 import crypto from 'crypto';
 
 const router = Router();
@@ -227,6 +228,22 @@ router.post('/:id/test', authenticate, requirePermission('node.write'), async (r
     }
   } catch (err: any) {
     return res.status(500).json({ error: 'Verification script execution failed' });
+  }
+});
+
+/**
+ * @route   GET /api/v1/nodes/:id/validate
+ * @desc    Runs comprehensive host validation including firmware detection
+ */
+router.get('/:id/validate', authenticate, requirePermission('node.read'), async (req, res) => {
+  try {
+    const node = await db.node.findUnique({ where: { id: req.params.id } });
+    if (!node) return res.status(404).json({ error: 'Node not found' });
+
+    const validation = await FirmwareDetector.validateNode(node.id);
+    return res.status(200).json(validation);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Node validation failed: ' + err.message });
   }
 });
 
