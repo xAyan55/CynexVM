@@ -56,11 +56,12 @@ export const Sidebar: React.FC = () => {
             }`
           }
         >
-          <img 
-            className="h-8 w-8 rounded-xl border border-neutral-700/10 shrink-0" 
-            src={`https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(user?.username || 'user')}`} 
-            alt="User avatar" 
-          />
+          <div 
+            className="h-8 w-8 rounded-xl border border-neutral-700/10 shrink-0 flex items-center justify-center text-xs font-bold text-white"
+            style={{ backgroundColor: `hsl(${(user?.username || '').split('').reduce((a,c)=>a+c.charCodeAt(0),0) % 360 || 200}, 55%, 45%)` }}
+          >
+            {(user?.username || 'U')[0].toUpperCase()}
+          </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-neutral-700 dark:text-white truncate group-hover:text-neutral-900 dark:group-hover:text-white transition-colors">
               <span id="sidebar-username">{user?.username}</span>

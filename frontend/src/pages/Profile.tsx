@@ -202,12 +202,13 @@ export const Profile: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-neutral-200/30 dark:border-white/5">
         <div className="flex items-center gap-4">
           <div className="relative">
-            <img 
+            <div 
               id="avatar-preview"
-              src={`https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(user.username)}`}
-              alt="Avatar"
-              className="h-16 w-16 rounded-2xl border-2 border-blue-500/20 bg-neutral-900 object-cover p-0.5 shadow-lg shadow-blue-500/10" 
-            />
+              className="h-16 w-16 rounded-2xl border-2 border-blue-500/20 flex items-center justify-center text-xl font-bold text-white shadow-lg shadow-blue-500/10"
+              style={{ backgroundColor: `hsl(${user.username.split('').reduce((a,c)=>a+c.charCodeAt(0),0) % 360 || 200}, 55%, 45%)` }}
+            >
+              {user.username[0].toUpperCase()}
+            </div>
             <span className="absolute -bottom-1 -right-1 flex h-4 w-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[#09090b]" />
           </div>
           <div>
