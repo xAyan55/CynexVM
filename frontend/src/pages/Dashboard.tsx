@@ -371,6 +371,8 @@ export const Dashboard: React.FC = () => {
                       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-md shrink-0 ${
                         inst.status === 'running' 
                           ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30' 
+                          : ['rebooting', 'starting'].includes(inst.status)
+                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20'
                           : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20'
                       }`}>
                         <span className="relative flex h-1.5 w-1.5">
@@ -379,11 +381,16 @@ export const Dashboard: React.FC = () => {
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                             </>
+                          ) : ['rebooting', 'starting'].includes(inst.status) ? (
+                            <>
+                              <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                            </>
                           ) : (
                             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
                           )}
                         </span>
-                        {inst.status === 'running' ? 'Running' : 'Stopped'}
+                        {inst.status === 'running' ? 'Running' : ['rebooting', 'starting'].includes(inst.status) ? 'Starting' : 'Stopped'}
                       </span>
                     </div>
 
@@ -451,9 +458,11 @@ export const Dashboard: React.FC = () => {
                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md ${
                           inst.status === 'running' 
                             ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' 
+                            : ['rebooting', 'starting'].includes(inst.status)
+                            ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400'
                             : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400'
                         }`}>
-                          {inst.status === 'running' ? 'Running' : 'Stopped'}
+                          {inst.status === 'running' ? 'Running' : ['rebooting', 'starting'].includes(inst.status) ? 'Starting' : 'Stopped'}
                         </span>
                       </td>
                       <td className="px-3 py-3.5 text-neutral-500 font-mono">#{inst.vmid}</td>

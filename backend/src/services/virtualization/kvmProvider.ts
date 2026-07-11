@@ -325,6 +325,37 @@ export class KVMProvider implements VirtualizationProvider {
     // VNC proxy stream is established directly on WebSocket Server upgrade endpoint
   }
 
+  private async checkGuestAgent(nodeId: string, domainName: string): Promise<boolean> {
+    try {
+      const res = await NodeClient.executeCommand(nodeId, `virsh qemu-agent-command ${domainName} '{"execute":"guest-ping"}' 2>/dev/null`);
+      return res.exitCode === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private resolveBootStatus(
+    virshState: string,
+    instanceStatus: string,
+    agentResponds: boolean | null,
+    updatedAt: Date | string | undefined
+  ): string {
+    if (virshState !== 'running') return virshState;
+    if (!['rebooting', 'starting'].includes(instanceStatus)) return virshState;
+
+    // If agent check was performed and it responds, VM is fully booted
+    if (agentResponds === true) return 'running';
+
+    // Agent didn't respond (or wasn't checked) — use grace period
+    if (updatedAt) {
+      const bootTime = new Date(updatedAt).getTime();
+      const elapsed = Date.now() - bootTime;
+      if (elapsed > 60_000) return 'running';
+    }
+
+    return 'starting';
+  }
+
   public async metrics(node: any, instance: any): Promise<any> {
     const domainName = this.getDomainName(instance.vmid);
     try {
@@ -346,9 +377,20 @@ export class KVMProvider implements VirtualizationProvider {
       const stateMatch = info.match(/State:\s+(.*)/);
       const uptimeMatch = info.match(/CPU time:\s+(\d+)/);
 
+      const virshState = stateMatch ? stateMatch[1].trim().toLowerCase() : 'stopped';
+
       const memoryTotal = memTotalMatch ? parseInt(memTotalMatch[1], 10) * 1024 : instance.memoryMb * 1024 * 1024;
       const memoryUnused = memUnusedMatch ? parseInt(memUnusedMatch[1], 10) * 1024 : 0;
       const memoryUsed = memoryTotal - memoryUnused;
+
+      // Determine guest boot status
+      let resolvedStatus: string;
+      if (['rebooting', 'starting'].includes(instance.status) && virshState === 'running') {
+        const agentOk = await this.checkGuestAgent(node.id, domainName);
+        resolvedStatus = this.resolveBootStatus(virshState, instance.status, agentOk, instance.updatedAt);
+      } else {
+        resolvedStatus = virshState;
+      }
 
       return {
         cpu: cpuTimeMatch ? parseFloat(cpuTimeMatch[1]) / 1e9 : 0.05,
@@ -360,7 +402,7 @@ export class KVMProvider implements VirtualizationProvider {
         netin: netRxBytesMatch ? parseInt(netRxBytesMatch[1], 10) : 0,
         netout: netTxBytesMatch ? parseInt(netTxBytesMatch[1], 10) : 0,
         uptime: uptimeMatch ? parseInt(uptimeMatch[1], 10) : 0,
-        status: stateMatch ? stateMatch[1].trim().toLowerCase() : 'stopped',
+        status: resolvedStatus,
         load: [0.15, 0.1, 0.05],
         processes: 25,
       };

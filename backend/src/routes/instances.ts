@@ -92,7 +92,7 @@ router.get('/:id', authenticate, requirePermission('instance.read'), async (req:
       const provider = VirtualizationProviderFactory.getProvider(instance.type);
       const metrics = await provider.metrics(instance.node, instance);
       
-      if (metrics.status && metrics.status !== instance.status) {
+      if (metrics.status && metrics.status !== instance.status && !['rebooting', 'starting'].includes(metrics.status)) {
         await db.instance.update({
           where: { id: instance.id },
           data: { status: metrics.status }
@@ -390,6 +390,12 @@ router.post('/:id/reboot', authenticate, requirePermission('instance.reboot'), a
     try {
       const provider = VirtualizationProviderFactory.getProvider(instance.type);
       await provider.restart(instance.node, instance);
+
+      // Set transitional state — metrics() will resolve to starting/running
+      await db.instance.update({
+        where: { id: instance.id },
+        data: { status: 'rebooting' }
+      });
 
       // Trigger reboot notification
       await NotificationService.notify(instance.userId || null, 'instance.rebooted', { instance: instance.name, instanceId: instance.id });
@@ -734,6 +740,12 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
             await NodeClient.executeCommand(instance.nodeId, `rm -rf /tmp/cloudinit-reset-${instance.vmid}`);
           }
         }
+
+        // Mark as rebooting — metrics() will transition to starting/running via guest agent check
+        await db.instance.update({
+          where: { id: instance.id },
+          data: { status: 'rebooting' }
+        });
       }
 
       // Update password in local database

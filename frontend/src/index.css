@@ -2,10 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CSS custom properties for dynamic theming (set via AuthContext) */
+:root {
+  --color-pageBg: #0f0f0f;
+  --color-secondaryBg: #111111;
+  --color-cardBg: #1a1a1a;
+  --color-inputBg: #141414;
+  --color-accentBlue: #e5e5e5;
+  --color-accentHover: #ffffff;
+  --color-borderSubtle: #2a2a2a;
+  --color-borderLessSubtle: rgba(255, 255, 255, 0.05);
+  --color-textResting: #a3a3a3;
+  --color-textStrong: #f0f0f0;
+  --color-textMuted: #666666;
+}
+
 /* Base overrides matching custom dark theme */
 html, body {
-  background-color: #0f0f0f;
-  color: #a3a3a3;
+  background-color: var(--color-pageBg);
+  color: var(--color-textResting);
   font-family: 'General Sans', sans-serif;
   margin: 0;
   padding: 0;
@@ -13,21 +28,21 @@ html, body {
 
 /* Page titles */
 h1, h2, h3, h4, h5, h6 {
-  color: #f0f0f0;
+  color: var(--color-textStrong);
 }
 
 /* Custom Card panel */
 .al-card {
-  background-color: #1a1a1a;
-  border: 1px solid #2a2a2a;
+  background-color: var(--color-cardBg);
+  border: 1px solid var(--color-borderSubtle);
   border-radius: 16px;
 }
 
 /* Flat Inputs */
 .al-input {
-  background-color: #141414;
+  background-color: var(--color-inputBg);
   border: 1px solid #333333;
-  color: #f0f0f0;
+  color: var(--color-textStrong);
   border-radius: 10px;
   padding: 10px 14px;
   font-size: 13px;
@@ -37,7 +52,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .al-input:focus {
   border-color: rgba(255, 255, 255, 0.45);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 3px var(--color-borderLessSubtle);
 }
 
 .al-input::placeholder {
@@ -67,12 +82,12 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Dark mode primary (default) - white bg with dark text */
 .al-btn-primary {
-  background-color: #ffffff;
-  color: #0f0f0f;
+  background-color: var(--color-accentHover);
+  color: var(--color-pageBg);
 }
 
 .al-btn-primary:hover:not(:disabled) {
-  background-color: #e5e5e5;
+  background-color: var(--color-accentBlue);
 }
 
 /* Light mode primary - black bg with white text */
@@ -87,15 +102,15 @@ html:not(.dark) .al-btn-primary:hover:not(:disabled) {
 
 /* Dark mode secondary - dark card bg with borders */
 .al-btn-secondary {
-  background-color: #1a1a1a;
-  border-color: #2a2a2a;
-  color: #a3a3a3;
+  background-color: var(--color-cardBg);
+  border-color: var(--color-borderSubtle);
+  color: var(--color-textResting);
 }
 
 .al-btn-secondary:hover:not(:disabled) {
   background-color: #252525;
   border-color: #333333;
-  color: #f0f0f0;
+  color: var(--color-textStrong);
 }
 
 /* Light mode secondary */
@@ -134,7 +149,7 @@ html, body, * {
 /* Active background animation simulation */
 .vt-active {
   background: rgba(255, 255, 255, 0.06);
-  color: #f0f0f0;
+  color: var(--color-textStrong);
   box-shadow: 0 1px 3px rgba(255, 255, 255, 0.05);
 }
 
@@ -175,8 +190,8 @@ html, body, * {
   flex-direction: column;
   justify-content: center;
   padding: 48px 40px;
-  background-color: #1a1a1a;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: var(--color-cardBg);
+  border-right: 1px solid var(--color-borderLessSubtle);
   position: relative;
   z-index: 1;
 }
@@ -207,10 +222,10 @@ html, body, * {
   width: 100%;
   padding: 10px 14px;
   border-radius: 10px;
-  background-color: #141414;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: var(--color-inputBg);
+  border: 1px solid var(--color-borderLessSubtle);
   font-size: 14px;
-  color: #f0f0f0;
+  color: var(--color-textStrong);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
   box-sizing: border-box;
@@ -225,7 +240,7 @@ html, body, * {
   display: block;
   font-size: 13px;
   font-weight: 500;
-  color: #a3a3a3;
+  color: var(--color-textResting);
   margin-bottom: 6px;
 }
 
@@ -234,8 +249,8 @@ html, body, * {
   width: 100%;
   padding: 11px;
   border-radius: 10px;
-  background-color: #ffffff;
-  color: #0f0f0f;
+  background-color: var(--color-accentHover);
+  color: var(--color-pageBg);
   font-size: 14px;
   font-weight: 500;
   border: none;
@@ -248,7 +263,7 @@ html, body, * {
 }
 
 .auth-submit:hover:not(:disabled) {
-  background-color: #e5e5e5;
+  background-color: var(--color-accentBlue);
 }
 
 .auth-submit:disabled {
@@ -271,7 +286,7 @@ html, body, * {
   border: none;
   cursor: pointer;
   padding: 0;
-  color: #a3a3a3;
+  color: var(--color-textResting);
   display: flex;
   align-items: center;
   justify-content: center;

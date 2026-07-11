@@ -9,6 +9,10 @@ export interface SystemSettings {
   login_image_url?: string;
   register_image_url?: string;
   registration_enabled?: string;
+  color_bg_primary?: string;
+  color_bg_card?: string;
+  color_accent?: string;
+  color_text_primary?: string;
 }
 
 interface User {
@@ -157,10 +161,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    const root = document.documentElement;
+
     // Dynamic tab document title update
     if (settings.panel_name) {
       document.title = settings.panel_name;
     }
+
     // Dynamic browser favicon update
     if (settings.favicon_url) {
       const link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
@@ -171,6 +178,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         newLink.rel = 'shortcut icon';
         newLink.href = settings.favicon_url;
         document.head.appendChild(newLink);
+      }
+    }
+
+    // Theme color customization — map settings to CSS custom properties
+    const colorMap: Record<string, string> = {
+      color_bg_primary: '--color-pageBg',
+      color_bg_card: '--color-cardBg',
+      color_accent: '--color-accentBlue',
+      color_text_primary: '--color-textStrong',
+    };
+
+    for (const [settingKey, cssVar] of Object.entries(colorMap)) {
+      const value = (settings as any)[settingKey];
+      if (value && /^#[0-9a-fA-F]{6}$/.test(value)) {
+        root.style.setProperty(cssVar, value);
       }
     }
   }, [settings]);

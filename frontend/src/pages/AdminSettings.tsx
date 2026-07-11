@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Globe, Shield, Settings as SetIcon, Image, Save } from 'lucide-react';
+import { Mail, Globe, Shield, Settings as SetIcon, Image, Save, Palette } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+
+const COLOR_PRESETS: { name: string; colors: string[] }[] = [
+  { name: 'Lavender Gray', colors: ['#D3D5FD', '#929AAB', '#474A56', '#0B0B0D'] },
+  { name: 'Nightfall',     colors: ['#34374C', '#2C2E3E', '#EE2B47', '#F6F6F6'] },
+  { name: 'Powder Blue',   colors: ['#6A759B', '#21273D', '#B9D4F1', '#F1F6F8'] },
+  { name: 'Teal Dark',     colors: ['#343434', '#055E68', '#62A388', '#B9D2D2'] },
+];
+
+
 
 export const AdminSettings: React.FC = () => {
   const { fetchSettings: updateGlobalSettings } = useAuth();
@@ -27,6 +36,12 @@ export const AdminSettings: React.FC = () => {
   // Discord Configuration
   const [discordId, setDiscordId] = useState('1192837482910283');
   const [discordSecret, setDiscordSecret] = useState('');
+
+  // Theme Colors
+  const [colorBgPrimary, setColorBgPrimary] = useState('#0f0f0f');
+  const [colorBgCard, setColorBgCard] = useState('#1a1a1a');
+  const [colorAccent, setColorAccent] = useState('#e5e5e5');
+  const [colorTextPrimary, setColorTextPrimary] = useState('#f0f0f0');
 
   // Webhooks
   const [webhooks, setWebhooks] = useState<any[]>([]);
@@ -68,6 +83,12 @@ export const AdminSettings: React.FC = () => {
         // Discord
         if (data.discord_client_id) setDiscordId(data.discord_client_id);
         if (data.discord_client_secret) setDiscordSecret(data.discord_client_secret);
+
+        // Theme Colors
+        if (data.color_bg_primary) setColorBgPrimary(data.color_bg_primary);
+        if (data.color_bg_card) setColorBgCard(data.color_bg_card);
+        if (data.color_accent) setColorAccent(data.color_accent);
+        if (data.color_text_primary) setColorTextPrimary(data.color_text_primary);
 
         // Webhooks
         if (data.webhooks_json) {
@@ -111,6 +132,10 @@ export const AdminSettings: React.FC = () => {
           smtp_pass: smtpPass,
           discord_client_id: discordId,
           discord_client_secret: discordSecret,
+          color_bg_primary: colorBgPrimary,
+          color_bg_card: colorBgCard,
+          color_accent: colorAccent,
+          color_text_primary: colorTextPrimary,
           webhooks_json: JSON.stringify(webhooks)
         })
       });
@@ -341,7 +366,77 @@ export const AdminSettings: React.FC = () => {
 
             </div>
 
-            {/* ROW 3: Developer Webhooks Endpoint (Full Width across bottom) */}
+            {/* ROW 3: Theme Color Customization (Full Width) */}
+            <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm w-full">
+              <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
+                <Palette size={16} /> Theme Color Customization
+              </h2>
+              <div className="px-5 py-5 space-y-5">
+                {/* Color pickers */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {[
+                    { label: 'Background', value: colorBgPrimary, set: setColorBgPrimary, var: '--color-pageBg' },
+                    { label: 'Card / Surface', value: colorBgCard, set: setColorBgCard, var: '--color-cardBg' },
+                    { label: 'Accent', value: colorAccent, set: setColorAccent, var: '--color-accentBlue' },
+                    { label: 'Text', value: colorTextPrimary, set: setColorTextPrimary, var: '--color-textStrong' },
+                  ].map((c) => (
+                    <div key={c.label} className="flex flex-col items-center gap-2 p-3 bg-neutral-900/20 dark:bg-black/20 rounded-xl">
+                      <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-neutral-700/30" style={{ backgroundColor: c.value }}>
+                        <input
+                          type="color"
+                          value={c.value}
+                          onChange={(e) => {
+                            c.set(e.target.value);
+                            document.documentElement.style.setProperty(c.var, e.target.value);
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          title={c.label}
+                        />
+                      </div>
+                      <label className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider">{c.label}</label>
+                      <span className="text-[10px] font-mono text-neutral-500">{c.value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Presets */}
+                <div>
+                  <p className="text-[11px] text-neutral-400 font-medium mb-3">Preset Palettes</p>
+                  <div className="flex flex-wrap gap-3">
+                    {COLOR_PRESETS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setColorBgPrimary(preset.colors[0]);
+                          setColorBgCard(preset.colors[1]);
+                          setColorAccent(preset.colors[2]);
+                          setColorTextPrimary(preset.colors[3]);
+                          document.documentElement.style.setProperty('--color-pageBg', preset.colors[0]);
+                          document.documentElement.style.setProperty('--color-cardBg', preset.colors[1]);
+                          document.documentElement.style.setProperty('--color-accentBlue', preset.colors[2]);
+                          document.documentElement.style.setProperty('--color-textStrong', preset.colors[3]);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-neutral-700/30 hover:border-neutral-500/50 transition bg-neutral-900/10 dark:bg-black/10"
+                      >
+                        <div className="flex -space-x-1">
+                          {preset.colors.map((hex, i) => (
+                            <div key={i} className="w-4 h-4 rounded-full border border-white/10" style={{ backgroundColor: hex }} />
+                          ))}
+                        </div>
+                        <span className="text-[11px] text-neutral-300 font-medium">{preset.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-neutral-500 leading-relaxed">
+                  Changes preview instantly. Click <strong>Save Configuration</strong> to persist.
+                </p>
+              </div>
+            </div>
+
+            {/* ROW 4: Developer Webhooks Endpoint (Full Width across bottom) */}
             <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm w-full">
               <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
                 <Shield size={16} /> Developer Webhooks Endpoint

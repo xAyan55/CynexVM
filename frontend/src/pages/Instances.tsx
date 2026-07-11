@@ -166,7 +166,7 @@ export const Instances: React.FC = () => {
                   <button 
                     onClick={() => handlePowerAction(inst.id, 'start')} 
                     className="p-1.5 hover:bg-emerald-500/10 rounded text-gray-400 hover:text-emerald-400"
-                    disabled={inst.status === 'running'}
+                    disabled={inst.status === 'running' || ['starting', 'rebooting'].includes(inst.status)}
                   >
                     <Play size={14} />
                   </button>

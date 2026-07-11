@@ -501,6 +501,8 @@ export const InstanceDetails: React.FC = () => {
               <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${
                 instance.status === 'running' 
                   ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' 
+                  : ['rebooting', 'starting'].includes(instance.status)
+                  ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
                   : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
               }`}>{instance.status}</span>
             </div>
@@ -513,7 +515,7 @@ export const InstanceDetails: React.FC = () => {
           <button 
             onClick={() => handlePowerAction('start')} 
             className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
-            disabled={instance.status === 'running' || actionLoading === 'start'}
+            disabled={instance.status === 'running' || ['starting', 'rebooting'].includes(instance.status) || actionLoading === 'start'}
           >
             <Play size={13} /> {actionLoading === 'start' ? 'Starting...' : 'Start'}
           </button>
@@ -652,10 +654,16 @@ export const InstanceDetails: React.FC = () => {
             {/* Status */}
             <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-neutral-200 dark:border-neutral-800/30">
               <div className="flex items-center gap-2 mb-2">
-                {instance.status === 'running' ? <Wifi size={14} className="text-emerald-400" /> : <WifiOff size={14} className="text-red-400" />}
+                {instance.status === 'running' ? <Wifi size={14} className="text-emerald-400" /> : 
+                 ['rebooting', 'starting'].includes(instance.status) ? <span className="w-3.5 h-3.5 rounded-full bg-amber-400 animate-pulse" /> :
+                 <WifiOff size={14} className="text-red-400" />}
                 <span className="text-[10px] text-neutral-500 uppercase font-semibold">Status</span>
               </div>
-              <p className={`text-lg font-semibold capitalize ${instance.status === 'running' ? 'text-emerald-400' : 'text-red-400'}`}>
+              <p className={`text-lg font-semibold capitalize ${
+                instance.status === 'running' ? 'text-emerald-400' :
+                ['rebooting', 'starting'].includes(instance.status) ? 'text-amber-400' :
+                'text-red-400'
+              }`}>
                 {instance.status}
               </p>
             </div>

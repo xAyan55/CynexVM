@@ -7,17 +7,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        pageBg: '#0f0f0f',         // Base background canvas
-        secondaryBg: '#111111',    // Sidebar background
-        cardBg: '#1a1a1a',         // Card panel background
-        inputBg: '#141414',        // Input background
-        accentBlue: '#e5e5e5',     // Active brand accent (neutral light)
-        accentHover: '#ffffff',    // Active brand accent hover
-        borderSubtle: '#2a2a2a',   // Standard border line
-        borderLessSubtle: 'rgba(255, 255, 255, 0.05)',
-        textResting: '#a3a3a3',    // Default body text
-        textStrong: '#f0f0f0',     // Bold headings and nav active text
-        textMuted: '#666666',      // Subdued metadata
+        pageBg: 'var(--color-pageBg, #0f0f0f)',                 // Base background canvas
+        secondaryBg: 'var(--color-secondaryBg, #111111)',       // Sidebar background
+        cardBg: 'var(--color-cardBg, #1a1a1a)',                 // Card panel background
+        inputBg: 'var(--color-inputBg, #141414)',               // Input background
+        accentBlue: 'var(--color-accentBlue, #e5e5e5)',         // Active brand accent
+        accentHover: 'var(--color-accentHover, #ffffff)',       // Active brand accent hover
+        borderSubtle: 'var(--color-borderSubtle, #2a2a2a)',     // Standard border line
+        borderLessSubtle: 'var(--color-borderLessSubtle, rgba(255, 255, 255, 0.05))',
+        textResting: 'var(--color-textResting, #a3a3a3)',       // Default body text
+        textStrong: 'var(--color-textStrong, #f0f0f0)',         // Bold headings and nav active text
+        textMuted: 'var(--color-textMuted, #666666)',           // Subdued metadata
         blue: {
           50: '#f5f5f5',
           100: '#e5e5e5',
