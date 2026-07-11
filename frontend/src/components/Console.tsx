@@ -140,10 +140,20 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
 
   const reconnectAllSessions = useCallback(() => {
     if (!socket) return;
-    // Query backend for existing sessions. The onSessions handler
-    // will either reconnect to existing sessions or create fresh ones.
-    socket.emit('terminal.sessions');
-  }, [socket]);
+    // Create or attach to the backend session for this VM.
+    // The ConsoleSessionManager reuses existing virsh console / lxc exec PTY.
+    const token = getToken();
+    for (const [tabId, inst] of xtermInstances.current) {
+      if (!inst.sessionId) {
+        socket.emit('terminal.create', {
+          instanceId,
+          token,
+          cols: inst.term.cols,
+          rows: inst.term.rows,
+        });
+      }
+    }
+  }, [socket, instanceId]);
 
   const createTerminal = useCallback((tabId: string, container: HTMLDivElement) => {
     const term = new Terminal({
@@ -318,9 +328,9 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     socket.on('disconnect', onDisconnect);
     socket.on('connect', onConnect);
 
-    // Check for existing sessions on backend (e.g., after SPA navigation)
-    // reconnectAllSessions will attach to existing sessions or create fresh ones
-    socket.emit('terminal.sessions');
+    // Create or attach to backend session. ConsoleSessionManager reuses
+    // existing virsh console / lxc exec PTY for this VM.
+    connectSession('main');
 
     return () => {
       // Unregister socket handlers FIRST so no more events arrive during unmount

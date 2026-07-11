@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 import path from 'path';
 import { CONFIG } from './config';
 import { apiLimiter } from './middleware/rateLimit';
-import { terminalManager } from './services/terminalService';
+import { consoleManager } from './services/terminalService';
 
 // Routes imports
 import authRoutes from './routes/auth';
@@ -280,14 +280,14 @@ io.on('connection', (socket: Socket) => {
   console.log(`[Socket] Client connected: ${socket.id}`);
   let metricsInterval: NodeJS.Timeout | null = null;
 
-  // 1. Enterprise Terminal via node-pty
+  // 1. Enterprise Terminal via node-pty (hypervisor-aware)
   socket.on('terminal.create', async (params: {
     instanceId: string;
     token?: string;
     cols?: number;
     rows?: number;
   }) => {
-    const result = await terminalManager.createSession(
+    const result = await consoleManager.createOrAttach(
       socket,
       params.instanceId,
       params.token,
@@ -299,34 +299,34 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
-  // All session-scoped dispatch is handled via sessionId
-  socket.on('terminal.input', (params: { sessionId: string; data: string }) => {
-    const ok = terminalManager.write(params.sessionId, params.data);
+  // Input goes to the PTY for the socket's attached session
+  socket.on('terminal.input', (params: { data: string }) => {
+    const domain = consoleManager.getDomainForSocket(socket.id);
+    if (!domain) { socket.emit('terminal.error', { message: 'Session not found or closed' }); return; }
+    const ok = consoleManager.write(domain, params.data);
     if (!ok) socket.emit('terminal.error', { message: 'Session not found or closed' });
   });
 
-  socket.on('terminal.resize', (params: { sessionId: string; cols: number; rows: number }) => {
-    const ok = terminalManager.resize(params.sessionId, params.cols, params.rows);
-    if (!ok) socket.emit('terminal.error', { message: 'Session not found for resize' });
+  socket.on('terminal.resize', (params: { cols: number; rows: number }) => {
+    const domain = consoleManager.getDomainForSocket(socket.id);
+    if (!domain) { socket.emit('terminal.error', { message: 'Session not found for resize' }); return; }
+    consoleManager.resize(domain, params.cols, params.rows);
   });
 
-  socket.on('terminal.close', (params?: { sessionId?: string }) => {
-    if (params?.sessionId) {
-      terminalManager.destroySession(params.sessionId);
-    } else {
-      terminalManager.destroySocketSessions(socket.id);
-    }
+  // Close detaches the socket; session persists if other sockets remain
+  socket.on('terminal.close', () => {
+    consoleManager.detachSocket(socket.id);
   });
 
   // List active sessions for this socket
   socket.on('terminal.sessions', () => {
-    const sessions = terminalManager.listSessions(socket.id);
+    const sessions = consoleManager.listSessions(socket.id);
     socket.emit('terminal.sessions', sessions);
   });
 
   // Get info about a specific session
   socket.on('terminal.session.info', (params: { sessionId: string }) => {
-    const info = terminalManager.getSession(params.sessionId);
+    const info = consoleManager.getSession(params.sessionId);
     if (info) {
       socket.emit('terminal.session.info', info);
     } else {
@@ -334,11 +334,11 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
-  // Reconnect: migrate session from old socket to new socket
+  // Reconnect: migrate socket to an existing session
   socket.on('terminal.reconnect', (params: { sessionId: string }) => {
-    const ok = terminalManager.migrateSession(socket, params.sessionId);
+    const ok = consoleManager.migrateSession(socket, params.sessionId);
     if (ok) {
-      const info = terminalManager.getSession(params.sessionId);
+      const info = consoleManager.getSession(params.sessionId);
       socket.emit('terminal.ready', info);
     } else {
       socket.emit('terminal.error', { message: 'Cannot reconnect: session not found or unauthorized' });
@@ -435,8 +435,9 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('disconnect', () => {
     if (metricsInterval) clearInterval(metricsInterval);
-    // Don't destroy sessions — they persist for reconnect via terminal.reconnect.
-    // The session timeout (30 min) cleans up truly abandoned sessions.
+    // Detach socket — session persists for 60s in case of reconnect,
+    // then auto-cleans up if no sockets reattach.
+    consoleManager.detachSocket(socket.id);
     console.log(`[Socket] Client disconnected: ${socket.id}`);
   });
 });
