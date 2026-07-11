@@ -135,7 +135,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           } : undefined,
           cloudInit: type === 'KVM' ? {
             enabled: true,
-            userData: `#cloud-config\npassword: ${password}\nchpasswd: { expire: False }\nssh_pwauth: True\n`,
+            userData: `#cloud-config\nssh_pwauth: True\ndisable_root: false\nchpasswd:\n  list: |\n    root:${password}\n  expire: False\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl start qemu-guest-agent || true\n  - systemctl enable qemu-guest-agent || true\n`,
             metaData: `instance-id: cynex-${vmid}\nlocal-hostname: ${hostname || name}\n`
           } : undefined,
         })

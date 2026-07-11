@@ -647,8 +647,37 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
         );
       } else if (instance.type === 'KVM' || instance.type === 'QEMU') {
         const { NodeClient } = require('../services/virtualization/nodeClient');
+
+        // First verify qemu-guest-agent is responding
+        const pingRes = await NodeClient.executeCommand(
+          instance.nodeId,
+          `virsh qemu-agent-command ${containerName} '{"execute":"guest-ping"}'`
+        );
+        if (pingRes.exitCode !== 0) {
+          return res.status(400).json({
+            error: 'QEMU guest agent is not responding. Ensure qemu-guest-agent is installed and running inside the VM (try: sudo apt install qemu-guest-agent && sudo systemctl start qemu-guest-agent). Alternatively, login via the serial console as root and run: echo "root:' + password + '" | sudo chpasswd'
+          });
+        }
+
         const cmd = `virsh qemu-agent-command ${containerName} '{"execute":"guest-exec","arguments":{"path":"/bin/sh","arg":["-c","echo \\"root:${password}\\" | chpasswd"],"capture-output":true}}'`;
-        await NodeClient.executeCommand(instance.nodeId, cmd);
+        const execRes = await NodeClient.executeCommand(instance.nodeId, cmd);
+
+        // Parse guest-exec result to check for errors
+        try {
+          const parsed = JSON.parse(execRes.stdout);
+          const pid = parsed?.return?.pid;
+          if (pid) {
+            // Wait a moment then check exit status
+            await new Promise(r => setTimeout(r, 1000));
+            const statusCmd = `virsh qemu-agent-command ${containerName} '{"execute":"guest-exec-status","arguments":{"pid":${pid}}}'`;
+            const statusRes = await NodeClient.executeCommand(instance.nodeId, statusCmd);
+            const status = JSON.parse(statusRes.stdout);
+            if (status?.return?.exitcode !== 0 && status?.return?.exitcode !== undefined) {
+              const errOut = status?.return?.['err-data'] ? Buffer.from(status.return['err-data'], 'base64').toString() : 'unknown error';
+              return res.status(400).json({ error: 'Failed to set password inside guest: ' + errOut });
+            }
+          }
+        } catch (_) {}
       }
 
       // Update password in local database
@@ -659,7 +688,7 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
 
       return res.status(200).json({ message: 'Root password updated successfully.' });
     } catch (err: any) {
-      return res.status(400).json({ error: 'Failed to update password inside VPS. Make sure guest agent or container is active.' });
+      return res.status(400).json({ error: 'Failed to update password inside VPS: ' + err.message });
     }
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to update root password' });
