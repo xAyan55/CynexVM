@@ -162,7 +162,7 @@ setup_database() {
   # Seed admin user if database is empty
   CPU_CORES=$(nproc)
   MEM_MB=$(free -m | awk '/^Mem:/{print $2}')
-  STORAGE_GB=$(df -BG / | awk 'NR==2{print $4}' | tr -d 'G')
+  STORAGE_GB=$(df -BG / | awk 'NR==2{print $2}' | tr -d 'G')
   SUPPORTS_QEMU=$([ -e /dev/kvm ] && echo true || echo false)
 
   node -e "

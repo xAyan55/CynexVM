@@ -149,7 +149,20 @@ router.put('/:id', authenticate, requirePermission('node.write'), async (req, re
 
     const updatedNode = await db.node.update({
       where: { id: req.params.id },
-      data: updateData
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        hostname: true,
+        apiUrl: true,
+        cpuCores: true,
+        memoryMb: true,
+        storageGb: true,
+        status: true,
+        version: true,
+        clusterName: true,
+        maintenanceMode: true,
+      }
     });
 
     return res.status(200).json(updatedNode);

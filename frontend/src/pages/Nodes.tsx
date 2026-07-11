@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Trash2, Cpu, HardDrive, Clipboard, Check } from 'lucide-react';
+import { Server, Trash2, Pencil, Cpu, HardDrive, Clipboard, Check } from 'lucide-react';
 
 interface Node {
   id: string;
@@ -18,6 +18,7 @@ export const Nodes: React.FC = () => {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editNode, setEditNode] = useState<Node | null>(null);
   const [configPayload, setConfigPayload] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +89,37 @@ export const Nodes: React.FC = () => {
     }
   };
 
+  const handleEditNode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editNode) return;
+    setError(null);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const form = new FormData(e.target as HTMLFormElement);
+      const res = await fetch(`/api/v1/nodes/${editNode.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          cpuCores: parseInt(form.get('cpuCores') as string, 10),
+          memoryMb: parseInt(form.get('memoryMb') as string, 10),
+          storageGb: parseInt(form.get('storageGb') as string, 10),
+        })
+      });
+      if (res.ok) {
+        setEditNode(null);
+        fetchNodes();
+      } else {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to update node');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
   const handleDeleteNode = async (nodeId: string) => {
     if (nodeId === 'default-lxd-node') {
       alert('The pre-installed local node cannot be deleted.');
@@ -144,7 +176,7 @@ export const Nodes: React.FC = () => {
                 <th className="p-3">Description</th>
                 <th className="p-3">Specs</th>
                 <th className="p-3">Status</th>
-                <th className="p-3 text-right">Delete</th>
+                <th className="p-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
@@ -172,7 +204,14 @@ export const Nodes: React.FC = () => {
                       {n.id === 'default-lxd-node' ? 'online' : n.status || 'offline'}
                     </span>
                   </td>
-                  <td className="p-3 text-right">
+                  <td className="p-3 text-right flex items-center justify-end gap-2">
+                    <button 
+                      onClick={() => setEditNode(n)}
+                      className="text-neutral-400 hover:text-white transition"
+                      title="Edit specs"
+                    >
+                      <Pencil size={14} />
+                    </button>
                     {n.id !== 'default-lxd-node' && (
                       <button 
                         onClick={() => handleDeleteNode(n.id)}
@@ -268,6 +307,49 @@ export const Nodes: React.FC = () => {
               </button>
               <button type="submit" className="px-4 py-2 al-btn-primary rounded-xl font-semibold">
                 Register
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Edit Node Modal */}
+      {editNode && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <form onSubmit={handleEditNode} className="bg-[#1a1a1a] border border-neutral-800 rounded-2xl p-6 max-w-md w-full space-y-4 text-xs text-left">
+            <h3 className="text-sm font-semibold text-white">Edit Node: {editNode.name}</h3>
+            
+            {error && (
+              <p className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl">
+                {error}
+              </p>
+            )}
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-neutral-400 mb-1">Total Cores</label>
+                <input name="cpuCores" type="number" className="w-full al-input" 
+                  defaultValue={editNode.cpuCores} required />
+              </div>
+              <div>
+                <label className="block text-neutral-400 mb-1">Memory (MB)</label>
+                <input name="memoryMb" type="number" className="w-full al-input" 
+                  defaultValue={editNode.memoryMb} required />
+              </div>
+              <div>
+                <label className="block text-neutral-400 mb-1">Storage (GB)</label>
+                <input name="storageGb" type="number" className="w-full al-input" 
+                  defaultValue={editNode.storageGb} required />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => { setEditNode(null); setError(null); }}
+                className="px-4 py-2 border border-neutral-700 text-neutral-300 rounded-xl hover:bg-neutral-800 transition">
+                Cancel
+              </button>
+              <button type="submit" className="px-4 py-2 al-btn-primary rounded-xl font-semibold">
+                Save
               </button>
             </div>
           </form>
