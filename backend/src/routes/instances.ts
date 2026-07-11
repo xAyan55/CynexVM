@@ -722,6 +722,7 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
 
         // === Tier 3: libguestfs offline disk modification ===
         if (!passwordChanged) {
+          let wasRunning = false;
           try {
             const checkVirt = await NodeClient.executeCommand(
               instance.nodeId,
@@ -732,7 +733,7 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
                 instance.nodeId,
                 `virsh domstate ${containerName}`
               );
-              const wasRunning = stateRes.stdout.trim() === 'running';
+              wasRunning = stateRes.stdout.trim() === 'running';
 
               if (wasRunning) {
                 await NodeClient.executeCommand(
@@ -744,7 +745,8 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
 
               const customizeRes = await NodeClient.executeCommand(
                 instance.nodeId,
-                `virt-customize -a ${diskPath} --root-password password:${password}`
+                `virt-customize -a ${diskPath} --root-password password:${password}`,
+                180000
               );
 
               if (customizeRes.exitCode === 0) {
@@ -752,19 +754,25 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
               } else {
                 const gfishRes = await NodeClient.executeCommand(
                   instance.nodeId,
-                  `guestfish -a ${diskPath} -i passwd-root '${password}'`
+                  `guestfish -a ${diskPath} -i passwd-root '${password}'`,
+                  180000
                 );
                 if (gfishRes.exitCode === 0) passwordChanged = true;
               }
-
-              if (wasRunning && passwordChanged) {
-                await NodeClient.executeCommand(
-                  instance.nodeId,
-                  `virsh start ${containerName}`
-                );
-              }
             }
           } catch (_) {}
+          // Kill any orphaned QEMU that might hold the disk lock
+          await NodeClient.executeCommand(
+            instance.nodeId,
+            `pkill -f "${containerName}_disk0" 2>/dev/null; true`
+          );
+          // Always restart VM if it was running before (regardless of success)
+          if (wasRunning) {
+            await NodeClient.executeCommand(
+              instance.nodeId,
+              `virsh start ${containerName} 2>/dev/null; true`
+            );
+          }
         }
 
         if (!passwordChanged) {

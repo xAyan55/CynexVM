@@ -38,7 +38,8 @@ export class NodeClient {
    */
   public static async executeCommand(
     nodeId: string | null,
-    cmd: string
+    cmd: string,
+    timeoutMs: number = 60000
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     let node: any = null;
     if (nodeId) {
@@ -48,7 +49,7 @@ export class NodeClient {
     if (!node || this.isLocal(node)) {
       // Local execution
       try {
-        const { stdout, stderr } = await execAsync(cmd);
+        const { stdout, stderr } = await execAsync(cmd, { timeout: timeoutMs });
         return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode: 0 };
       } catch (err: any) {
         return {
@@ -68,7 +69,7 @@ export class NodeClient {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          timeout: 60000,
+          timeout: timeoutMs,
         }
       );
       return res.data; // Expected { stdout, stderr, exitCode }
