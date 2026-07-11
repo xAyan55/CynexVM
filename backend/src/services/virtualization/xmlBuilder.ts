@@ -5,7 +5,7 @@ export class XmlBuilder {
   public static build(instance: any, vmConfig: any, disks: any[], nics: any[], pciDevices: any[], cloudInitData?: any): string {
     const vmid = instance.vmid;
     const name = `cynex-${vmid}`;
-    const uuid = vmConfig?.smbiosUuid || instance.id;
+    const uuid = vmConfig?.smbiosUuid || instance.id || require('crypto').randomUUID();
     const memoryKb = instance.memoryMb * 1024;
     const cores = vmConfig?.cpuCores || instance.cpuCores || 1;
     const threads = vmConfig?.cpuThreads || 1;
