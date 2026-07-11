@@ -22,9 +22,9 @@ banner() {
   echo ""
   echo -e "${CYAN}${BOLD}"
   echo "  ╔══════════════════════════════════════════════════╗"
-  echo "  ║            CynexVM Installer v2.0               ║"
+  echo "  ║            CynexVM Installer v2.0                ║"
   echo "  ║    Multi-Hypervisor Virtualization Platform      ║"
-  echo "  ║         LXC Containers + QEMU/KVM VMs           ║"
+  echo "  ║         LXC Containers + QEMU/KVM VMs            ║"
   echo "  ╚══════════════════════════════════════════════════╝"
   echo -e "${NC}"
 }
@@ -160,6 +160,11 @@ setup_database() {
   log "Database schema synchronized"
 
   # Seed admin user if database is empty
+  CPU_CORES=$(nproc)
+  MEM_MB=$(free -m | awk '/^Mem:/{print $2}')
+  STORAGE_GB=$(df -BG / | awk 'NR==2{print $4}' | tr -d 'G')
+  SUPPORTS_QEMU=$([ -e /dev/kvm ] && echo true || echo false)
+
   node -e "
     const { PrismaClient } = require('@prisma/client');
     const bcrypt = require('bcryptjs');
@@ -184,12 +189,12 @@ setup_database() {
             hostname: 'localhost',
             apiUrl: 'http://localhost:5050',
             apiToken: 'local-token',
-            cpuCores: $(nproc),
-            memoryMb: $(free -m | awk '/^Mem:/{print \$2}'),
-            storageGb: $(df -BG / | awk 'NR==2{print \$4}' | tr -d 'G'),
+            cpuCores: ${CPU_CORES},
+            memoryMb: ${MEM_MB},
+            storageGb: ${STORAGE_GB},
             status: 'online',
             supportsLxc: true,
-            supportsQemu: $([ -e /dev/kvm ] && echo true || echo false),
+            supportsQemu: ${SUPPORTS_QEMU},
           }
         });
 
@@ -292,7 +297,7 @@ print_summary() {
   echo ""
   echo -e "${GREEN}${BOLD}"
   echo "  ╔══════════════════════════════════════════════════╗"
-  echo "  ║        CynexVM Installation Complete!           ║"
+  echo "  ║        CynexVM Installation Complete!            ║"
   echo "  ╚══════════════════════════════════════════════════╝"
   echo -e "${NC}"
   echo -e "  ${BOLD}Panel URL:${NC}       http://${LOCAL_IP}"

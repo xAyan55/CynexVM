@@ -630,27 +630,7 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
 
     const containerName = `cynex-${instance.vmid}`;
     
-    // Execute chpasswd inside the container
-    const { LxdClient } = require('../services/lxd/lxdClient');
     try {
-      await LxdClient.request(
-        instance.nodeId,
-        `/1.0/instances/${containerName}/exec`,
-        'POST',
-        {
-          command: ['sh', '-c', `echo "root:${password}" | chpasswd`],
-          environment: {},
-          'wait-for-variables': true,
-          record: false
-        }
-      );
-      
-      // Update password in local database
-      await db.instance.update({
-        where: { id: instance.id },
-        data: { password }
-      });
-
       if (instance.type === 'LXC') {
         const { LxdClient } = require('../services/lxd/lxdClient');
         await LxdClient.request(
@@ -664,14 +644,20 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
             record: false
           }
         );
-      } else {
+      } else if (instance.type === 'KVM' || instance.type === 'QEMU') {
         const { NodeClient } = require('../services/virtualization/nodeClient');
         const cmd = `virsh qemu-agent-command ${containerName} '{"execute":"guest-exec","arguments":{"path":"/bin/sh","arg":["-c","echo \\"root:${password}\\" | chpasswd"],"capture-output":true}}'`;
         await NodeClient.executeCommand(instance.nodeId, cmd);
       }
 
+      // Update password in local database
+      await db.instance.update({
+        where: { id: instance.id },
+        data: { password }
+      });
+
       return res.status(200).json({ message: 'Root password updated successfully.' });
-    } catch (lxdErr: any) {
+    } catch (err: any) {
       return res.status(400).json({ error: 'Failed to update password inside VPS. Make sure guest agent or container is active.' });
     }
   } catch (err: any) {
