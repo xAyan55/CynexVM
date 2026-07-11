@@ -713,22 +713,40 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
 
         // --- Tier 3: cloud-init ISO re-injection + cold reboot ---
         if (!passwordChanged) {
-          const userData = `#cloud-config\nssh_pwauth: True\ndisable_root: false\nchpasswd:\n  list: |\n    root:${password}\n  expire: False\n`;
+          // First check if any ISO creation tool is available
+          const isoCheck = await NodeClient.executeCommand(
+            instance.nodeId,
+            `command -v genisoimage || command -v mkisofs || command -v xorrisofs || echo none`
+          );
+          const isoTool = isoCheck.stdout.trim().split('\n')[0];
+          if (!isoTool || isoTool === 'none') {
+            return res.status(400).json({
+              error: 'Cannot change root password: install genisoimage on this node (apt install genisoimage) or install qemu-guest-agent inside the VM.'
+            });
+          }
+
+          const userData = `#cloud-config\nssh_pwauth: True\ndisable_root: false\nchpasswd:\n  list: root:${password}\n  expire: False\n`;
           const metaData = `instance-id: ${containerName}-reset-${Date.now()}\nlocal-hostname: ${instance.hostname || instance.name}\n`;
 
           await NodeClient.executeCommand(instance.nodeId, `mkdir -p /tmp/cloudinit-reset-${instance.vmid}`);
-          await NodeClient.executeCommand(instance.nodeId, `echo "${Buffer.from(userData).toString('base64')}" | base64 -d > /tmp/cloudinit-reset-${instance.vmid}/user-data`);
-          await NodeClient.executeCommand(instance.nodeId, `echo "${Buffer.from(metaData).toString('base64')}" | base64 -d > /tmp/cloudinit-reset-${instance.vmid}/meta-data`);
+
+          const writeUser = await NodeClient.executeCommand(instance.nodeId, `echo "${Buffer.from(userData).toString('base64')}" | base64 -d > /tmp/cloudinit-reset-${instance.vmid}/user-data`);
+          if (writeUser.exitCode !== 0) throw new Error('Failed to write cloud-init user-data');
+
+          const writeMeta = await NodeClient.executeCommand(instance.nodeId, `echo "${Buffer.from(metaData).toString('base64')}" | base64 -d > /tmp/cloudinit-reset-${instance.vmid}/meta-data`);
+          if (writeMeta.exitCode !== 0) throw new Error('Failed to write cloud-init meta-data');
 
           const isoPath = `/var/lib/libvirt/images/${containerName}_reset.iso`;
-          await NodeClient.executeCommand(
+          const isoRes = await NodeClient.executeCommand(
             instance.nodeId,
-            `genisoimage -output ${isoPath} -volid cidata -joliet -rock /tmp/cloudinit-reset-${instance.vmid}/user-data /tmp/cloudinit-reset-${instance.vmid}/meta-data 2>/dev/null`
+            `${isoTool} -output ${isoPath} -volid cidata -joliet -rock /tmp/cloudinit-reset-${instance.vmid}/user-data /tmp/cloudinit-reset-${instance.vmid}/meta-data 2>&1`
           );
+          if (isoRes.exitCode !== 0) throw new Error('Failed to create cloud-init ISO: ' + isoRes.stderr);
 
-          // Use --live to hotplug immediately, --config for persistence
+          // Attach ISO — use --live to hotplug immediately, --config for persistence
           const attachFlag = hadAgent ? '--live --config' : '--config';
-          await NodeClient.executeCommand(instance.nodeId, `virsh attach-disk ${containerName} ${isoPath} sdb --device cdrom ${attachFlag} 2>/dev/null`);
+          const attachRes = await NodeClient.executeCommand(instance.nodeId, `virsh attach-disk ${containerName} ${isoPath} sdb --device cdrom ${attachFlag} 2>&1`);
+          if (attachRes.exitCode !== 0) throw new Error('Failed to attach cloud-init ISO: ' + attachRes.stderr);
 
           if (hadAgent) {
             // Agent works — ask it to clean cloud-init state so it re-runs on next boot
@@ -737,11 +755,15 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
             await NodeClient.executeCommand(instance.nodeId, `virsh qemu-agent-command ${containerName} '{"execute":"guest-shutdown","arguments":{"mode":"reboot"}}' 2>/dev/null`);
           } else {
             // No agent — force cold boot (destroy+start, not reboot) so the --config CDROM is picked up
-            await NodeClient.executeCommand(instance.nodeId, `virsh destroy ${containerName} 2>/dev/null; sleep 2; virsh start ${containerName} 2>/dev/null`);
+            const destroyRes = await NodeClient.executeCommand(instance.nodeId, `virsh destroy ${containerName} 2>&1`);
+            if (destroyRes.exitCode !== 0) throw new Error('Failed to stop VM for cloud-init boot: ' + destroyRes.stderr);
+            await new Promise(r => setTimeout(r, 2000));
+            const startRes = await NodeClient.executeCommand(instance.nodeId, `virsh start ${containerName} 2>&1`);
+            if (startRes.exitCode !== 0) throw new Error('Failed to start VM after cloud-init ISO attach: ' + startRes.stderr);
           }
 
           await NodeClient.executeCommand(instance.nodeId, `rm -rf /tmp/cloudinit-reset-${instance.vmid}`);
-          passwordChanged = true; // assume cloud-init will apply on next boot
+          passwordChanged = true;
         }
 
         if (!passwordChanged) {
