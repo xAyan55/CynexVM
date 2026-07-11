@@ -237,7 +237,7 @@ export class XmlBuilder {
 <domain type='kvm'>
   <name>${name}</name>
   <uuid>${uuid}</uuid>
-  <memory unit='KiB'>${memoryKb}</currentMemory>
+  <memory unit='KiB'>${memoryKb}</memory>
   <currentMemory unit='KiB'>${memoryKb}</currentMemory>
   <vcpu placement='static'>${totalVCpus}</vcpu>
   ${memoryBackingXml}

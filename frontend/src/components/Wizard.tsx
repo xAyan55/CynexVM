@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Server, User as UserIcon, FileText, Cpu, HardDrive, Globe, Keyboard, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Server, User as UserIcon, FileText, Cpu, HardDrive, Globe, Keyboard, CheckCircle, AlertCircle, RefreshCw, Terminal, Loader } from 'lucide-react';
 
 interface Node {
   id: string;
@@ -16,6 +16,15 @@ interface User {
   email: string;
 }
 
+interface DeployProgress {
+  status: string;
+  progress: number;
+  currentStage: string;
+  currentStep: string;
+  logs: { timestamp: string; level: string; message: string }[];
+  failedReason?: string;
+}
+
 interface WizardProps {
   onSuccess: () => void;
   onCancel: () => void;
@@ -25,7 +34,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   const [step, setStep] = useState(1);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  
+
   const [templates] = useState([
     { name: 'Ubuntu 22.04 LTS (Jammy)', path: 'images:ubuntu/22.04' },
     { name: 'Debian 12 Bookworm', path: 'images:debian/12' },
@@ -48,7 +57,10 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   const [password, setPassword] = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deployProgress, setDeployProgress] = useState<DeployProgress | null>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchNodes = async () => {
@@ -83,9 +95,18 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
     fetchUsers();
   }, []);
 
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [deployProgress?.logs]);
+
   const handleDeploy = async () => {
-    setLoading(true);
     setError(null);
+    setDeploying(true);
+    setDeployProgress({ status: 'queued', progress: 0, currentStage: 'Queued', currentStep: 'Queueing deployment...', logs: [] });
+    setLoading(true);
+
     try {
       const token = localStorage.getItem('accessToken');
       const res = await fetch('/api/v1/instances', {
@@ -120,16 +141,62 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
         })
       });
 
-      if (res.ok) {
-        onSuccess();
-      } else {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Deploy failed');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Deploy failed (HTTP ${res.status})`);
+      }
+
+      // Get taskId from 202 Accepted response
+      const data = await res.json();
+      const taskId = data.taskId;
+      if (!taskId) {
+        throw new Error('No task ID returned from server');
+      }
+
+      setDeployProgress(prev => prev ? { ...prev, status: 'running', currentStage: 'Deploying', currentStep: 'Monitoring deployment...' } : null);
+
+      // Poll task status
+      let completed = false;
+      while (!completed) {
+        await new Promise(r => setTimeout(r, 2000));
+
+        try {
+          const taskRes = await fetch(`/api/v1/instances/tasks/${taskId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!taskRes.ok) continue;
+
+          const task = await taskRes.json();
+          setDeployProgress({
+            status: task.status,
+            progress: task.progress || 0,
+            currentStage: task.currentStage || '',
+            currentStep: task.currentStep || '',
+            logs: (task.logs || []).slice(-50),
+            failedReason: task.failedReason
+          });
+
+          if (task.status === 'completed') {
+            completed = true;
+            setLoading(false);
+            setDeploying(false);
+            onSuccess();
+            return;
+          }
+
+          if (task.status === 'failed') {
+            completed = true;
+            setLoading(false);
+            setDeploying(false);
+            setError(task.failedReason || 'Deployment failed');
+            return;
+          }
+        } catch (_) {}
       }
     } catch (err: any) {
       setError(err.message);
-    } finally {
       setLoading(false);
+      setDeploying(false);
     }
   };
 
@@ -147,39 +214,103 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
 
   const selectedUser = users.find(u => u.id === selectedUserId);
 
+  const stageColors: Record<string, string> = {
+    queued: 'text-yellow-400',
+    validating: 'text-blue-400',
+    running: 'text-blue-400',
+    completed: 'text-emerald-400',
+    failed: 'text-red-400',
+    cancelled: 'text-gray-400',
+  };
+
   return (
     <div className="w-full max-w-4xl al-card overflow-hidden flex flex-col h-[75vh]">
-      {/* Header and Step Stepper indicator */}
+      {/* Header */}
       <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-white">Create VPS Wizard</h2>
-        <span className="text-xs text-gray-500">Step {step} of 9</span>
+        <span className="text-xs text-gray-500">{deploying ? 'Deploying...' : `Step ${step} of 9`}</span>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left timeline steps display */}
-        <div className="w-64 border-r border-borderSubtle bg-black/20 p-4 space-y-4 hidden md:block">
-          {stepsList.map(s => (
-            <div key={s.num} className={`flex items-center gap-3 ${step === s.num ? 'text-white' : 'text-gray-500'}`}>
-              <div className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs ${
-                step === s.num ? 'border-blue-500 bg-blue-600/10 text-blue-400' :
-                step > s.num ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5' : 'border-gray-800'
-              }`}>
-                {s.num}
+        {/* Left sidebar - hide during deployment */}
+        {!deploying && (
+          <div className="w-64 border-r border-borderSubtle bg-black/20 p-4 space-y-4 hidden md:block">
+            {stepsList.map(s => (
+              <div key={s.num} className={`flex items-center gap-3 ${step === s.num ? 'text-white' : 'text-gray-500'}`}>
+                <div className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs ${
+                  step === s.num ? 'border-blue-500 bg-blue-600/10 text-blue-400' :
+                  step > s.num ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5' : 'border-gray-800'
+                }`}>
+                  {s.num}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold">{s.title}</p>
+                  <p className="text-[10px] text-gray-500 truncate max-w-[150px]">{s.desc}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold">{s.title}</p>
-                <p className="text-[10px] text-gray-500 truncate max-w-[150px]">{s.desc}</p>
+            ))}
+          </div>
+        )}
+
+        {/* Right Content Body */}
+        <div className="flex-1 p-6 overflow-y-auto space-y-6">
+          {error && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-btn text-xs flex items-start gap-2">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* DEPLOYMENT PROGRESS VIEW */}
+          {deploying && deployProgress && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Loader size={16} className="animate-spin text-blue-400" />
+                <h3 className="text-sm font-semibold text-white">Deploying VPS</h3>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    deployProgress.status === 'failed' ? 'bg-red-500' :
+                    deployProgress.status === 'completed' ? 'bg-emerald-500' : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${Math.max(deployProgress.progress, 5)}%` }}
+                />
+              </div>
+
+              {/* Status row */}
+              <div className="flex items-center justify-between text-xs">
+                <span className={`font-semibold ${stageColors[deployProgress.status] || 'text-gray-300'}`}>
+                  {deployProgress.currentStage || deployProgress.status}
+                </span>
+                <span className="text-gray-500">{deployProgress.progress}%</span>
+              </div>
+
+              <p className="text-[11px] text-gray-400">{deployProgress.currentStep}</p>
+
+              {/* Live logs */}
+              <div className="bg-black/40 border border-borderSubtle rounded-btn p-3 h-40 overflow-y-auto font-mono text-[10px] leading-relaxed">
+                {deployProgress.logs.length === 0 && (
+                  <span className="text-gray-600">Waiting for deployment logs...</span>
+                )}
+                {deployProgress.logs.map((log, i) => (
+                  <div key={i} className={`${
+                    log.level === 'error' ? 'text-red-400' :
+                    log.level === 'warning' ? 'text-yellow-400' : 'text-gray-400'
+                  }`}>
+                    <span className="text-gray-600">{new Date(log.timestamp).toLocaleTimeString()}</span>{' '}
+                    {log.message}
+                  </div>
+                ))}
+                <div ref={logsEndRef} />
               </div>
             </div>
-          ))}
-        </div>
+          )}
 
-        {/* Right Content Body Viewport */}
-        <div className="flex-1 p-6 overflow-y-auto space-y-6">
-          {error && <p className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-btn text-xs">{error}</p>}
-
-          {/* STEP 1: Select Type */}
-          {step === 1 && (
+          {/* STEPS 1-8: unchanged form content */}
+          {!deploying && step === 1 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Select Instance Type</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -223,8 +354,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 2: Choose Node */}
-          {step === 2 && (
+          {!deploying && step === 2 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Select Hypervisor Node</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -258,8 +388,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 3: Assign Owner */}
-          {step === 3 && (
+          {!deploying && step === 3 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Assign owner for this VPS</h3>
               <div className="space-y-2">
@@ -283,8 +412,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 4: Choose Template */}
-          {step === 4 && (
+          {!deploying && step === 4 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Select OS Template / Cloud Image</h3>
               <div className="space-y-2">
@@ -306,8 +434,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 5: Resources */}
-          {step === 5 && (
+          {!deploying && step === 5 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Configure CPU and Memory</h3>
               <div className="space-y-4 text-xs">
@@ -333,8 +460,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 6: Disk Storage */}
-          {step === 6 && (
+          {!deploying && step === 6 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Virtual Disk Allocation</h3>
               <div>
@@ -349,8 +475,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 7: Network bridge and IP */}
-          {step === 7 && (
+          {!deploying && step === 7 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Configure Networking Interfaces</h3>
               <div className="space-y-3 text-xs">
@@ -374,8 +499,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 8: Hostname, VMID & Password */}
-          {step === 8 && (
+          {!deploying && step === 8 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Configure Virtual Machine Credentials</h3>
               <div className="space-y-3 text-xs">
@@ -421,8 +545,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 9: Review & Deploy */}
-          {step === 9 && (
+          {/* STEP 9: Review & Deploy (hide during active deployment) */}
+          {!deploying && step === 9 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Review Configuration Allocations</h3>
               <div className="al-card p-4 divide-y divide-borderSubtle text-xs">
@@ -470,30 +594,68 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
         </div>
       </div>
 
-      {/* Stepper Buttons Control Bar */}
+      {/* Bottom bar */}
       <div className="p-4 border-t border-borderSubtle bg-white/5 flex items-center justify-between">
-        <button 
-          onClick={step === 1 ? onCancel : () => setStep(step - 1)}
-          className="flex items-center gap-1 al-btn al-btn-secondary"
-        >
-          <ChevronLeft size={16} /> Back
-        </button>
-
-        {step < 9 ? (
-          <button 
-            onClick={() => setStep(step + 1)}
-            className="flex items-center gap-1.5 al-btn al-btn-primary"
-          >
-            Next <ChevronRight size={16} />
-          </button>
+        {deploying ? (
+          <>
+            <button
+              disabled
+              className="flex items-center gap-1 al-btn al-btn-secondary opacity-40 cursor-not-allowed"
+            >
+              <ChevronLeft size={16} /> Back
+            </button>
+            <button
+              disabled
+              className="al-btn al-btn-primary px-6 opacity-60 cursor-not-allowed"
+            >
+              <Loader size={14} className="animate-spin inline mr-1.5" />
+              Deploying...
+            </button>
+          </>
+        ) : error && step === 9 ? (
+          <>
+            <button
+              onClick={() => { setError(null); setStep(9); }}
+              className="flex items-center gap-1 al-btn al-btn-secondary"
+            >
+              <ChevronLeft size={16} /> Back
+            </button>
+            <button
+              onClick={handleDeploy}
+              className="al-btn al-btn-primary px-6 flex items-center gap-1.5"
+            >
+              <RefreshCw size={14} /> Retry Deploy
+            </button>
+          </>
         ) : (
-          <button 
-            onClick={handleDeploy}
-            className="al-btn al-btn-primary px-6"
-            disabled={loading}
-          >
-            {loading ? 'Queueing Deploy...' : 'Deploy VPS'}
-          </button>
+          <>
+            <button
+              onClick={step === 1 ? onCancel : () => setStep(step - 1)}
+              className="flex items-center gap-1 al-btn al-btn-secondary"
+            >
+              <ChevronLeft size={16} /> {step === 1 ? 'Cancel' : 'Back'}
+            </button>
+            {step < 9 ? (
+              <button
+                onClick={() => setStep(step + 1)}
+                className="flex items-center gap-1.5 al-btn al-btn-primary"
+              >
+                Next <ChevronRight size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={handleDeploy}
+                className="al-btn al-btn-primary px-6 flex items-center gap-1.5"
+                disabled={loading}
+              >
+                {loading ? (
+                  <><Loader size={14} className="animate-spin" /> Queueing...</>
+                ) : (
+                  <><Terminal size={14} /> Deploy VPS</>
+                )}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

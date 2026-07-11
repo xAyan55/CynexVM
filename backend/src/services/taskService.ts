@@ -115,6 +115,27 @@ export class TaskService {
       });
     }
 
+    // Emit real-time Socket.IO progress event
+    process.nextTick(() => {
+      try {
+        const { SocketService } = require('./socketService');
+        const payload = {
+          id: task.id,
+          status: task.status,
+          progress: task.progress,
+          currentStage: task.currentStage,
+          currentStep: task.currentStep,
+          failedReason: task.failedReason,
+          durationMs: task.durationMs,
+          userId: task.userId,
+        };
+        SocketService.emitToAll('task:progress', payload);
+        if (task.userId) {
+          SocketService.emitToUser(task.userId, 'task:progress', payload);
+        }
+      } catch (_) {}
+    });
+
     this.tasks.set(taskId, task);
   }
 
