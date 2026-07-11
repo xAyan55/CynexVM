@@ -113,6 +113,7 @@ export const InstanceDetails: React.FC = () => {
   const [nodeDiagnostics, setNodeDiagnostics] = useState<any | null>(null);
   const [nodeDiagnosticsLoading, setNodeDiagnosticsLoading] = useState(false);
   const [repairingConsole, setRepairingConsole] = useState(false);
+  const [repairingNetwork, setRepairingNetwork] = useState(false);
 
   const fetchDiagnostics = async () => {
     setDiagnosticsLoading(true);
@@ -174,6 +175,28 @@ export const InstanceDetails: React.FC = () => {
       alert('Failed to repair console');
     }
     setRepairingConsole(false);
+  };
+
+  const handleRepairNetwork = async () => {
+    setRepairingNetwork(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/repair-network`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert('Network repair process completed successfully!');
+        fetchDiagnostics();
+        fetchHealthHistory();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to repair network');
+      }
+    } catch (_) {
+      alert('Failed to repair network');
+    }
+    setRepairingNetwork(false);
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -830,7 +853,7 @@ export const InstanceDetails: React.FC = () => {
                   CynexVM monitors the active guest state continuously. If your serial console, ssh daemon, or virtualization interfaces fail, use the repair tool below to automatically restore serial getty service configurations.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <button
                   onClick={fetchDiagnostics}
                   disabled={diagnosticsLoading}
@@ -839,13 +862,22 @@ export const InstanceDetails: React.FC = () => {
                   {diagnosticsLoading ? 'Running checks...' : 'Rerun Diagnostics'}
                 </button>
                 {instance.guestType === 'Linux' && (
-                  <button
-                    onClick={handleRepairConsole}
-                    disabled={repairingConsole}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
-                  >
-                    {repairingConsole ? 'Repairing console...' : 'Repair Serial Console'}
-                  </button>
+                  <>
+                    <button
+                      onClick={handleRepairConsole}
+                      disabled={repairingConsole}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
+                    >
+                      {repairingConsole ? 'Repairing console...' : 'Repair Serial Console'}
+                    </button>
+                    <button
+                      onClick={handleRepairNetwork}
+                      disabled={repairingNetwork}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition"
+                    >
+                      {repairingNetwork ? 'Repairing network...' : 'Repair Network'}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -949,6 +981,43 @@ export const InstanceDetails: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Bandwidth & Interface Metrics */}
+              <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+                <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Bandwidth & NIC Statistics</h3>
+                <div className="text-xs space-y-2">
+                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
+                    <span className="text-neutral-500 dark:text-neutral-400">Host interface dev</span>
+                    <span className="text-neutral-800 dark:text-white font-mono font-medium">{diagnostics?.networkStats?.interface || '—'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
+                    <span className="text-neutral-500 dark:text-neutral-400">Total RX</span>
+                    <span className="text-neutral-800 dark:text-white font-mono font-medium">
+                      {diagnostics?.networkStats ? `${(diagnostics.networkStats.rxBytes / (1024 * 1024)).toFixed(2)} MB` : '—'} 
+                      <span className="text-[10px] text-neutral-500 ml-1">({diagnostics?.networkStats?.rxPackets || 0} pkts)</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
+                    <span className="text-neutral-500 dark:text-neutral-400">Total TX</span>
+                    <span className="text-neutral-800 dark:text-white font-mono font-medium">
+                      {diagnostics?.networkStats ? `${(diagnostics.networkStats.txBytes / (1024 * 1024)).toFixed(2)} MB` : '—'} 
+                      <span className="text-[10px] text-neutral-500 ml-1">({diagnostics?.networkStats?.txPackets || 0} pkts)</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
+                    <span className="text-neutral-500 dark:text-neutral-400">Dropped Packets</span>
+                    <span className={`font-mono font-medium ${diagnostics?.networkStats?.rxDrop > 0 ? 'text-amber-500' : 'text-neutral-800 dark:text-white'}`}>
+                      RX: {diagnostics?.networkStats?.rxDrop || 0} / TX: {diagnostics?.networkStats?.txDrop || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500 dark:text-neutral-400">Error Packets</span>
+                    <span className={`font-mono font-medium ${diagnostics?.networkStats?.rxErrors > 0 ? 'text-rose-500' : 'text-neutral-800 dark:text-white'}`}>
+                      RX: {diagnostics?.networkStats?.rxErrors || 0} / TX: {diagnostics?.networkStats?.txErrors || 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Health History Timeline */}
@@ -977,21 +1046,53 @@ export const InstanceDetails: React.FC = () => {
           </div>
 
           {/* Node Diagnostics (Host Health) */}
-          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-            <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Hypervisor Host Node Diagnostics</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {nodeDiagnostics ? (
-                Object.entries(nodeDiagnostics).map(([key, val]: any) => (
-                  <div key={key} className="p-3 bg-neutral-100 dark:bg-neutral-900/50 border border-neutral-200 dark:border-white/5 rounded-xl text-center space-y-1">
-                    <span className="block text-[9px] uppercase text-neutral-500 tracking-wider font-semibold">{key.replace(/_/g, ' ')}</span>
-                    <span className={`block text-xs font-bold ${val ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {val ? '✓ Active' : '✗ Missing'}
-                    </span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Hypervisor Host Node Diagnostics</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {nodeDiagnostics ? (
+                  Object.entries(nodeDiagnostics).map(([key, val]: any) => {
+                    if (Array.isArray(val)) return null;
+                    return (
+                      <div key={key} className="p-3 bg-neutral-100 dark:bg-neutral-900/50 border border-neutral-200 dark:border-white/5 rounded-xl text-center space-y-1">
+                        <span className="block text-[9px] uppercase text-neutral-500 tracking-wider font-semibold">{key.replace(/_/g, ' ')}</span>
+                        <span className={`block text-xs font-bold ${typeof val === 'boolean' ? (val ? 'text-emerald-500' : 'text-rose-500') : 'text-neutral-600 dark:text-neutral-300'}`}>
+                          {typeof val === 'boolean' ? (val ? '✓ Active' : '✗ Missing') : val}
+                        </span>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-4 text-center text-neutral-500 text-xs py-4">Loading node diagnostic parameters...</div>
+                )}
+              </div>
+            </div>
+
+            {/* Host Networks List */}
+            <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Host Networking Discovery</h3>
+              <div className="text-xs space-y-3">
+                <div>
+                  <span className="block text-neutral-500 uppercase text-[9px] font-semibold mb-1">Available Bridges</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {nodeDiagnostics?.available_bridges?.map((b: string) => (
+                      <span key={b} className="bg-blue-600/10 border border-blue-500/20 text-blue-500 text-[10px] px-2 py-0.5 rounded font-mono font-medium">
+                        {b}
+                      </span>
+                    )) || <span className="text-neutral-500">None detected</span>}
                   </div>
-                ))
-              ) : (
-                <div className="col-span-5 text-center text-neutral-500 text-xs py-4">Loading node diagnostic parameters...</div>
-              )}
+                </div>
+                <div>
+                  <span className="block text-neutral-500 uppercase text-[9px] font-semibold mb-1">Libvirt NAT Networks</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {nodeDiagnostics?.available_networks?.map((n: string) => (
+                      <span key={n} className="bg-emerald-600/10 border border-emerald-500/20 text-emerald-500 text-[10px] px-2 py-0.5 rounded font-mono font-medium">
+                        {n}
+                      </span>
+                    )) || <span className="text-neutral-500">None detected</span>}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

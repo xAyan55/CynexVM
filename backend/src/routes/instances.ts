@@ -1309,6 +1309,68 @@ router.post('/:id/repair-console', authenticate, async (req: AuthenticatedReques
   }
 });
 
+/**
+ * @route   POST /api/v1/instances/:id/repair-network
+ * @desc    Trigger automated networking configuration repair inside the guest
+ */
+router.post('/:id/repair-network', authenticate, async (req: AuthenticatedRequest, res) => {
+  try {
+    const instance = await db.instance.findUnique({
+      where: { id: req.params.id },
+      include: { node: true, cloudInit: true, vmConfig: true, networkInterfaces: true }
+    });
+    if (!instance) return res.status(404).json({ error: 'Instance not found' });
+
+    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    if (typeof (provider as any).repairNetwork !== 'function') {
+      return res.status(400).json({ error: 'Network repair not supported on this instance type' });
+    }
+
+    await (provider as any).repairNetwork(instance.node, instance);
+
+    let healthRes = null;
+    if (typeof (provider as any).healthCheck === 'function') {
+      healthRes = await (provider as any).healthCheck(instance.node, instance);
+      
+      let crit = 0;
+      let warn = 0;
+      for (const key of Object.keys(healthRes.healthCheckResults)) {
+        if (['ssh_reachable', 'serial_console_available', 'internet_reachable', 'dns_configured', 'gateway_present'].includes(key)) {
+          if (!healthRes.healthCheckResults[key]) warn++;
+        } else {
+          if (!healthRes.healthCheckResults[key]) crit++;
+        }
+      }
+      const currentStatus = crit > 0 ? 'critical' : (warn > 0 ? 'warning' : 'healthy');
+
+      await db.healthEvent.create({
+        data: {
+          instanceId: instance.id,
+          status: currentStatus === 'healthy' ? 'Healthy' : (currentStatus === 'warning' ? 'Warning' : 'Critical'),
+          message: `Network repair routine executed. Status: ${currentStatus.toUpperCase()}`
+        }
+      });
+
+      await db.instance.update({
+        where: { id: instance.id },
+        data: {
+          lastHealthCheckAt: new Date(),
+          lastHealthStatus: currentStatus,
+          lastHealthCheckDetails: JSON.stringify(healthRes),
+          ipAddress: healthRes.guestIp || instance.ipAddress
+        }
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Guest network configuration repair completed successfully.',
+      health: healthRes
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to execute network repair' });
+  }
+});
+
 // --- Register Background Workers ---
 JobService.registerWorker('instance.deploy', async (job) => {
   const { taskId, nodeId, name, vmid, osTemplate, cpuCores, memoryMb, storageGb, hostname, password, type = 'LXC', vmConfig, cloudInit, disks, networkInterfaces, lockKey } = job.data;
@@ -1371,6 +1433,7 @@ JobService.registerWorker('instance.deploy', async (job) => {
     const guestProfile = GuestProfileService.resolveProfile(osTemplate);
     let healthDetails = '{}';
     let healthStatus = 'unknown';
+    let healthRes: any = null;
 
     if (type === 'KVM' || type === 'QEMU') {
       try {
@@ -1418,6 +1481,7 @@ JobService.registerWorker('instance.deploy', async (job) => {
         password,
         status: 'running',
         type,
+        ipAddress: healthRes?.guestIp || 'dhcp',
         lastHealthCheckAt: new Date(),
         lastHealthStatus: healthStatus,
         lastHealthCheckDetails: healthDetails,

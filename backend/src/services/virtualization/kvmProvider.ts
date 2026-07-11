@@ -4,6 +4,8 @@ import { XmlBuilder } from './xmlBuilder';
 import { FirmwareDetector } from './firmwareDetector';
 import { GuestProfileService, GuestProfile } from './guestProfileService';
 import { ConsoleService } from './consoleService';
+import { db } from '../../db';
+import { TaskService } from '../taskService';
 
 export class KVMProvider implements VirtualizationProvider {
   private getDomainName(vmid: number): string {
@@ -29,11 +31,6 @@ export class KVMProvider implements VirtualizationProvider {
       };
     }
 
-
-    // 1. Create storage directories and blank QCOW2 disk
-    await NodeClient.executeCommand(node.id, `mkdir -p /var/lib/libvirt/images/templates`);
-    const diskPath = `/var/lib/libvirt/images/${domainName}_disk0.qcow2`;
-    
     let templateName = 'ubuntu-22-04';
     if (data.osTemplate) {
       if (data.osTemplate.includes(':')) {
@@ -42,9 +39,25 @@ export class KVMProvider implements VirtualizationProvider {
         templateName = data.osTemplate.replace(/\//g, '-');
       }
     }
-
     const guestProfile = GuestProfileService.resolveProfile(templateName);
     const isLinux = guestProfile.guestType === 'Linux';
+
+    // Run Deployment Preflight Checklist (fails fast and prevents phantom VM creation)
+    const taskId = data.taskId;
+    if (taskId) {
+      TaskService.updateTask(taskId, {
+        progress: 15,
+        currentStage: 'Preflight',
+        currentStep: 'Running deployment preflight checks...',
+        logMessage: 'Verifying host bridge, storage pool, unique MAC, and UEFI firmware availability...'
+      });
+    }
+    await this.runDeploymentPreflight(node, data, guestProfile);
+
+
+    // 1. Create storage directories and blank QCOW2 disk
+    await NodeClient.executeCommand(node.id, `mkdir -p /var/lib/libvirt/images/templates`);
+    const diskPath = `/var/lib/libvirt/images/${domainName}_disk0.qcow2`;
 
     // If template / cloud image is specified, copy it as base, else create empty qcow2
     if (data.osTemplate && data.osTemplate.includes(':')) {
@@ -68,12 +81,28 @@ export class KVMProvider implements VirtualizationProvider {
         } else if (templateName?.includes('alma')) {
           downloadUrl = `https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2`;
         }
+        if (taskId) {
+          TaskService.updateTask(taskId, {
+            progress: 30,
+            currentStage: 'Downloading Image',
+            currentStep: `Downloading cloud image: ${templateName}`,
+            logMessage: `Fetching base image from ${downloadUrl}...`
+          });
+        }
         const dl = await NodeClient.executeCommand(node.id, `curl -sSL -o ${templatePath} ${downloadUrl}`);
         if (dl.exitCode !== 0) {
           throw new Error(`Failed to download cloud image: ${dl.stderr}`);
         }
       }
       
+      if (taskId) {
+        TaskService.updateTask(taskId, {
+          progress: 50,
+          currentStage: 'Creating Disk',
+          currentStep: 'Allocating VM disk space...',
+          logMessage: `Cloning storage template to ${diskPath} and resizing...`
+        });
+      }
       // Copy template to primary disk
       const cpRes = await NodeClient.executeCommand(node.id, `cp ${templatePath} ${diskPath}`);
       if (cpRes.exitCode !== 0) {
@@ -88,27 +117,36 @@ export class KVMProvider implements VirtualizationProvider {
     // 2. Generate Cloud-init ISO or run Offline Customization (Never both)
     let disks = [{ name: 'disk0', sizeGb: storageGb, isIso: false, type: 'virtio' }];
     const useCloudInit = !!(data.cloudInit?.enabled || instance.cloudInit?.enabled);
+    const nics = data.networkInterfaces || [{ bridge: 'lxdbr0', macAddress: '52:54:00:12:34:56', nicModel: 'virtio' }];
+
+    if (taskId) {
+      TaskService.updateTask(taskId, {
+        progress: 60,
+        currentStage: 'Generating Cloud-init',
+        currentStep: 'Building configuration metadata...',
+        logMessage: 'Generating dynamic network-config and user-data configurations...'
+      });
+    }
 
     if (useCloudInit) {
-      let userData = data.cloudInit?.userData || '';
-      const metaData = data.cloudInit?.metaData || `instance-id: ${instance.id}\nlocal-hostname: ${data.hostname || instance.hostname}`;
-      
-      if (isLinux) {
-        userData = modifyCloudInit(userData, guestProfile.distribution.toLowerCase());
-      }
+      const userData = generateCloudInitUserData(instance, data, guestProfile);
+      const metaData = `instance-id: ${instance.id}\nlocal-hostname: ${data.hostname || instance.hostname}`;
+      const networkConfig = generateCloudInitNetworkConfig(nics);
 
       const userDataPath = `/tmp/${domainName}_user-data`;
       const metaDataPath = `/tmp/${domainName}_meta-data`;
+      const netConfigPath = `/tmp/${domainName}_network-config`;
       const cloudInitIsoPath = `/var/lib/libvirt/images/${domainName}_cloudinit.iso`;
 
       // Write files on node using command injection redirection
       await NodeClient.executeCommand(node.id, `echo "${Buffer.from(userData).toString('base64')}" | base64 -d > ${userDataPath}`);
       await NodeClient.executeCommand(node.id, `echo "${Buffer.from(metaData).toString('base64')}" | base64 -d > ${metaDataPath}`);
+      await NodeClient.executeCommand(node.id, `echo "${Buffer.from(networkConfig).toString('base64')}" | base64 -d > ${netConfigPath}`);
       
-      // Run genisoimage or cloud-localds
+      // Run genisoimage with network-config included
       await NodeClient.executeCommand(
         node.id,
-        `genisoimage -output ${cloudInitIsoPath} -volid cidata -joliet -rock ${userDataPath} ${metaDataPath}`
+        `genisoimage -output ${cloudInitIsoPath} -volid cidata -joliet -rock ${userDataPath} ${metaDataPath} ${netConfigPath}`
       );
       
       // Add cloud-init as ISO CDROM
@@ -124,6 +162,18 @@ export class KVMProvider implements VirtualizationProvider {
           grubLinePattern = 'GRUB_CMDLINE_LINUX';
           grubUpdateCmd = 'grub2-mkconfig -o /boot/grub2/grub.cfg';
         }
+
+        const guestAgentInstaller = generateGuestAgentInstallScript(dist);
+        const mainNic = nics[0] || { bridge: 'lxdbr0', macAddress: '52:54:00:12:34:56' };
+
+        const networkConfigurator = `
+# Auto detect interface name inside guest
+iface=$(ip -o link show | awk -F': ' '$2 != "lo" {print $2}' | grep -E '^(en|eth|es)' | head -n 1)
+if [ -z "$iface" ]; then
+  iface="eth0"
+fi
+${generateOfflineGuestNetworkConfigScript(dist, "$iface", mainNic.macAddress, mainNic)}
+`.trim();
 
         const scriptContent = `
 #!/bin/bash
@@ -147,6 +197,12 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl enable serial-getty@ttyS0.service || true
 fi
+
+# Auto install guest agent if supported
+${guestAgentInstaller}
+
+# Auto configure network offline
+${networkConfigurator}
 `.trim();
 
         const scriptB64 = Buffer.from(scriptContent).toString('base64');
@@ -159,6 +215,14 @@ fi
     }
 
     // 3. Compile Domain XML
+    if (taskId) {
+      TaskService.updateTask(taskId, {
+        progress: 70,
+        currentStage: 'Creating Domain',
+        currentStep: 'Defining libvirt guest domains...',
+        logMessage: 'Compiling target domain XML structure...'
+      });
+    }
     const xml = XmlBuilder.build(
       { vmid, name: instance.name, id: instance.id, cpuCores, memoryMb, storageGb },
       vmConfig,
@@ -177,6 +241,14 @@ fi
       throw new Error(`Failed to define VM XML: ${defineRes.stderr}`);
     }
 
+    if (taskId) {
+      TaskService.updateTask(taskId, {
+        progress: 75,
+        currentStage: 'Starting VM',
+        currentStep: 'Booting VM domain...',
+        logMessage: 'Launching libvirt start commands...'
+      });
+    }
     const startRes = await NodeClient.executeCommand(node.id, `virsh start ${domainName}`);
     if (startRes.exitCode !== 0) {
       // Rollback on define
@@ -184,16 +256,151 @@ fi
       throw new Error(`Failed to boot VM: ${startRes.stderr}`);
     }
 
-    // Wait for Guest Agent connection (if guestAgent is true)
-    if (vmConfig?.guestAgent) {
-      for (let i = 0; i < 15; i++) {
-        const pingAgent = await NodeClient.executeCommand(
-          node.id,
-          `virsh qemu-agent-command ${domainName} '{"execute":"guest-ping"}'`
-        );
-        if (pingAgent.exitCode === 0) break;
-        await new Promise((r) => setTimeout(r, 2000));
+    // 5. Run VM Network Verification Pipeline (Fails fast and triggers full rollback)
+    console.log(`Starting Network Verification Pipeline for ${domainName}...`);
+    let verified = false;
+    let errMessage = '';
+    const verificationTimeout = 120000;
+    const vStart = Date.now();
+    const mainNic = nics[0];
+    const bridge = mainNic.bridge || 'lxdbr0';
+
+    if (taskId) {
+      TaskService.updateTask(taskId, {
+        progress: 80,
+        currentStage: 'Waiting Guest Agent',
+        currentStep: 'Establishing Guest Agent communication channel...',
+        logMessage: 'Awaiting QEMU Guest Agent initialization...'
+      });
+    }
+
+    while (Date.now() - vStart < verificationTimeout) {
+      try {
+        // Step 1: NIC device attached in XML
+        const nicRes = await NodeClient.executeCommand(node.id, `virsh domiflist ${domainName} | grep -i "${mainNic.macAddress}" || true`);
+        if (!nicRes.stdout.trim()) {
+          throw new Error('NIC interface device is not attached in the libvirt domain XML.');
+        }
+
+        // Step 2: Link is carrier UP on host
+        if (!nicRes.stdout.toLowerCase().includes('up')) {
+          const checkTap = await NodeClient.executeCommand(node.id, `ip link show | grep -i "${mainNic.macAddress}" || true`);
+          if (!checkTap.stdout.trim() && !nicRes.stdout.includes('vnet')) {
+            throw new Error('NIC link state is DOWN.');
+          }
+        }
+
+        // Step 3: IP lease/address allocated
+        if (taskId) {
+          TaskService.updateTask(taskId, {
+            progress: 85,
+            currentStage: 'Waiting DHCP',
+            currentStep: 'Waiting for guest to obtain IPv4 address...',
+            logMessage: `Querying hypervisor ARP, DHCP leases, and Guest Agent endpoints...`
+          });
+        }
+        const ip = await detectGuestIp(node.id, domainName, mainNic.macAddress, bridge);
+        if (!ip) {
+          throw new Error('Guest interface did not receive an IPv4 address (waiting for DHCP/static allocation).');
+        }
+
+        // Step 4: Guest Agent ping check
+        if (vmConfig?.guestAgent) {
+          const pingAgent = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-ping"}' 2>/dev/null`);
+          if (pingAgent.exitCode !== 0) {
+            throw new Error('QEMU Guest Agent is not reachable yet.');
+          }
+
+          // Step 5: Gateway route validation
+          if (taskId) {
+            TaskService.updateTask(taskId, {
+              progress: 90,
+              currentStage: 'Configuring Network',
+              currentStep: 'Verifying gateway configuration...',
+              logMessage: `Validating guest routing tables...`
+            });
+          }
+          const execRoute = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-exec","arguments":{"path":"/bin/bash","arguments":["-c","ip route show | grep default"],"capture-output":true}}' 2>/dev/null`);
+          let hasGateway = false;
+          if (execRoute.exitCode === 0) {
+            try {
+              const resObj = JSON.parse(execRoute.stdout);
+              const outB64 = resObj.return?.['out-data'] || '';
+              const outStr = Buffer.from(outB64, 'base64').toString('utf8');
+              if (outStr.includes('default via') || outStr.includes('default dev')) {
+                hasGateway = true;
+              }
+            } catch (_) {}
+          }
+          if (!hasGateway) {
+            throw new Error('Default gateway route is missing in the guest routing table.');
+          }
+
+          // Step 6: DNS resolution validation
+          if (taskId) {
+            TaskService.updateTask(taskId, {
+              progress: 93,
+              currentStage: 'Testing DNS',
+              currentStep: 'Resolving DNS names inside guest...',
+              logMessage: `Verifying nameserver lookups...`
+            });
+          }
+          const execDns = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-exec","arguments":{"path":"/bin/bash","arguments":["-c","getent hosts google.com || nslookup google.com"],"capture-output":true}}' 2>/dev/null`);
+          let dnsWorks = false;
+          if (execDns.exitCode === 0) {
+            try {
+              const resObj = JSON.parse(execDns.stdout);
+              if (resObj.return?.exitcode === 0) {
+                dnsWorks = true;
+              }
+            } catch (_) {}
+          }
+          if (!dnsWorks) {
+            throw new Error('DNS resolver name resolution test failed inside the guest.');
+          }
+
+          // Step 7: Internet reachability check
+          if (taskId) {
+            TaskService.updateTask(taskId, {
+              progress: 96,
+              currentStage: 'Testing Internet',
+              currentStep: 'Testing public ICMP/TCP connections...',
+              logMessage: `Pinging 8.8.8.8 and querying GitHub HTTPS APIs...`
+            });
+          }
+          const execPing = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-exec","arguments":{"path":"/bin/bash","arguments":["-c","ping -c 1 -W 2 8.8.8.8 && curl -s -I --connect-timeout 2 https://github.com"],"capture-output":true}}' 2>/dev/null`);
+          let internetWorks = false;
+          if (execPing.exitCode === 0) {
+            try {
+              const resObj = JSON.parse(execPing.stdout);
+              if (resObj.return?.exitcode === 0) {
+                internetWorks = true;
+              }
+            } catch (_) {}
+          }
+          if (!internetWorks) {
+            throw new Error('Internet connectivity check failed (ping/TCP target unreachable).');
+          }
+        }
+
+        verified = true;
+        break;
+      } catch (checkErr: any) {
+        errMessage = checkErr.message;
+        await new Promise((r) => setTimeout(r, 4000));
       }
+    }
+
+    if (!verified) {
+      console.error(`ROLLBACK: Network validation failed. Destroying VM domain and disks. Reason: ${errMessage}`);
+      await NodeClient.executeCommand(node.id, `virsh destroy ${domainName} 2>/dev/null || true`);
+      await NodeClient.executeCommand(node.id, `virsh undefine ${domainName} --remove-all-storage --snapshots-metadata 2>/dev/null || true`);
+      
+      const xmlPath = `/tmp/${domainName}.xml`;
+      const cloudInitIsoPath = `/var/lib/libvirt/images/${domainName}_cloudinit.iso`;
+      await NodeClient.executeCommand(node.id, `rm -f ${diskPath} ${cloudInitIsoPath} ${xmlPath}`);
+      
+      throw new Error(`Deployment Aborted & Rolled Back: ${errMessage}`);
     }
   }
 
@@ -625,7 +832,13 @@ fi
       ssh_reachable: false,
       serial_console_available: false,
       cloud_init_finished: false,
-      storage_healthy: false
+      storage_healthy: false,
+      nic_attached: false,
+      link_up: false,
+      driver_loaded: false,
+      gateway_present: false,
+      dns_configured: false,
+      internet_reachable: false
     };
 
     let guestIp = instance.ipAddress;
@@ -635,6 +848,9 @@ fi
     let guestAgentCapabilities: string[] = [];
     let sshBanner = '';
     let sshLatency = 0;
+    let targetDevice = 'vnet0';
+
+    let rxBytes = 0, txBytes = 0, rxPackets = 0, txPackets = 0, rxErrors = 0, txErrors = 0, rxDrop = 0, txDrop = 0;
 
     // Resolve Guest Profile
     let templateName = 'ubuntu-22-04';
@@ -679,10 +895,35 @@ fi
         checks.disk_attached = true;
       }
 
-      // 6. Network attached
+      // 6. Network interface check (NIC attached & Link UP)
       const ifRes = await NodeClient.executeCommand(node.id, `virsh domiflist ${domainName} 2>/dev/null`);
-      if (ifRes.exitCode === 0 && (ifRes.stdout.includes('vnet') || ifRes.stdout.includes('bridge') || ifRes.stdout.includes('lxdbr0'))) {
+      if (ifRes.exitCode === 0) {
+        checks.nic_attached = true;
         checks.network_attached = true;
+        const match = ifRes.stdout.match(/(vnet\d+|tap\d+)/);
+        if (match) {
+          targetDevice = match[1];
+        }
+        if (ifRes.stdout.toLowerCase().includes('up') || ifRes.stdout.includes('vnet')) {
+          checks.link_up = true;
+        }
+      }
+
+      // Read live domifstat metrics
+      const statRes = await NodeClient.executeCommand(node.id, `virsh domifstat ${domainName} ${targetDevice} 2>/dev/null`);
+      if (statRes.exitCode === 0) {
+        const lines = statRes.stdout.trim().split('\n');
+        lines.forEach(l => {
+          const p = l.trim().split(/\s+/);
+          if (p[1] === 'rx_bytes') rxBytes = parseInt(p[2] || '0', 10);
+          if (p[1] === 'tx_bytes') txBytes = parseInt(p[2] || '0', 10);
+          if (p[1] === 'rx_packets') rxPackets = parseInt(p[2] || '0', 10);
+          if (p[1] === 'tx_packets') txPackets = parseInt(p[2] || '0', 10);
+          if (p[1] === 'rx_errs') rxErrors = parseInt(p[2] || '0', 10);
+          if (p[1] === 'tx_errs') txErrors = parseInt(p[2] || '0', 10);
+          if (p[1] === 'rx_drop') rxDrop = parseInt(p[2] || '0', 10);
+          if (p[1] === 'tx_drop') txDrop = parseInt(p[2] || '0', 10);
+        });
       }
 
       // 7. Storage healthy
@@ -692,7 +933,16 @@ fi
         checks.storage_healthy = true;
       }
 
-      // 8. Guest Agent connected
+      // Multi-Source IP Detection
+      const macAddress = instance.networkInterfaces?.[0]?.macAddress || '52:54:00:12:34:56';
+      const detectedIp = await detectGuestIp(node.id, domainName, macAddress, instance.networkInterfaces?.[0]?.bridge || 'lxdbr0');
+      if (detectedIp) {
+        guestIp = detectedIp;
+        checks.ip_obtained = true;
+        checks.driver_loaded = true;
+      }
+
+      // 8. Guest Agent connected & Internal checks
       if (guestProfile.supportsGuestAgent) {
         const pingAgent = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-ping"}' 2>/dev/null`);
         if (pingAgent.exitCode === 0) {
@@ -715,27 +965,37 @@ fi
             } catch (_) {}
           }
 
-          // Try to obtain IP address if not known or set to dhcp
-          if (!guestIp || guestIp === 'dhcp') {
-            const netRes = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-network-get-interfaces"}' 2>/dev/null`);
-            if (netRes.exitCode === 0) {
-              try {
-                const netInfo = JSON.parse(netRes.stdout);
-                const interfaces = netInfo.return || [];
-                for (const iface of interfaces) {
-                  if (iface.name !== 'lo' && iface['ip-addresses']) {
-                    const ipv4 = iface['ip-addresses'].find((ip: any) => ip['ip-address-type'] === 'ipv4');
-                    if (ipv4) {
-                      guestIp = ipv4['ip-address'];
-                      checks.ip_obtained = true;
-                      break;
-                    }
-                  }
-                }
-              } catch (_) {}
-            }
-          } else {
-            checks.ip_obtained = true;
+          // Guest Agent route, gateway & resolver checks
+          const execRoute = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-exec","arguments":{"path":"/bin/bash","arguments":["-c","ip route show | grep default"],"capture-output":true}}' 2>/dev/null`);
+          if (execRoute.exitCode === 0) {
+            try {
+              const resObj = JSON.parse(execRoute.stdout);
+              const outB64 = resObj.return?.['out-data'] || '';
+              const outStr = Buffer.from(outB64, 'base64').toString('utf8');
+              if (outStr.includes('default via') || outStr.includes('default dev')) {
+                checks.gateway_present = true;
+              }
+            } catch (_) {}
+          }
+
+          const execDns = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-exec","arguments":{"path":"/bin/bash","arguments":["-c","getent hosts google.com || nslookup google.com"],"capture-output":true}}' 2>/dev/null`);
+          if (execDns.exitCode === 0) {
+            try {
+              const resObj = JSON.parse(execDns.stdout);
+              if (resObj.return?.exitcode === 0) {
+                checks.dns_configured = true;
+              }
+            } catch (_) {}
+          }
+
+          const execPing = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-exec","arguments":{"path":"/bin/bash","arguments":["-c","ping -c 1 -W 2 8.8.8.8 && curl -s -I --connect-timeout 2 https://github.com"],"capture-output":true}}' 2>/dev/null`);
+          if (execPing.exitCode === 0) {
+            try {
+              const resObj = JSON.parse(execPing.stdout);
+              if (resObj.return?.exitcode === 0) {
+                checks.internet_reachable = true;
+              }
+            } catch (_) {}
           }
 
           // 9. Cloud-init finished
@@ -785,7 +1045,7 @@ fi
           checks.serial_console_available = true;
         }
       } else {
-        checks.serial_console_available = true; // Not supported or needed, count as active
+        checks.serial_console_available = true;
       }
     }
 
@@ -808,7 +1068,18 @@ fi
       ssh: { reachable: checks.ssh_reachable, banner: sshBanner, latency: sshLatency },
       boot: { status: bootDiagnostics },
       healthCheckResults: checks,
-      guestIp
+      guestIp,
+      networkStats: {
+        interface: targetDevice,
+        rxBytes,
+        txBytes,
+        rxPackets,
+        txPackets,
+        rxErrors,
+        txErrors,
+        rxDrop,
+        txDrop
+      }
     };
   }
 
@@ -932,6 +1203,140 @@ fi
       }
     }
   }
+
+  public async repairNetwork(node: any, instance: any): Promise<void> {
+    const domainName = this.getDomainName(instance.vmid);
+    const guestProfile = GuestProfileService.resolveProfile(instance.osTemplate);
+    const dist = guestProfile.distribution.toLowerCase();
+
+    const pingAgent = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-ping"}' 2>/dev/null`);
+    if (pingAgent.exitCode !== 0) {
+      throw new Error('QEMU Guest Agent is unreachable. Cannot perform online network repair.');
+    }
+
+    const getIface = await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '{"execute":"guest-network-get-interfaces"}' 2>/dev/null`);
+    let iface = 'eth0';
+    if (getIface.exitCode === 0) {
+      try {
+        const netInfo = JSON.parse(getIface.stdout);
+        const interfaces = netInfo.return || [];
+        const main = interfaces.find((i: any) => i.name !== 'lo');
+        if (main) iface = main.name;
+      } catch (_) {}
+    }
+
+    let cmd = '';
+    if (['ubuntu', 'debian'].includes(dist)) {
+      cmd = `
+        systemctl restart systemd-networkd || systemctl restart networking
+        netplan apply || true
+        dhclient -r ${iface} && dhclient ${iface} || true
+        systemctl restart qemu-guest-agent || true
+      `;
+    } else if (['centos', 'rocky', 'alma'].includes(dist)) {
+      cmd = `
+        systemctl restart NetworkManager
+        nmcli connection up ${iface} || true
+        systemctl restart qemu-guest-agent || true
+      `;
+    } else if (dist === 'alpine') {
+      cmd = `
+        rc-service networking restart
+        rc-service qemu-guest-agent restart || true
+      `;
+    } else {
+      cmd = `
+        systemctl restart systemd-networkd || systemctl restart NetworkManager || true
+        dhclient -r || true
+        dhclient || true
+      `;
+    }
+
+    const execArgs = {
+      path: '/bin/bash',
+      arguments: ['-c', cmd.trim()],
+      'capture-output': true
+    };
+
+    await NodeClient.executeCommand(node.id, `virsh qemu-agent-command ${domainName} '${JSON.stringify({
+      execute: 'guest-exec',
+      arguments: execArgs
+    })}'`);
+  }
+
+
+  private async runDeploymentPreflight(node: any, data: any, guestProfile: GuestProfile): Promise<void> {
+    // 1. Node Health Check
+    if (node.status !== 'online' || node.maintenanceMode) {
+      throw new Error(`Preflight check failed: Hypervisor node ${node.name || node.id} is offline or in maintenance mode.`);
+    }
+
+    // 2. Network & Bridge exist & MAC uniqueness
+    const nics = data.networkInterfaces || [{ bridge: 'lxdbr0', macAddress: '52:54:00:12:34:56', nicModel: 'virtio' }];
+    for (const nic of nics) {
+      const bridge = nic.bridge || 'lxdbr0';
+      const checkBridge = await NodeClient.executeCommand(node.id, `ip link show ${bridge} 2>/dev/null || virsh net-info ${bridge} 2>/dev/null`);
+      if (checkBridge.exitCode !== 0) {
+        throw new Error(`Preflight check failed: Network bridge interface '${bridge}' does not exist on the hypervisor host.`);
+      }
+
+      // MAC Uniqueness Check
+      const existingNic = await db.networkInterface.findFirst({
+        where: { macAddress: nic.macAddress }
+      });
+      if (existingNic) {
+        throw new Error(`Preflight check failed: Unique MAC address violation. MAC address '${nic.macAddress}' is already assigned in the database.`);
+      }
+
+      // NIC Model Validation
+      const model = (nic.nicModel || 'virtio').toLowerCase();
+      if (!['virtio', 'e1000', 'rtl8139', 'vmxnet3', 'ne2k_pci', 'pcnet', 'virtio-net-pci'].includes(model)) {
+        throw new Error(`Preflight check failed: Unsupported NIC model '${nic.nicModel}'. Supported: virtio, e1000, rtl8139, vmxnet3.`);
+      }
+    }
+
+    // 3. Storage Pool Checks
+    const checkPool = await NodeClient.executeCommand(node.id, `virsh pool-info default 2>/dev/null`);
+    if (checkPool.exitCode !== 0) {
+      throw new Error(`Preflight check failed: Default storage pool is not active or defined on the hypervisor.`);
+    }
+
+    // 4. ISO/QCOW2 Image pre-existence checks
+    if (data.osTemplate && data.osTemplate.includes(':')) {
+      const templateName = (data.osTemplate.split(':').pop() || 'ubuntu-22-04').replace(/\//g, '-');
+      const templatePath = `/var/lib/libvirt/images/templates/${templateName}.qcow2`;
+      const checkTemplate = await NodeClient.executeCommand(node.id, `ls ${templatePath} 2>/dev/null`);
+      if (checkTemplate.exitCode !== 0) {
+        const checkDownloader = await NodeClient.executeCommand(node.id, `command -v curl || command -v wget`);
+        if (checkDownloader.exitCode !== 0) {
+          throw new Error(`Preflight check failed: Base template image is missing and neither 'curl' nor 'wget' is available on the node.`);
+        }
+      }
+    }
+
+    // 5. OVMF Firmware Checks
+    if (data.vmConfig?.uefi) {
+      const checkOvmf = await NodeClient.executeCommand(node.id, `ls /usr/share/OVMF/OVMF_CODE.fd /usr/share/qemu/OVMF.fd 2>/dev/null | wc -l`);
+      if (parseInt(checkOvmf.stdout || '0', 10) === 0) {
+        throw new Error(`Preflight check failed: UEFI boot requested but OVMF firmware packages are not installed on the hypervisor.`);
+      }
+    }
+
+    // 6. DHCP Daemon Checks
+    const checkDhcp = await NodeClient.executeCommand(node.id, `systemctl is-active dnsmasq 2>/dev/null || systemctl is-active systemd-resolved 2>/dev/null || systemctl is-active isc-dhcp-server 2>/dev/null || echo inactive`);
+    if (checkDhcp.stdout.trim() === 'inactive') {
+      const checkPs = await NodeClient.executeCommand(node.id, `pgrep dnsmasq 2>/dev/null || echo none`);
+      if (checkPs.stdout.includes('none')) {
+        console.warn(`Preflight warning: No active DHCP daemon detected on the hypervisor node.`);
+      }
+    }
+
+    // 7. Cloud-init profile validation
+    const useCloudInit = !!(data.cloudInit?.enabled);
+    if (useCloudInit && !guestProfile.supportsCloudInit) {
+      throw new Error(`Preflight check failed: Cloud-init requested but guest profile ${guestProfile.distribution} does not support cloud-init.`);
+    }
+  }
 }
 
 function modifyCloudInit(userData: string, dist: string): string {
@@ -999,4 +1404,402 @@ function modifyCloudInit(userData: string, dist: string): string {
   }
 
   return lines.join('\n');
+}
+
+async function detectGuestIp(nodeId: string, domainName: string, macAddress: string, bridge: string): Promise<string> {
+  const cleanMac = macAddress.toLowerCase().trim();
+
+  // 1. QEMU Guest Agent
+  const agentRes = await NodeClient.executeCommand(nodeId, `virsh qemu-agent-command ${domainName} '{"execute":"guest-network-get-interfaces"}' 2>/dev/null`);
+  if (agentRes.exitCode === 0) {
+    try {
+      const netInfo = JSON.parse(agentRes.stdout);
+      const interfaces = netInfo.return || [];
+      for (const iface of interfaces) {
+        if (iface.name !== 'lo' && iface['ip-addresses']) {
+          const ipv4 = iface['ip-addresses'].find((ip: any) => ip['ip-address-type'] === 'ipv4');
+          if (ipv4) return ipv4['ip-address'];
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 2. virsh domifaddr (agent)
+  const domifResAgent = await NodeClient.executeCommand(nodeId, `virsh domifaddr ${domainName} --source agent 2>/dev/null`);
+  if (domifResAgent.exitCode === 0) {
+    const match = domifResAgent.stdout.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+    if (match) return match[1];
+  }
+
+  // 3. virsh domifaddr (lease)
+  const domifResLease = await NodeClient.executeCommand(nodeId, `virsh domifaddr ${domainName} --source lease 2>/dev/null`);
+  if (domifResLease.exitCode === 0) {
+    const match = domifResLease.stdout.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+    if (match) return match[1];
+  }
+
+  // 4. DHCP leases files search
+  const dhcpRes = await NodeClient.executeCommand(nodeId, `cat /var/lib/libvirt/dnsmasq/*.leases /var/lib/misc/dnsmasq.leases /var/lib/dnsmasq/*.leases 2>/dev/null | grep -i "${cleanMac}" || true`);
+  if (dhcpRes.exitCode === 0 && dhcpRes.stdout.trim()) {
+    const parts = dhcpRes.stdout.trim().split(/\s+/);
+    if (parts[2] && parts[2].match(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/)) {
+      return parts[2];
+    }
+  }
+
+  // 5. ARP/neighbour table match
+  const arpRes = await NodeClient.executeCommand(nodeId, `ip neigh show 2>/dev/null | grep -i "${cleanMac}" || true`);
+  if (arpRes.exitCode === 0 && arpRes.stdout.trim()) {
+    const match = arpRes.stdout.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+    if (match) return match[1];
+  }
+
+  return '';
+}
+
+function generateCloudInitUserData(instance: any, data: any, guestProfile: GuestProfile): string {
+  const dist = guestProfile.distribution.toLowerCase();
+  const timezone = data.cloudInit?.timezone || 'UTC';
+  const locale = data.cloudInit?.locale || 'en_US.UTF-8';
+  const password = data.password || instance.password;
+  const hostname = data.hostname || instance.hostname;
+  const fqdn = data.fqdn || `${hostname}.local`;
+  const sshKeys = data.cloudInit?.sshKeys || [];
+  const packages = data.cloudInit?.packages || [];
+  
+  let yaml = `#cloud-config
+hostname: ${hostname}
+fqdn: ${fqdn}
+timezone: ${timezone}
+locale: ${locale}
+`;
+
+  // Users config
+  yaml += `users:
+  - name: root
+    plain_text_passwd: "${password}"
+    lock_passwd: false
+`;
+  if (sshKeys.length > 0) {
+    yaml += `    ssh_authorized_keys:\n`;
+    sshKeys.forEach((key: string) => {
+      yaml += `      - "${key}"\n`;
+    });
+  }
+
+  // Packages to install
+  const requiredPkgs = [...packages];
+  if (guestProfile.supportsGuestAgent) {
+    requiredPkgs.push('qemu-guest-agent');
+  }
+  if (requiredPkgs.length > 0) {
+    yaml += `packages:\n`;
+    requiredPkgs.forEach(pkg => {
+      yaml += `  - ${pkg}\n`;
+    });
+  }
+
+  // Bootcmd
+  yaml += `bootcmd:
+  - systemctl enable serial-getty@ttyS0.service || true
+  - systemctl start serial-getty@ttyS0.service || true
+`;
+
+  // Runcmd
+  yaml += `runcmd:
+  - systemctl restart qemu-guest-agent || true
+`;
+  let grubLinePattern = 'GRUB_CMDLINE_LINUX_DEFAULT';
+  let grubUpdateCmd = 'update-grub';
+  if (['centos', 'rocky', 'alma'].includes(dist)) {
+    grubLinePattern = 'GRUB_CMDLINE_LINUX';
+    grubUpdateCmd = 'grub2-mkconfig -o /boot/grub2/grub.cfg';
+  }
+  yaml += `  - sed -i 's/\\(${grubLinePattern}=".*\\)"/\\1 console=tty0 console=ttyS0,115200n8"/' /etc/default/grub\n`;
+  yaml += `  - ${grubUpdateCmd} || true\n`;
+  yaml += `  - grubby --update-kernel=ALL --args="console=tty0 console=ttyS0,115200n8" || true\n`;
+
+  // Write files
+  if (data.cloudInit?.writeFiles && data.cloudInit.writeFiles.length > 0) {
+    yaml += `write_files:\n`;
+    data.cloudInit.writeFiles.forEach((file: any) => {
+      yaml += `  - path: "${file.path}"\n`;
+      yaml += `    permissions: "${file.permissions || '0644'}"\n`;
+      yaml += `    owner: "${file.owner || 'root:root'}"\n`;
+      yaml += `    content: |\n`;
+      const lines = file.content.split('\n');
+      lines.forEach((line: string) => {
+        yaml += `      ${line}\n`;
+      });
+    });
+  }
+
+  return yaml;
+}
+
+function generateCloudInitNetworkConfig(nics: any[]): string {
+  let yaml = "version: 2\nethernets:\n";
+  nics.forEach((nic, idx) => {
+    const id = nic.name || `eth${idx}`;
+    yaml += `  ${id}:\n`;
+    yaml += `    match:\n`;
+    yaml += `      macaddress: "${nic.macAddress.toLowerCase()}"\n`;
+    yaml += `    set-name: "${id}"\n`;
+    if (nic.mtu) {
+      yaml += `    mtu: ${nic.mtu}\n`;
+    }
+    
+    // IPv4 Config
+    if (nic.ipv4Address === 'dhcp' || !nic.ipv4Address) {
+      yaml += `    dhcp4: true\n`;
+    } else {
+      yaml += `    dhcp4: false\n`;
+      yaml += `    addresses:\n`;
+      yaml += `      - ${nic.ipv4Address}\n`;
+      if (nic.gateway) {
+        yaml += `    gateway4: ${nic.gateway}\n`;
+      }
+    }
+
+    // IPv6 Config
+    if (nic.ipv6Address) {
+      if (nic.ipv6Address === 'dhcp') {
+        yaml += `    dhcp6: true\n`;
+      } else {
+        yaml += `    dhcp6: false\n`;
+        yaml += `    addresses:\n`;
+        yaml += `      - ${nic.ipv6Address}\n`;
+        if (nic.gateway6) {
+          yaml += `    gateway6: ${nic.gateway6}\n`;
+        }
+      }
+    }
+
+    // DNS nameservers
+    if (nic.dnsServers && nic.dnsServers.length > 0) {
+      yaml += `    nameservers:\n`;
+      yaml += `      addresses:\n`;
+      nic.dnsServers.forEach((dns: string) => {
+        yaml += `        - ${dns}\n`;
+      });
+      if (nic.searchDomains && nic.searchDomains.length > 0) {
+        yaml += `      search:\n`;
+        nic.searchDomains.forEach((dom: string) => {
+          yaml += `        - ${dom}\n`;
+        });
+      }
+    }
+
+    // Routes
+    if (nic.routes && nic.routes.length > 0) {
+      yaml += `    routes:\n`;
+      nic.routes.forEach((r: any) => {
+        yaml += `      - to: "${r.to}"\n`;
+        yaml += `        via: "${r.via}"\n`;
+        if (r.metric) {
+          yaml += `        metric: ${r.metric}\n`;
+        }
+      });
+    }
+  });
+
+  // Handle VLANs if any
+  const vlanNics = nics.filter(nic => nic.vlan);
+  if (vlanNics.length > 0) {
+    yaml += "vlans:\n";
+    vlanNics.forEach((nic, idx) => {
+      const parentId = nic.name || `eth${idx}`;
+      yaml += `  vlan${nic.vlan}:\n`;
+      yaml += `    id: ${nic.vlan}\n`;
+      yaml += `    link: "${parentId}"\n`;
+      yaml += `    dhcp4: true\n`;
+    });
+  }
+
+  return yaml;
+}
+
+function generateGuestAgentInstallScript(dist: string): string {
+  const lowercaseDist = dist.toLowerCase();
+  if (['ubuntu', 'debian'].includes(lowercaseDist)) {
+    return `
+if ! command -v qemu-guest-agent >/dev/null 2>&1; then
+  apt-get update -y || true
+  apt-get install -y qemu-guest-agent || true
+fi
+systemctl enable qemu-guest-agent || true
+systemctl start qemu-guest-agent || true
+`.trim();
+  }
+  if (['centos', 'rocky', 'alma'].includes(lowercaseDist)) {
+    return `
+if ! command -v qemu-guest-agent >/dev/null 2>&1; then
+  yum install -y qemu-guest-agent || true
+fi
+systemctl enable qemu-guest-agent || true
+systemctl start qemu-guest-agent || true
+`.trim();
+  }
+  if (lowercaseDist === 'alpine') {
+    return `
+if ! command -v qemu-guest-agent >/dev/null 2>&1; then
+  apk add qemu-guest-agent || true
+fi
+rc-update add qemu-guest-agent default || true
+rc-service qemu-guest-agent start || true
+`.trim();
+  }
+  if (lowercaseDist === 'arch') {
+    return `
+if ! command -v qemu-guest-agent >/dev/null 2>&1; then
+  pacman -Sy --noconfirm qemu-guest-agent || true
+fi
+systemctl enable qemu-guest-agent || true
+systemctl start qemu-guest-agent || true
+`.trim();
+  }
+  return '';
+}
+
+function generateOfflineGuestNetworkConfigScript(dist: string, iface: string, mac: string, nic: any): string {
+  const lowercaseDist = dist.toLowerCase();
+  const ipv4 = nic.ipv4Address || 'dhcp';
+  const gateway = nic.gateway;
+  const dnsServers = nic.dnsServers || ['8.8.8.8', '1.1.1.1'];
+  
+  if (lowercaseDist === 'ubuntu') {
+    let netplanYaml = `
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ${iface}:
+      match:
+        macaddress: "${mac.toLowerCase()}"
+      set-name: ${iface}
+`;
+    if (ipv4 === 'dhcp') {
+      netplanYaml += `      dhcp4: true\n`;
+    } else {
+      netplanYaml += `      dhcp4: false\n`;
+      netplanYaml += `      addresses: [ ${ipv4} ]\n`;
+      if (gateway) netplanYaml += `      gateway4: ${gateway}\n`;
+      netplanYaml += `      nameservers:\n        addresses: [ ${dnsServers.join(', ')} ]\n`;
+    }
+
+    return `
+cat << 'EOF' > /etc/netplan/01-netcfg.yaml
+${netplanYaml.trim()}
+EOF
+chmod 600 /etc/netplan/01-netcfg.yaml
+netplan generate || true
+netplan apply || true
+`.trim();
+  }
+
+  if (lowercaseDist === 'debian' || lowercaseDist === 'alpine') {
+    let config = `auto ${iface}\niface ${iface} inet `;
+    if (ipv4 === 'dhcp') {
+      config += 'dhcp';
+    } else {
+      const [ipOnly, subnet] = ipv4.split('/');
+      let netmask = '255.255.255.0';
+      if (subnet) {
+        const maskNum = parseInt(subnet, 10);
+        const maskBits = (0xffffffff << (32 - maskNum)) >>> 0;
+        netmask = [
+          (maskBits >>> 24) & 0xff,
+          (maskBits >>> 16) & 0xff,
+          (maskBits >>> 8) & 0xff,
+          maskBits & 0xff
+        ].join('.');
+      }
+      config += `static\n  address ${ipOnly}\n  netmask ${netmask}`;
+      if (gateway) config += `\n  gateway ${gateway}`;
+      config += `\n  dns-nameservers ${dnsServers.join(' ')}`;
+    }
+
+    return `
+if [ -f /etc/network/interfaces ]; then
+  sed -i '/iface ${iface}/,$d' /etc/network/interfaces
+  cat << 'EOF' >> /etc/network/interfaces
+${config.trim()}
+EOF
+  ifdown ${iface} >/dev/null 2>&1 || true
+  ifup ${iface} >/dev/null 2>&1 || true
+fi
+`.trim();
+  }
+
+  if (['centos', 'rocky', 'alma'].includes(lowercaseDist)) {
+    let nmconfig = `
+[connection]
+id=${iface}
+type=ethernet
+interface-name=${iface}
+permissions=
+
+[ethernet]
+mac-address=${mac.toUpperCase()}
+
+[ipv4]
+`;
+    if (ipv4 === 'dhcp') {
+      nmconfig += 'method=auto\n';
+    } else {
+      nmconfig += `method=manual\naddresses1=${ipv4}\ngateway=${gateway || ''}\ndns=${dnsServers.join(';')};\n`;
+    }
+    
+    return `
+if [ -d /etc/NetworkManager/system-connections ]; then
+  cat << 'EOF' > "/etc/NetworkManager/system-connections/${iface}.nmconnection"
+${nmconfig.trim()}
+EOF
+  chmod 600 "/etc/NetworkManager/system-connections/${iface}.nmconnection"
+  if command -v nmcli >/dev/null 2>&1; then
+    nmcli connection reload || true
+  fi
+fi
+if [ -d /etc/sysconfig/network-scripts ]; then
+  cat << 'EOF' > "/etc/sysconfig/network-scripts/ifcfg-${iface}"
+DEVICE=${iface}
+HWADDR=${mac.toUpperCase()}
+ONBOOT=yes
+BOOTPROTO=${ipv4 === 'dhcp' ? 'dhcp' : 'static'}
+IPADDR=${ipv4.split('/')[0]}
+NETMASK=255.255.255.0
+GATEWAY=${gateway || ''}
+DNS1=${dnsServers[0] || '8.8.8.8'}
+DNS2=${dnsServers[1] || '1.1.1.1'}
+EOF
+fi
+`.trim();
+  }
+
+  if (lowercaseDist === 'arch') {
+    let networkd = `
+[Match]
+MACAddress=${mac.toLowerCase()}
+
+[Network]
+`;
+    if (ipv4 === 'dhcp') {
+      networkd += 'DHCP=yes\n';
+    } else {
+      networkd += `Address=${ipv4}\nGateway=${gateway || ''}\n`;
+      dnsServers.forEach((dns: string) => {
+        networkd += `DNS=${dns}\n`;
+      });
+    }
+
+    return `
+cat << 'EOF' > /etc/systemd/network/20-wired.network
+${networkd.trim()}
+EOF
+systemctl enable systemd-networkd || true
+systemctl restart systemd-networkd || true
+`.trim();
+  }
+
+  return '';
 }

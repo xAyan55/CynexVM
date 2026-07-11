@@ -249,7 +249,7 @@ router.get('/:id/validate', authenticate, requirePermission('node.read'), async 
 
 /**
  * @route   GET /api/v1/nodes/:id/diagnostics
- * @desc    Run hypervisor capability checks (Intel/AMD virt flags, KVM, bridge, tools)
+ * @desc    Run hypervisor capability checks (Intel/AMD virt flags, KVM, bridge, tools, dhcp, nat)
  */
 router.get('/:id/diagnostics', authenticate, requirePermission('node.read'), async (req, res) => {
   const { NodeClient } = require('../services/virtualization/nodeClient');
@@ -267,7 +267,12 @@ router.get('/:id/diagnostics', authenticate, requirePermission('node.read'), asy
       dhcp_dns: false,
       virt_customize: false,
       qemu_img: false,
-      virsh: false
+      virsh: false,
+      ip_forwarding: false,
+      nat_enabled: false,
+      available_bridges: [],
+      available_networks: [],
+      dhcp_leases_count: 0
     };
 
     // 1. CPU Virtualization
@@ -309,6 +314,30 @@ router.get('/:id/diagnostics', authenticate, requirePermission('node.read'), asy
     // 10. virsh
     const virsh = await NodeClient.executeCommand(node.id, "command -v virsh && echo yes || echo no");
     checks.virsh = virsh.stdout.includes('yes');
+
+    // 11. IP Forwarding Check
+    const forwardVal = await NodeClient.executeCommand(node.id, "cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0");
+    checks.ip_forwarding = parseInt(forwardVal.stdout.trim(), 10) === 1;
+
+    // 12. NAT Enable Check
+    const natCheck = await NodeClient.executeCommand(node.id, "iptables -t nat -S 2>/dev/null | grep -E 'MASQUERADE|POSTROUTING' || echo no");
+    checks.nat_enabled = !natCheck.stdout.includes('no') && natCheck.stdout.trim().length > 0;
+
+    // 13. Discover Bridges
+    const bridgesRes = await NodeClient.executeCommand(node.id, "ip -o link show | awk -F': ' '$2 ~ /br|virbr|lxdbr/ {print $2}' || true");
+    if (bridgesRes.exitCode === 0) {
+      checks.available_bridges = bridgesRes.stdout.trim().split('\n').filter(Boolean);
+    }
+
+    // 14. Discover Libvirt Networks
+    const netsRes = await NodeClient.executeCommand(node.id, "virsh net-list --name 2>/dev/null || true");
+    if (netsRes.exitCode === 0) {
+      checks.available_networks = netsRes.stdout.trim().split('\n').filter(Boolean);
+    }
+
+    // 15. Active Leases Count
+    const leasesRes = await NodeClient.executeCommand(node.id, "cat /var/lib/libvirt/dnsmasq/*.leases /var/lib/misc/dnsmasq.leases /var/lib/dnsmasq/*.leases 2>/dev/null | wc -l || echo 0");
+    checks.dhcp_leases_count = parseInt(leasesRes.stdout.trim(), 10);
 
     return res.status(200).json(checks);
   } catch (err: any) {

@@ -32,6 +32,7 @@ export interface VirtualizationProvider {
   statistics(node: any, instance: any): Promise<any>;
   healthCheck?(node: any, instance: any): Promise<any>;
   repairConsole?(node: any, instance: any): Promise<void>;
+  repairNetwork?(node: any, instance: any): Promise<void>;
 }
 
 import { LXCProvider } from './lxcProvider';
