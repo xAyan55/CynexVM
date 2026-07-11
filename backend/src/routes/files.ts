@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { authenticate, requirePermission, AuthenticatedRequest } from '../middleware/auth';
-import { LxdFileService } from '../services/lxd/lxdFileService';
+import { VirtualizationProviderFactory } from '../services/virtualization/provider';
 
 const router = Router({ mergeParams: true });
 
@@ -10,7 +10,8 @@ async function verifyContainerOwner(req: any, res: any, next: any) {
   const { id } = req.params;
   try {
     const instance = await db.instance.findUnique({
-      where: { id }
+      where: { id },
+      include: { node: true }
     });
 
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
@@ -29,13 +30,14 @@ async function verifyContainerOwner(req: any, res: any, next: any) {
 
 /**
  * @route   GET /api/v1/instances/:id/files/list
- * @desc    Lists directory items inside container via LXD API
+ * @desc    Lists directory items inside container/VM filesystem
  */
 router.get('/list', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
   const dirPath = (req.query.path as string) || '/root';
   const instance = req.instanceMetadata;
   try {
-    const list = await LxdFileService.listDirectory(instance.nodeId, instance.vmid, dirPath);
+    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    const list = await provider.files(instance.node, instance, 'list', dirPath);
     return res.status(200).json(list);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to list directory contents' });
@@ -44,7 +46,7 @@ router.get('/list', authenticate, requirePermission('instance.files'), verifyCon
 
 /**
  * @route   GET /api/v1/instances/:id/files/read
- * @desc    Reads file content directly from container
+ * @desc    Reads file content directly from container/VM
  */
 router.get('/read', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
   const filePath = req.query.path as string;
@@ -52,7 +54,8 @@ router.get('/read', authenticate, requirePermission('instance.files'), verifyCon
   if (!filePath) return res.status(400).json({ error: 'Path is required' });
 
   try {
-    const data = await LxdFileService.readFile(instance.nodeId, instance.vmid, filePath);
+    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    const data = await provider.files(instance.node, instance, 'read', filePath);
     return res.status(200).json({ content: data });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to read file content' });
@@ -61,7 +64,7 @@ router.get('/read', authenticate, requirePermission('instance.files'), verifyCon
 
 /**
  * @route   POST /api/v1/instances/:id/files/write
- * @desc    Writes string content into container file
+ * @desc    Writes string content into container/VM file
  */
 router.post('/write', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
   const { path: filePath, content } = req.body;
@@ -71,7 +74,8 @@ router.post('/write', authenticate, requirePermission('instance.files'), verifyC
   }
 
   try {
-    await LxdFileService.writeFile(instance.nodeId, instance.vmid, filePath, content);
+    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    await provider.files(instance.node, instance, 'write', filePath, { content });
     return res.status(200).json({ success: true, message: 'File written successfully' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to save file' });
@@ -80,7 +84,7 @@ router.post('/write', authenticate, requirePermission('instance.files'), verifyC
 
 /**
  * @route   DELETE /api/v1/instances/:id/files/delete
- * @desc    Deletes file or directory from container
+ * @desc    Deletes file or directory from container/VM
  */
 router.delete('/delete', authenticate, requirePermission('instance.files'), verifyContainerOwner, async (req: any, res) => {
   const { path: filePath } = req.body;
@@ -88,7 +92,8 @@ router.delete('/delete', authenticate, requirePermission('instance.files'), veri
   if (!filePath) return res.status(400).json({ error: 'Path is required' });
 
   try {
-    await LxdFileService.deleteFile(instance.nodeId, instance.vmid, filePath);
+    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    await provider.files(instance.node, instance, 'delete', filePath);
     return res.status(200).json({ success: true, message: 'File deleted successfully' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to delete file' });
@@ -108,7 +113,8 @@ router.post('/upload', authenticate, requirePermission('instance.files'), verify
 
   try {
     const buffer = Buffer.from(base64Content, 'base64');
-    await LxdFileService.writeFile(instance.nodeId, instance.vmid, filePath, buffer);
+    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    await provider.files(instance.node, instance, 'write', filePath, { content: buffer });
     return res.status(200).json({ success: true, message: 'File uploaded successfully' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to upload file' });

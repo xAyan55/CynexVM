@@ -33,6 +33,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   ]);
 
   // Form Fields
+  const [type, setType] = useState<'LXC' | 'KVM'>('LXC');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('images:ubuntu/22.04');
@@ -104,6 +105,18 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           storageGb,
           hostname: hostname || name,
           password,
+          type,
+          vmConfig: type === 'KVM' ? {
+            cpuCores,
+            memoryMb,
+            guestAgent: true,
+            uefi: true,
+          } : undefined,
+          cloudInit: type === 'KVM' ? {
+            enabled: true,
+            userData: `#cloud-config\npassword: ${password}\nchpasswd: { expire: False }\nssh_pwauth: True\n`,
+            metaData: `instance-id: cynex-${vmid}\nlocal-hostname: ${hostname || name}\n`
+          } : undefined,
         })
       });
 
@@ -121,14 +134,15 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   };
 
   const stepsList = [
-    { num: 1, title: 'Choose Node', desc: 'Select target hypervisor host', icon: Server },
-    { num: 2, title: 'Assign Owner', desc: 'Assign instance to user', icon: UserIcon },
-    { num: 3, title: 'OS Template', desc: 'Select Linux operating system image', icon: FileText },
-    { num: 4, title: 'Resources', desc: 'Configure CPU cores and Memory allocations', icon: Cpu },
-    { num: 5, title: 'Storage size', desc: 'Define primary container virtual disk size', icon: HardDrive },
-    { num: 6, title: 'Networking', desc: 'Assign network bridge interfaces and IP settings', icon: Globe },
-    { num: 7, title: 'Container Config', desc: 'Configure hostnames, VMID, and passwords', icon: Keyboard },
-    { num: 8, title: 'Review & Deploy', desc: 'Validate allocations and launch deployment', icon: CheckCircle },
+    { num: 1, title: 'Select Type', desc: 'Choose virtualization technology', icon: Cpu },
+    { num: 2, title: 'Choose Node', desc: 'Select target hypervisor host', icon: Server },
+    { num: 3, title: 'Assign Owner', desc: 'Assign instance to user', icon: UserIcon },
+    { num: 4, title: 'OS Template', desc: 'Select Linux operating system image', icon: FileText },
+    { num: 5, title: 'Resources', desc: 'Configure CPU cores and Memory allocations', icon: Cpu },
+    { num: 6, title: 'Storage size', desc: 'Define primary container virtual disk size', icon: HardDrive },
+    { num: 7, title: 'Networking', desc: 'Assign network bridge interfaces and IP settings', icon: Globe },
+    { num: 8, title: 'VPS Config', desc: 'Configure hostnames, VMID, and passwords', icon: Keyboard },
+    { num: 9, title: 'Review & Deploy', desc: 'Validate allocations and launch deployment', icon: CheckCircle },
   ];
 
   const selectedUser = users.find(u => u.id === selectedUserId);
@@ -137,8 +151,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
     <div className="w-full max-w-4xl al-card overflow-hidden flex flex-col h-[75vh]">
       {/* Header and Step Stepper indicator */}
       <div className="p-4 border-b border-borderSubtle bg-white/5 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-white">Create LXC VPS Wizard</h2>
-        <span className="text-xs text-gray-500">Step {step} of 8</span>
+        <h2 className="text-sm font-semibold text-white">Create VPS Wizard</h2>
+        <span className="text-xs text-gray-500">Step {step} of 9</span>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
@@ -164,8 +178,53 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
         <div className="flex-1 p-6 overflow-y-auto space-y-6">
           {error && <p className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-btn text-xs">{error}</p>}
 
-          {/* STEP 1: Choose Node */}
+          {/* STEP 1: Select Type */}
           {step === 1 && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-white">Select Instance Type</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setType('LXC')}
+                  className={`p-5 border rounded-card text-left transition-all flex flex-col justify-between ${
+                    type === 'LXC' ? 'border-blue-600 bg-blue-600/5' : 'border-borderSubtle bg-white/5'
+                  }`}
+                >
+                  <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">LXC Container</h4>
+                    <p className="text-[10px] text-gray-400 mt-2">Lightweight Linux container</p>
+                    <ul className="text-[9px] text-gray-500 space-y-1 mt-3 list-disc list-inside">
+                      <li>Fast startup (seconds)</li>
+                      <li>Near-zero runtime overhead</li>
+                      <li>Shared host kernel allocation</li>
+                      <li>Ideal for Linux microservices & servers</li>
+                    </ul>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setType('KVM')}
+                  className={`p-5 border rounded-card text-left transition-all flex flex-col justify-between ${
+                    type === 'KVM' ? 'border-blue-600 bg-blue-600/5' : 'border-borderSubtle bg-white/5'
+                  }`}
+                >
+                  <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">QEMU/KVM Virtual Machine</h4>
+                    <p className="text-[10px] text-gray-400 mt-2">Full hardware virtualization</p>
+                    <ul className="text-[9px] text-gray-500 space-y-1 mt-3 list-disc list-inside">
+                      <li>Fully isolated guest kernel & operating systems</li>
+                      <li>UEFI, legacy BIOS and secure boot keys</li>
+                      <li>Dedicated virtual storage & PCI GPU options</li>
+                      <li>Cloud-init automation and guest agent APIs</li>
+                    </ul>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: Choose Node */}
+          {step === 2 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Select Hypervisor Node</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -199,8 +258,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 2: Assign Owner */}
-          {step === 2 && (
+          {/* STEP 3: Assign Owner */}
+          {step === 3 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Assign owner for this VPS</h3>
               <div className="space-y-2">
@@ -224,10 +283,10 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 3: Choose Template */}
-          {step === 3 && (
+          {/* STEP 4: Choose Template */}
+          {step === 4 && (
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-white">Select Container OS Template</h3>
+              <h3 className="text-sm font-semibold text-white">Select OS Template / Cloud Image</h3>
               <div className="space-y-2">
                 {templates.map(t => (
                   <button
@@ -247,8 +306,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 4: Resources */}
-          {step === 4 && (
+          {/* STEP 5: Resources */}
+          {step === 5 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Configure CPU and Memory</h3>
               <div className="space-y-4 text-xs">
@@ -274,10 +333,10 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 5: Disk Storage */}
-          {step === 5 && (
+          {/* STEP 6: Disk Storage */}
+          {step === 6 && (
             <div className="space-y-4 max-w-md">
-              <h3 className="text-sm font-semibold text-white">Container Virtual Disk Allocation</h3>
+              <h3 className="text-sm font-semibold text-white">Virtual Disk Allocation</h3>
               <div>
                 <label className="text-[11px] text-gray-400 block mb-1">Storage space ({storageGb} GB)</label>
                 <input 
@@ -290,8 +349,8 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 6: Network bridge and IP */}
-          {step === 6 && (
+          {/* STEP 7: Network bridge and IP */}
+          {step === 7 && (
             <div className="space-y-4 max-w-md">
               <h3 className="text-sm font-semibold text-white">Configure Networking Interfaces</h3>
               <div className="space-y-3 text-xs">
@@ -315,10 +374,10 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 7: Hostname, VMID & Password */}
-          {step === 7 && (
+          {/* STEP 8: Hostname, VMID & Password */}
+          {step === 8 && (
             <div className="space-y-4 max-w-md">
-              <h3 className="text-sm font-semibold text-white">Configure Container Credentials</h3>
+              <h3 className="text-sm font-semibold text-white">Configure Virtual Machine Credentials</h3>
               <div className="space-y-3 text-xs">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -331,7 +390,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                     />
                   </div>
                   <div>
-                    <label className="text-[11px] text-gray-400 block mb-1">Container ID</label>
+                    <label className="text-[11px] text-gray-400 block mb-1">Instance ID (VMID)</label>
                     <input 
                       type="number" className="w-full al-input"
                       value={vmid}
@@ -362,11 +421,15 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
             </div>
           )}
 
-          {/* STEP 8: Review & Deploy */}
-          {step === 8 && (
+          {/* STEP 9: Review & Deploy */}
+          {step === 9 && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-white">Review Configuration Allocations</h3>
               <div className="al-card p-4 divide-y divide-borderSubtle text-xs">
+                <div className="py-2 flex justify-between">
+                  <span className="text-gray-500">Virtualization Type</span>
+                  <span className="font-semibold text-blue-400 uppercase">{type}</span>
+                </div>
                 <div className="py-2 flex justify-between">
                   <span className="text-gray-500">Node ID</span>
                   <span className="font-mono">{selectedNodeId}</span>
@@ -378,7 +441,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
                   </span>
                 </div>
                 <div className="py-2 flex justify-between">
-                  <span className="text-gray-500">Container Template</span>
+                  <span className="text-gray-500">Operating System</span>
                   <span className="font-mono text-gray-400 truncate max-w-xs">{selectedTemplate}</span>
                 </div>
                 <div className="py-2 flex justify-between">
@@ -416,7 +479,7 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
           <ChevronLeft size={16} /> Back
         </button>
 
-        {step < 8 ? (
+        {step < 9 ? (
           <button 
             onClick={() => setStep(step + 1)}
             className="flex items-center gap-1.5 al-btn al-btn-primary"

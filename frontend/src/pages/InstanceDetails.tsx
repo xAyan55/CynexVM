@@ -85,7 +85,9 @@ export const InstanceDetails: React.FC = () => {
 
   // Snapshots & backups
   const [snapshots, setSnapshots] = useState<any[]>([]);
+  const [backups, setBackups] = useState<any[]>([]);
   const [newSnapshotName, setNewSnapshotName] = useState('');
+  const [isoPath, setIsoPath] = useState('/var/lib/libvirt/images/templates/ubuntu-22.04.iso');
 
   // Settings & Custom properties
   const [notes, setNotes] = useState('');
@@ -135,7 +137,7 @@ export const InstanceDetails: React.FC = () => {
   const handleReinstall = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reinstallTemplate) return;
-    if (!confirm('CRITICAL WARNING: Reinstalling will wipe the entire container disk! This action is irreversible. Are you sure you want to proceed?')) return;
+    if (!confirm('CRITICAL WARNING: Reinstalling will wipe the entire guest VM/container disk! This action is irreversible. Are you sure you want to proceed?')) return;
     setReinstalling(true);
     try {
       const token = localStorage.getItem('accessToken');
@@ -195,14 +197,12 @@ export const InstanceDetails: React.FC = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/v1/instances/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const headers = { 'Authorization': `Bearer ${token}` };
+
+      const res = await fetch(`/api/v1/instances/${id}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setInstance(data);
-        setSnapshots(data.snapshots || []);
-        setFirewallRules(data.firewallRules || []);
         setNotes(data.notes || '');
         setTags(data.tags?.map((t: any) => t.tag?.name) || []);
         if (data.osTemplate) {
@@ -210,6 +210,28 @@ export const InstanceDetails: React.FC = () => {
         }
       } else {
         navigate('/');
+        return;
+      }
+
+      // Fetch snapshots
+      const snapRes = await fetch(`/api/v1/instances/${id}/snapshots`, { headers });
+      if (snapRes.ok) {
+        const snaps = await snapRes.json();
+        setSnapshots(snaps);
+      }
+
+      // Fetch firewall rules
+      const fwRes = await fetch(`/api/v1/instances/${id}/firewall`, { headers });
+      if (fwRes.ok) {
+        const rules = await fwRes.json();
+        setFirewallRules(rules);
+      }
+
+      // Fetch backups
+      const backupRes = await fetch(`/api/v1/instances/${id}/backups`, { headers });
+      if (backupRes.ok) {
+        const bkps = await backupRes.json();
+        setBackups(bkps);
       }
     } catch (_) {
       navigate('/');
@@ -232,7 +254,6 @@ export const InstanceDetails: React.FC = () => {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || `${action} failed`);
       }
-      // Wait briefly for LXD to process the action, then refresh
       await new Promise(r => setTimeout(r, 1500));
       await fetchInstanceDetails();
     } catch (err: any) {
@@ -242,29 +263,180 @@ export const InstanceDetails: React.FC = () => {
     }
   }, [instance, id]);
 
-
-
-  const handleAddFirewallRule = (e: React.FormEvent) => {
+  const handleAddFirewallRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFirewallRules([...firewallRules, { id: Math.random().toString(), ...newRule }]);
-    setNewRule({ direction: 'inbound', action: 'ACCEPT', protocol: 'tcp', port: '', sourceIp: '0.0.0.0/0' });
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/firewall`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(newRule)
+      });
+      if (res.ok) {
+        const added = await res.json();
+        setFirewallRules([...firewallRules, added]);
+        setNewRule({ direction: 'inbound', action: 'ACCEPT', protocol: 'tcp', port: '', sourceIp: '0.0.0.0/0' });
+      }
+    } catch (_) {}
   };
 
-  const handleRemoveFirewallRule = (ruleId: string) => {
-    setFirewallRules(firewallRules.filter(r => r.id !== ruleId));
+  const handleRemoveFirewallRule = async (ruleId: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/firewall/${ruleId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setFirewallRules(firewallRules.filter(r => r.id !== ruleId));
+      }
+    } catch (_) {}
   };
 
-  const handleCreateSnapshot = (e: React.FormEvent) => {
+  const handleCreateSnapshot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSnapshotName) return;
-    setSnapshots([...snapshots, {
-      id: Math.random().toString(),
-      name: newSnapshotName,
-      description: 'Manual snapshot checkpoint',
-      status: 'active',
-      createdAt: new Date()
-    }]);
-    setNewSnapshotName('');
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/snapshots`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newSnapshotName, description: 'Manual snapshot checkpoint' })
+      });
+      if (res.ok) {
+        const added = await res.json();
+        setSnapshots([...snapshots, added]);
+        setNewSnapshotName('');
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to create snapshot');
+      }
+    } catch (_) {}
+  };
+
+  const handleRestoreSnapshot = async (name: string) => {
+    if (!confirm(`Are you sure you want to restore snapshot "${name}"? Current state will be overwritten.`)) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/snapshots/${name}/restore`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert('Snapshot successfully restored!');
+        fetchInstanceDetails();
+      } else {
+        alert('Failed to restore snapshot');
+      }
+    } catch (_) {
+      alert('Failed to restore snapshot');
+    }
+  };
+
+  const handleDeleteSnapshot = async (name: string) => {
+    if (!confirm(`Are you sure you want to delete snapshot "${name}"?`)) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/snapshots/${name}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setSnapshots(snapshots.filter(s => s.name !== name));
+      }
+    } catch (_) {}
+  };
+
+  const handleCreateBackup = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/backups`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const added = await res.json();
+        setBackups([...backups, added]);
+      }
+    } catch (_) {}
+  };
+
+  const handleRestoreBackup = async (backupId: string) => {
+    if (!confirm('Are you sure you want to restore this backup? Current state will be overwritten.')) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/backups/${backupId}/restore`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert('Backup successfully restored!');
+        fetchInstanceDetails();
+      } else {
+        alert('Failed to restore backup');
+      }
+    } catch (_) {
+      alert('Failed to restore backup');
+    }
+  };
+
+  const handleDeleteBackup = async (backupId: string) => {
+    if (!confirm('Are you sure you want to delete this backup?')) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/backups/${backupId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setBackups(backups.filter(b => b.id !== backupId));
+      }
+    } catch (_) {}
+  };
+
+  const handleMountIso = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/mount-iso`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ isoPath })
+      });
+      if (res.ok) {
+        alert('ISO CDROM mounted successfully!');
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to mount ISO');
+      }
+    } catch (_) {
+      alert('Failed to mount ISO');
+    }
+  };
+
+  const handleEjectIso = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`/api/v1/instances/${id}/eject-iso`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert('ISO CDROM ejected successfully!');
+      } else {
+        alert('Failed to eject ISO');
+      }
+    } catch (_) {
+      alert('Failed to eject ISO');
+    }
   };
 
   const handleAddTag = (e: React.FormEvent) => {
@@ -281,7 +453,7 @@ export const InstanceDetails: React.FC = () => {
 
   const handleDeleteInstance = async () => {
     if (!instance) return;
-    if (!confirm('CRITICAL WARNING: Are you sure you want to permanently delete this LXC container? All storage disks and snapshot data will be destroyed.')) return;
+    if (!confirm('CRITICAL WARNING: Are you sure you want to permanently destroy this VPS? All storage disks, backups and snapshot data will be destroyed.')) return;
     
     try {
       const token = localStorage.getItem('accessToken');
@@ -627,14 +799,15 @@ export const InstanceDetails: React.FC = () => {
         </div>
       )}
 
-      {/* 4. BACKUPS TAB */}
+      {/* 4. BACKUPS & SNAPSHOTS TAB */}
       {activeTab === 'backups' && (
         <div className="space-y-6">
+          {/* Snapshots Section */}
           <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
             <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Snapshots Checkpoints</h2>
             <form onSubmit={handleCreateSnapshot} className="flex gap-3">
-              <input type="text" placeholder="Snapshot name" className="flex-1 al-input" value={newSnapshotName} onChange={e => setNewSnapshotName(e.target.value)} required />
-              <button type="submit" className="al-btn al-btn-primary">Create Snapshot</button>
+              <input type="text" placeholder="Snapshot name" className="flex-1 al-input text-xs" value={newSnapshotName} onChange={e => setNewSnapshotName(e.target.value)} required />
+              <button type="submit" className="al-btn al-btn-primary text-xs px-4 py-2">Create Snapshot</button>
             </form>
 
             <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden mt-4">
@@ -645,20 +818,70 @@ export const InstanceDetails: React.FC = () => {
                     <th className="p-3">Description</th>
                     <th className="p-3">Status</th>
                     <th className="p-3">Created At</th>
+                    <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
                   {snapshots.length === 0 && (
-                    <tr><td colSpan={4} className="p-6 text-center text-neutral-500">No snapshots found</td></tr>
+                    <tr><td colSpan={5} className="p-6 text-center text-neutral-500">No snapshots found</td></tr>
                   )}
                   {snapshots.map(s => (
-                    <tr key={s.id}>
+                    <tr key={s.id || s.name}>
                       <td className="p-3 font-medium text-neutral-900 dark:text-white">{s.name}</td>
-                      <td className="p-3 text-neutral-400">{s.description}</td>
+                      <td className="p-3 text-neutral-400">{s.description || 'No description'}</td>
                       <td className="p-3">
-                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">{s.status}</span>
+                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">{s.status || 'active'}</span>
                       </td>
-                      <td className="p-3 text-neutral-500">{new Date(s.createdAt).toLocaleString()}</td>
+                      <td className="p-3 text-neutral-500">{s.createdAt ? new Date(s.createdAt).toLocaleString() : 'N/A'}</td>
+                      <td className="p-3 text-right space-x-2">
+                        <button onClick={() => handleRestoreSnapshot(s.name)} className="text-emerald-500 hover:text-emerald-400 font-semibold">Restore</button>
+                        <button onClick={() => handleDeleteSnapshot(s.name)} className="text-red-500 hover:text-red-400 font-semibold">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Backups Section */}
+          <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Incremental Backups</h2>
+              <button onClick={handleCreateBackup} className="al-btn al-btn-primary text-xs px-4 py-2">
+                Trigger Backup
+              </button>
+            </div>
+
+            <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden mt-4">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-100 dark:bg-neutral-800/20 text-neutral-400">
+                  <tr>
+                    <th className="p-3">Backup ID/Name</th>
+                    <th className="p-3">Size</th>
+                    <th className="p-3">Path</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Created At</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-neutral-300">
+                  {backups.length === 0 && (
+                    <tr><td colSpan={6} className="p-6 text-center text-neutral-500">No backups created yet</td></tr>
+                  )}
+                  {backups.map(b => (
+                    <tr key={b.id}>
+                      <td className="p-3 font-medium text-neutral-900 dark:text-white">{b.name}</td>
+                      <td className="p-3 text-neutral-400">{formatBytes(b.sizeBytes)}</td>
+                      <td className="p-3 font-mono text-[10px] text-neutral-400">{b.path}</td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">{b.status}</span>
+                      </td>
+                      <td className="p-3 text-neutral-500">{new Date(b.createdAt).toLocaleString()}</td>
+                      <td className="p-3 text-right space-x-2">
+                        <button onClick={() => handleRestoreBackup(b.id)} className="text-emerald-500 hover:text-emerald-400 font-semibold">Restore</button>
+                        <button onClick={() => handleDeleteBackup(b.id)} className="text-red-500 hover:text-red-400 font-semibold">Delete</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -688,7 +911,7 @@ export const InstanceDetails: React.FC = () => {
                 {tags.map(t => (
                   <span key={t} className="inline-flex items-center gap-1 bg-white/5 border border-neutral-700 px-2 py-0.5 rounded-md text-[10px] font-medium text-neutral-300">
                     {t}
-                    <button type="button" onClick={() => handleRemoveTag(t)} className="text-neutral-500 hover:text-white font-bold">×</button>
+                    <button type="button" onClick={() => handleRemoveTag(t)} className="text-neutral-500 hover:text-white font-bold font-semibold">×</button>
                   </span>
                 ))}
               </div>
@@ -708,6 +931,7 @@ export const InstanceDetails: React.FC = () => {
           </div>
         </div>
       )}
+
       {activeTab === 'settings' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
           {/* Change Root Password Card */}
@@ -716,7 +940,7 @@ export const InstanceDetails: React.FC = () => {
               <SetIcon size={16} className="text-blue-500" /> Change Root Password
             </h2>
             <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Instantly update the root user account password inside the container filesystem. The container must be running to apply this change.
+              Instantly update the root user account password inside the guest VM/container. The VPS must be running to apply this change.
             </p>
             <form onSubmit={handleChangePassword} className="space-y-3 text-xs">
               <div className="space-y-1">
@@ -746,7 +970,7 @@ export const InstanceDetails: React.FC = () => {
               <RefreshCw size={16} /> Reinstall Operating System
             </h2>
             <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed font-semibold">
-              CRITICAL: Reinstalling deletes the container filesystem root and recreates it from the selected OS template. All user files, data, and configurations will be permanently destroyed.
+              CRITICAL: Reinstalling deletes the VM/container filesystem root and recreates it from the selected OS template. All user files, data, and configurations will be permanently destroyed.
             </p>
             <form onSubmit={handleReinstall} className="space-y-3 text-xs">
               <div className="space-y-1">
@@ -773,6 +997,44 @@ export const InstanceDetails: React.FC = () => {
               </button>
             </form>
           </div>
+
+          {/* ISO Media Mount Manager (Only for VM / KVM types) */}
+          {(instance.type === 'KVM' || instance.type === 'QEMU') && (
+            <div className="bg-white dark:bg-white/5 border border-neutral-350 dark:border-neutral-800/20 rounded-2xl p-6 shadow-sm col-span-1 md:col-span-2 space-y-4">
+              <h2 className="text-sm font-semibold text-neutral-850 dark:text-white flex items-center gap-2">
+                <Layers size={16} className="text-blue-500" /> Virtual ISO CDROM Media Manager
+              </h2>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                Mount or eject ISO optical disk media templates into the virtual machine's CDROM drive.
+              </p>
+              <div className="space-y-3 text-xs">
+                <div className="space-y-1">
+                  <label className="text-neutral-500 dark:text-neutral-400 font-medium">ISO Path on Hypervisor</label>
+                  <input 
+                    type="text" 
+                    value={isoPath} 
+                    onChange={e => setIsoPath(e.target.value)}
+                    placeholder="/var/lib/libvirt/images/templates/ubuntu-22.04.iso"
+                    className="w-full al-input font-mono"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={handleMountIso}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition"
+                  >
+                    Mount ISO Image
+                  </button>
+                  <button 
+                    onClick={handleEjectIso}
+                    className="px-4 py-2 bg-neutral-600 hover:bg-neutral-700 text-white rounded-xl font-medium transition"
+                  >
+                    Eject CDROM
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

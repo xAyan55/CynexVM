@@ -24,10 +24,136 @@ import { LxdService } from './services/lxdService';
 import { ReconciliationService } from './services/reconciliation';
 import { db } from './db';
 import { SocketService } from './services/socketService';
+import url from 'url';
+import net from 'net';
+import ws from 'ws';
+import { CryptoService } from './services/cryptoService';
+import { VirtualizationProviderFactory } from './services/virtualization/provider';
 
 const app = express();
 app.set('trust proxy', true);
 const server = http.createServer(app);
+
+// Mount upgrade listener for VM Console WebSocket proxies
+server.on('upgrade', async (req, socket, head) => {
+  const parsedUrl = url.parse(req.url || '', true);
+  const pathname = parsedUrl.pathname || '';
+  
+  const vncMatch = pathname.match(/^\/api\/v1\/instances\/([^\/]+)\/vnc$/);
+  const serialMatch = pathname.match(/^\/api\/v1\/instances\/([^\/]+)\/serial$/);
+  
+  if (!vncMatch && !serialMatch) {
+    return; // Let socket.io handle other paths like /socket.io/
+  }
+  
+  // Authenticate token
+  const token = (parsedUrl.query?.token as string) || '';
+  let userId = '';
+  try {
+    const decoded = jwt.verify(token, CONFIG.JWT_SECRET) as any;
+    userId = decoded.userId;
+  } catch (_) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  
+  const instanceId = vncMatch ? vncMatch[1] : (serialMatch ? serialMatch[1] : '');
+  const instance = await db.instance.findUnique({
+    where: { id: instanceId },
+    include: { node: true }
+  });
+  
+  if (!instance) {
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  
+  // Authorization check (Admin or Owner)
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: { roles: { include: { role: true } } }
+  });
+  const roleName = user?.roles[0]?.role.name || 'User';
+  if (roleName !== 'Admin' && instance.userId !== userId) {
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  // Create ws Server to handle the upgraded socket connection
+  const wss = new ws.Server({ noServer: true });
+  wss.handleUpgrade(req, socket, head, async (wsConn) => {
+    try {
+      const node = instance.node;
+      const isLocal = node.hostname === 'localhost' || node.apiUrl.includes('localhost') || node.apiUrl.includes('127.0.0.1');
+      
+      if (isLocal) {
+        if (vncMatch) {
+          // Pipe local TCP port directly
+          const vncPort = 5900 + (instance.vmid % 100);
+          const tcpSocket = net.connect(vncPort, '127.0.0.1');
+          
+          wsConn.on('message', (msg) => {
+            if (tcpSocket.writable) tcpSocket.write(msg as Buffer);
+          });
+          tcpSocket.on('data', (data) => {
+            if (wsConn.readyState === ws.OPEN) wsConn.send(data);
+          });
+          wsConn.on('close', () => tcpSocket.end());
+          tcpSocket.on('close', () => wsConn.close());
+          wsConn.on('error', () => tcpSocket.end());
+          tcpSocket.on('error', () => wsConn.close());
+        } else {
+          // Pipe local serial child process
+          const { spawn } = require('child_process');
+          const proc = spawn('virsh', ['console', `cynex-${instance.vmid}`]);
+          
+          wsConn.on('message', (msg) => {
+            if (proc.stdin.writable) proc.stdin.write(msg as Buffer);
+          });
+          proc.stdout.on('data', (data: any) => {
+            if (wsConn.readyState === ws.OPEN) wsConn.send(data);
+          });
+          wsConn.on('close', () => proc.kill());
+          proc.on('close', () => wsConn.close());
+          wsConn.on('error', () => proc.kill());
+          proc.on('error', () => wsConn.close());
+        }
+      } else {
+        // Pipe remote websocket proxy to node daemon CynexD
+        let decryptedToken = 'local-token';
+        if (node.apiToken && node.apiToken !== 'local-token') {
+          decryptedToken = CryptoService.decrypt(node.apiToken);
+        }
+        const protocol = node.apiUrl.startsWith('https') ? 'wss' : 'ws';
+        const rawNodeUrl = node.apiUrl.replace(/^https?:\/\//, '');
+        const targetType = vncMatch ? 'vnc' : 'serial';
+        const remoteUrl = `${protocol}://${rawNodeUrl}/api/v1/${targetType}/${instance.vmid}?token=${decryptedToken}`;
+        
+        const remoteWs = new ws(remoteUrl);
+        
+        remoteWs.on('open', () => {
+          wsConn.on('message', (msg) => {
+            if (remoteWs.readyState === ws.OPEN) remoteWs.send(msg as any);
+          });
+          remoteWs.on('message', (msg) => {
+            if (wsConn.readyState === ws.OPEN) wsConn.send(msg as any);
+          });
+        });
+        
+        wsConn.on('close', () => remoteWs.close());
+        remoteWs.on('close', () => wsConn.close());
+        remoteWs.on('error', () => remoteWs.close());
+        remoteWs.on('error', () => wsConn.close());
+      }
+    } catch (err: any) {
+      console.error('[Console Handshake Proxy Error]:', err.message);
+      wsConn.close();
+    }
+  });
+});
 
 // Socket.IO configuration
 const io = new Server(server, {
@@ -220,7 +346,8 @@ io.on('connection', (socket: Socket) => {
 
         if (!instance) return;
 
-        const live = await LxdService.getContainerStatus(instance.vmid, instance.node);
+        const provider = VirtualizationProviderFactory.getProvider(instance.type);
+        const live = await provider.metrics(instance.node, instance);
 
         socket.emit('metrics.data', {
           cpu: live.cpu || 0,
@@ -240,7 +367,7 @@ io.on('connection', (socket: Socket) => {
     };
 
     await emitMetrics();
-    metricsInterval = setInterval(emitMetrics, 2000);
+    metricsInterval = setInterval(emitMetrics, 1000);
   });
 
   socket.on('metrics.unsubscribe', () => {

@@ -37,13 +37,17 @@ fi
 echo -e "${YELLOW}[2/4] Initializing /var/www/cynexd...${NC}"
 mkdir -p /var/www/cynexd
 cd /var/www/cynexd
+npm init -y || true
+npm install ws || true
 
-# Write zero-dependency Native Node daemon index.js
+# Write Node daemon index.js
 cat << 'EOF' > index.js
 const http = require('http');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
+const ws = require('ws');
+const net = require('net');
 
 const execAsync = promisify(exec);
 
@@ -60,6 +64,13 @@ try {
 
 const PORT = config.port || 5050;
 const TOKEN = config.token || '';
+
+const getSocketPath = () => {
+  if (fs.existsSync('/var/snap/lxd/common/lxd/unix.socket')) {
+    return '/var/snap/lxd/common/lxd/unix.socket';
+  }
+  return '/var/lib/lxd/unix.socket';
+};
 
 const server = http.createServer(async (req, res) => {
   const sendJson = (statusCode, body) => {
@@ -78,95 +89,109 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (method === 'GET' && url === '/api/v1/test') {
-      const { stdout } = await execAsync('/snap/bin/lxc --version');
-      return sendJson(200, { success: true, version: stdout.trim() });
+      let lxcVer = 'unknown';
+      let virshVer = 'unknown';
+      try {
+        const { stdout } = await execAsync('lxc --version');
+        lxcVer = stdout.trim();
+      } catch (_) {}
+      try {
+        const { stdout } = await execAsync('virsh --version');
+        virshVer = stdout.trim();
+      } catch (_) {}
+      return sendJson(200, { success: true, lxcVersion: lxcVer, virshVersion: virshVer });
     }
 
     if (method === 'GET' && url === '/api/v1/status') {
-      const { stdout: memOut } = await execAsync('free -b');
-      const lines = memOut.split('\n');
-      const memLine = lines[1].split(/\s+/);
-      const totalMem = parseInt(memLine[1], 10);
-      const usedMem = parseInt(memLine[2], 10);
+      let totalMem = 16 * 1024 * 1024 * 1024;
+      let usedMem = 4 * 1024 * 1024 * 1024;
+      try {
+        const { stdout: memOut } = await execAsync('free -b');
+        const lines = memOut.split('\n');
+        const memLine = lines[1].split(/\s+/);
+        totalMem = parseInt(memLine[1], 10);
+        usedMem = parseInt(memLine[2], 10);
+      } catch (_) {}
 
-      const { stdout: cpuOut } = await execAsync("grep 'cpu ' /proc/stat");
-      const cpuFields = cpuOut.split(/\s+/);
-      const idle = parseInt(cpuFields[4], 10);
-      const total = cpuFields.slice(1).reduce((acc, val) => acc + parseInt(val, 10), 0);
+      let cpuUsage = 0.1;
+      try {
+        const { stdout: cpuOut } = await execAsync("grep 'cpu ' /proc/stat");
+        const cpuFields = cpuOut.split(/\s+/);
+        const idle = parseInt(cpuFields[4], 10);
+        const total = cpuFields.slice(1).reduce((acc, val) => acc + parseInt(val, 10), 0);
+        cpuUsage = 1 - (idle / total);
+      } catch (_) {}
 
       return sendJson(200, {
-        cpu: 1 - (idle / total),
+        cpu: cpuUsage,
         memory: { total: totalMem, used: usedMem, free: totalMem - usedMem },
         disk: { total: 100 * 1024 * 1024 * 1024, used: 25 * 1024 * 1024 * 1024 }
       });
     }
 
-    // Match /api/v1/containers/:vmid/status
-    const statusMatch = url.match(/^\/api\/v1\/containers\/(\d+)\/status$/);
-    if (method === 'GET' && statusMatch) {
-      const vmid = statusMatch[1];
-      try {
-        const containerName = `cynex-${vmid}`;
-        const { stdout } = await execAsync(`/snap/bin/lxc info ${containerName} --format=json`);
-        const info = JSON.parse(stdout);
-        return sendJson(200, {
-          status: info.status?.toLowerCase() || 'stopped',
-          cpu: 0.05,
-          mem: info.state?.memory?.usage || 0,
-          maxmem: info.state?.memory?.usage_peak || 512 * 1024 * 1024,
-          uptime: info.state?.uptime || 0
-        });
-      } catch (_) {
-        return sendJson(200, { status: 'stopped', cpu: 0, mem: 0, maxmem: 512 * 1024 * 1024, uptime: 0 });
-      }
-    }
-
-    // Match power actions
-    const startMatch = url.match(/^\/api\/v1\/containers\/(\d+)\/start$/);
-    if (method === 'POST' && startMatch) {
-      await execAsync(`/snap/bin/lxc start cynex-${startMatch[1]}`);
-      return sendJson(200, { success: true });
-    }
-
-    const stopMatch = url.match(/^\/api\/v1\/containers\/(\d+)\/stop$/);
-    if (method === 'POST' && stopMatch) {
-      await execAsync(`/snap/bin/lxc stop cynex-${stopMatch[1]}`);
-      return sendJson(200, { success: true });
-    }
-
-    const rebootMatch = url.match(/^\/api\/v1\/containers\/(\d+)\/reboot$/);
-    if (method === 'POST' && rebootMatch) {
-      await execAsync(`/snap/bin/lxc restart cynex-${rebootMatch[1]}`);
-      return sendJson(200, { success: true });
-    }
-
-    // Match delete
-    const deleteMatch = url.match(/^\/api\/v1\/containers\/(\d+)$/);
-    if (method === 'DELETE' && deleteMatch) {
-      await execAsync(`/snap/bin/lxc delete cynex-${deleteMatch[1]} --force`);
-      return sendJson(200, { success: true });
-    }
-
-    // Match create container
-    if (method === 'POST' && url === '/api/v1/containers') {
+    // Generic command execution
+    if (method === 'POST' && url === '/api/v1/exec') {
       let bodyStr = '';
       req.on('data', chunk => { bodyStr += chunk; });
       req.on('end', async () => {
         try {
           const body = JSON.parse(bodyStr || '{}');
-          const { vmid, ostemplate, cores, memory } = body;
-          const containerName = `cynex-${vmid}`;
-          let distro = 'ubuntu/22.04';
-          if (ostemplate && ostemplate.toLowerCase().includes('debian')) {
-            distro = 'debian/12';
-          } else if (ostemplate && ostemplate.toLowerCase().includes('alpine')) {
-            distro = 'alpine/3.19';
-          }
+          const { command } = body;
+          if (!command) return sendJson(400, { error: 'Command is required' });
+          
+          const { stdout, stderr } = await execAsync(command);
+          return sendJson(200, { stdout: stdout.trim(), stderr: stderr.trim(), exitCode: 0 });
+        } catch (err) {
+          return sendJson(200, {
+            stdout: err.stdout?.trim() || '',
+            stderr: err.stderr?.trim() || err.message,
+            exitCode: err.code || 1
+          });
+        }
+      });
+      return;
+    }
 
-          await execAsync(`/snap/bin/lxc launch images:${distro} ${containerName}`);
-          if (cores) await execAsync(`/snap/bin/lxc config set ${containerName} limits.cpu ${cores}`);
-          if (memory) await execAsync(`/snap/bin/lxc config set ${containerName} limits.memory ${memory}MB`);
-          sendJson(200, { success: true });
+    // Generic LXD Socket Proxying
+    if (method === 'POST' && url === '/api/v1/lxd') {
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const { url: lxdUrl, method: lxdMethod, data: lxdData } = body;
+          
+          const options = {
+            socketPath: getSocketPath(),
+            path: lxdUrl,
+            method: lxdMethod,
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          };
+
+          const lxdReq = http.request(options, (lxdRes) => {
+            let resData = '';
+            lxdRes.on('data', (chunk) => { resData += chunk; });
+            lxdRes.on('end', () => {
+              try {
+                const parsed = JSON.parse(resData);
+                sendJson(lxdRes.statusCode, parsed);
+              } catch (_) {
+                res.writeHead(lxdRes.statusCode, { 'Content-Type': 'text/plain' });
+                res.end(resData);
+              }
+            });
+          });
+
+          lxdReq.on('error', (err) => {
+            sendJson(500, { error: err.message });
+          });
+
+          if (lxdData) {
+            lxdReq.write(JSON.stringify(lxdData));
+          }
+          lxdReq.end();
         } catch (err) {
           sendJson(500, { error: err.message });
         }
@@ -178,6 +203,69 @@ const server = http.createServer(async (req, res) => {
   } catch (err) {
     sendJson(500, { error: err.message });
   }
+});
+
+// Configure WebSocket Server for VM VNC / Serial proxies
+const wss = new ws.Server({ noServer: true });
+
+wss.on('connection', (wsConn, req) => {
+  const url = req.url;
+  const vncMatch = url.match(/^\/api\/v1\/vnc\/(\d+)$/);
+  const serialMatch = url.match(/^\/api\/v1\/serial\/(\d+)$/);
+
+  if (vncMatch) {
+    const vmid = parseInt(vncMatch[1], 10);
+    const vncPort = 5900 + (vmid % 100);
+    const tcpSocket = net.connect(vncPort, '127.0.0.1');
+
+    wsConn.on('message', (msg) => {
+      if (tcpSocket.writable) tcpSocket.write(msg);
+    });
+
+    tcpSocket.on('data', (data) => {
+      if (wsConn.readyState === ws.OPEN) wsConn.send(data);
+    });
+
+    wsConn.on('close', () => tcpSocket.end());
+    tcpSocket.on('close', () => wsConn.close());
+    wsConn.on('error', () => tcpSocket.end());
+    tcpSocket.on('error', () => wsConn.close());
+    tcpSocket.on('error', (err) => console.error('[VNC TCP Error]:', err.message));
+  }
+
+  if (serialMatch) {
+    const vmid = parseInt(serialMatch[1], 10);
+    const proc = spawn('virsh', ['console', `cynex-${vmid}`]);
+
+    wsConn.on('message', (msg) => {
+      if (proc.stdin.writable) proc.stdin.write(msg);
+    });
+
+    proc.stdout.on('data', (data) => {
+      if (wsConn.readyState === ws.OPEN) wsConn.send(data);
+    });
+
+    wsConn.on('close', () => proc.kill());
+    proc.on('close', () => wsConn.close());
+    wsConn.on('error', () => proc.kill());
+    proc.on('error', () => wsConn.close());
+  }
+});
+
+server.on('upgrade', (req, socket, head) => {
+  // Validate token from queries
+  const urlObj = new URL(req.url, `http://${req.headers.host}`);
+  const queryToken = urlObj.searchParams.get('token');
+  
+  if (TOKEN && queryToken !== TOKEN) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (wsConn) => {
+    wss.emit('connection', wsConn, req);
+  });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
