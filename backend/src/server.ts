@@ -354,6 +354,10 @@ io.on('connection', (socket: Socket) => {
       return socket.emit('metrics.error', { message: 'Unauthorized metrics subscription' });
     }
 
+    // CPU delta tracking — live.cpu is total seconds, not a rate
+    let prevCpuSeconds: number | null = null;
+    let prevTimestamp: number | null = null;
+
     const emitMetrics = async () => {
       try {
         const instance = await db.instance.findUnique({
@@ -366,9 +370,26 @@ io.on('connection', (socket: Socket) => {
         const provider = VirtualizationProviderFactory.getProvider(instance.type);
         const live = await provider.metrics(instance.node, instance);
 
+        // Compute CPU utilization as rate (0..1 per core)
+        let cpu = 0;
+        const currentCpuSeconds = live.cpu as number || 0;
+        const maxcpu = live.maxcpu as number || 1;
+        const now = Date.now();
+
+        if (prevCpuSeconds !== null && prevTimestamp !== null && currentCpuSeconds >= prevCpuSeconds) {
+          const cpuDelta = currentCpuSeconds - prevCpuSeconds;
+          const timeDelta = (now - prevTimestamp) / 1000;
+          if (timeDelta > 0 && cpuDelta >= 0) {
+            cpu = Math.min(cpuDelta / timeDelta / maxcpu, 1);
+          }
+        }
+
+        prevCpuSeconds = currentCpuSeconds;
+        prevTimestamp = now;
+
         socket.emit('metrics.data', {
-          cpu: live.cpu || 0,
-          maxcpu: live.maxcpu || 1,
+          cpu,
+          maxcpu,
           mem: live.mem || 0,
           maxmem: live.maxmem || instance.memoryMb * 1024 * 1024,
           disk: live.disk || 0,
