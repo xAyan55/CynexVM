@@ -182,6 +182,10 @@ setup_database() {
         if (!role) role = await db.role.create({ data: { name: 'Admin', description: 'Full administrator access' } });
         await db.userRole.create({ data: { userId: user.id, roleId: role.id } });
 
+        // Create User role (required for registration)
+        let userRole = await db.role.findFirst({ where: { name: 'User' } });
+        if (!userRole) await db.role.create({ data: { name: 'User', description: 'Standard client user with limited scope access' } });
+
         // Create default node (localhost)
         await db.node.create({
           data: {
