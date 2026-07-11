@@ -27,6 +27,7 @@ router.get('/', authenticate, requirePermission('node.read'), async (req, res) =
         version: true,
         clusterName: true,
         maintenanceMode: true,
+        supportsQemu: true,
         createdAt: true,
       }
     });
@@ -131,7 +132,7 @@ router.post('/', authenticate, requirePermission('node.create'), async (req, res
  * @desc    Updates configuration for a hypervisor node
  */
 router.put('/:id', authenticate, requirePermission('node.write'), async (req, res) => {
-  const { name, hostname, location, description, cpuCores, memoryMb, storageGb, maintenanceMode } = req.body;
+  const { name, hostname, location, description, cpuCores, memoryMb, storageGb, maintenanceMode, supportsQemu } = req.body;
 
   try {
     const node = await db.node.findUnique({ where: { id: req.params.id } });
@@ -146,6 +147,7 @@ router.put('/:id', authenticate, requirePermission('node.write'), async (req, re
     if (memoryMb) updateData.memoryMb = parseInt(memoryMb, 10);
     if (storageGb) updateData.storageGb = parseInt(storageGb, 10);
     if (maintenanceMode !== undefined) updateData.maintenanceMode = maintenanceMode;
+    if (supportsQemu !== undefined) updateData.supportsQemu = supportsQemu;
 
     const updatedNode = await db.node.update({
       where: { id: req.params.id },
@@ -162,6 +164,7 @@ router.put('/:id', authenticate, requirePermission('node.write'), async (req, re
         version: true,
         clusterName: true,
         maintenanceMode: true,
+        supportsQemu: true,
       }
     });
 

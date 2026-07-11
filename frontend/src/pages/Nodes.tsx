@@ -10,6 +10,7 @@ interface Node {
   cpuCores: number;
   memoryMb: number;
   storageGb: number;
+  supportsQemu?: boolean;
   status?: string;
   versionRelease?: string;
 }
@@ -106,6 +107,7 @@ export const Nodes: React.FC = () => {
           cpuCores: parseInt(form.get('cpuCores') as string, 10),
           memoryMb: parseInt(form.get('memoryMb') as string, 10),
           storageGb: parseInt(form.get('storageGb') as string, 10),
+          supportsQemu: form.get('supportsQemu') === 'on',
         })
       });
       if (res.ok) {
@@ -342,6 +344,12 @@ export const Nodes: React.FC = () => {
                   defaultValue={editNode.storageGb} required />
               </div>
             </div>
+
+            <label className="flex items-center gap-2 text-neutral-400 cursor-pointer">
+              <input name="supportsQemu" type="checkbox" defaultChecked={editNode.supportsQemu !== false}
+                className="rounded border-neutral-600 bg-neutral-800 text-blue-500 focus:ring-blue-500" />
+              Supports QEMU/KVM Virtual Machines
+            </label>
 
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => { setEditNode(null); setError(null); }}
