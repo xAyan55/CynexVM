@@ -743,10 +743,24 @@ router.post('/:id/password', authenticate, async (req: AuthenticatedRequest, res
           );
           if (isoRes.exitCode !== 0) throw new Error('Failed to create cloud-init ISO: ' + isoRes.stderr);
 
+          // Query existing persistent disk targets to avoid conflicts
+          const blkRes = await NodeClient.executeCommand(instance.nodeId, `virsh domblklist ${containerName} --inactive 2>&1`);
+          const usedTargets = new Set<string>();
+          for (const line of blkRes.stdout.split('\n').slice(2)) {
+            const match = line.trim().match(/^sd([a-z])\s/);
+            if (match) usedTargets.add(match[1]);
+          }
+          let diskLetter = 'b';
+          while (usedTargets.has(diskLetter)) {
+            diskLetter = String.fromCharCode(diskLetter.charCodeAt(0) + 1);
+            if (diskLetter > 'z') throw new Error('No available sdX target for cloud-init ISO');
+          }
+          const diskTarget = `sd${diskLetter}`;
+
           // Attach ISO — use --live to hotplug immediately, --config for persistence
           const attachFlag = hadAgent ? '--live --config' : '--config';
-          const attachRes = await NodeClient.executeCommand(instance.nodeId, `virsh attach-disk ${containerName} ${isoPath} sdb --device cdrom ${attachFlag} 2>&1`);
-          if (attachRes.exitCode !== 0) throw new Error('Failed to attach cloud-init ISO: ' + attachRes.stderr);
+          const attachRes = await NodeClient.executeCommand(instance.nodeId, `virsh attach-disk ${containerName} ${isoPath} ${diskTarget} --device cdrom ${attachFlag} 2>&1`);
+          if (attachRes.exitCode !== 0) throw new Error('Failed to attach cloud-init ISO: ' + (attachRes.stderr || attachRes.stdout));
 
           if (hadAgent) {
             // Agent works — ask it to clean cloud-init state so it re-runs on next boot
