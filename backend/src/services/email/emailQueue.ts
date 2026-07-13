@@ -1,49 +1,75 @@
 import { db } from '../../db';
 import { EmailService } from './emailService';
 
-const BACKOFF_DELAYS = [60, 300, 900, 3600, 21600]; // 1m, 5m, 15m, 1h, 6h
+const BACKOFF_DELAYS = [60, 120, 300, 900, 1800]; // 1m, 2m, 5m, 15m, 30m
 const BATCH_SIZE = 10;
 const POLL_INTERVAL = 5000;
+
+export interface QueueStats {
+  pending: number;
+  processing: number;
+  sent: number;
+  failed: number;
+  deadLetter: number;
+  total: number;
+  sentToday: number;
+  deliveryRate: number;
+}
 
 export class EmailQueue {
   private static activePoller: NodeJS.Timeout | null = null;
   private static isPolling = false;
   private static initialized = false;
+  private static isQueuePaused = false;
 
-  public static async initialize() {
+  public static async initialize(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
 
-    // Retry any jobs that were left in 'sending' state on last shutdown
+    // Backward compatibility: Transition older queued/sending statuses to pending
     await db.emailLog.updateMany({
-      where: { status: 'sending' },
+      where: { status: { in: ['sending', 'queued', 'processing'] } },
       data: {
-        status: 'queued',
-        nextRetryAt: new Date(Date.now() + 60000)
+        status: 'pending',
+        nextRetryAt: new Date()
       }
     });
 
-    // Mark stale jobs (no html body) as failed so they don't pollute the queue
+    // Mark stale jobs (no html body) as failed
     const staleCount = await db.emailLog.updateMany({
-      where: { status: 'queued', html: null },
-      data: { status: 'failed', error: 'Stale job: missing HTML body (likely from schema migration)' }
+      where: { status: 'pending', html: null },
+      data: { status: 'dead_letter', error: 'Stale job: missing HTML body' }
     });
     if (staleCount.count > 0) {
-      console.log(`[Email Queue] Marked ${staleCount.count} stale jobs as failed (missing html column).`);
+      console.log(`[Email Queue] Marked ${staleCount.count} stale jobs as dead_letter.`);
     }
   }
 
-  public static start() {
+  public static start(): void {
     if (this.activePoller) return;
     console.log('[Email Queue] Starting background queue processor...');
     this.activePoller = setInterval(() => this.processQueue(), POLL_INTERVAL);
   }
 
-  public static stop() {
+  public static stop(): void {
     if (this.activePoller) {
       clearInterval(this.activePoller);
       this.activePoller = null;
     }
+  }
+
+  public static pause(): void {
+    this.isQueuePaused = true;
+    console.log('[Email Queue] Queue processing has been paused.');
+  }
+
+  public static resume(): void {
+    this.isQueuePaused = false;
+    console.log('[Email Queue] Queue processing has been resumed.');
+  }
+
+  public static isPaused(): boolean {
+    return this.isQueuePaused;
   }
 
   public static async enqueue(options: {
@@ -54,8 +80,23 @@ export class EmailQueue {
     templateName?: string;
     userId?: string;
     maxRetries?: number;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   }): Promise<string> {
+    // Deduplication check: Discard if identical email is already pending
+    const existing = await db.emailLog.findFirst({
+      where: {
+        to: options.to,
+        subject: options.subject,
+        html: options.html,
+        status: 'pending'
+      }
+    });
+
+    if (existing) {
+      console.log(`[Email Queue] Duplicate email to ${options.to} discarded (already pending in queue).`);
+      return existing.id;
+    }
+
     const log = await db.emailLog.create({
       data: {
         to: options.to,
@@ -64,7 +105,7 @@ export class EmailQueue {
         plainText: options.plainText || null,
         templateName: options.templateName || null,
         userId: options.userId || null,
-        status: 'queued',
+        status: 'pending',
         maxRetries: options.maxRetries || 5,
         retryCount: 0,
         metadata: options.metadata ? JSON.stringify(options.metadata) : null
@@ -76,8 +117,8 @@ export class EmailQueue {
   public static async enqueueTemplate(
     to: string,
     templateName: string,
-    variables: Record<string, any> = {},
-    options?: { userId?: string; maxRetries?: number; metadata?: Record<string, any> }
+    variables: Record<string, unknown> = {},
+    options?: { userId?: string; maxRetries?: number; metadata?: Record<string, unknown> }
   ): Promise<string | null> {
     const { EmailTemplateService } = require('./emailTemplateService');
     const template = await EmailTemplateService.getTemplate(templateName);
@@ -96,14 +137,15 @@ export class EmailQueue {
     });
   }
 
-  private static async processQueue() {
+  private static async processQueue(): Promise<void> {
+    if (this.isQueuePaused) return;
     if (this.isPolling) return;
     this.isPolling = true;
 
     try {
       const jobs = await db.emailLog.findMany({
         where: {
-          status: 'queued',
+          status: { in: ['pending', 'failed'] },
           OR: [
             { nextRetryAt: null },
             { nextRetryAt: { lte: new Date() } }
@@ -116,26 +158,25 @@ export class EmailQueue {
       for (const job of jobs) {
         await this.processJob(job);
       }
-    } catch (err: any) {
-      console.error('[Email Queue] Poller error:', err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Poller error';
+      console.error('[Email Queue] Poller error:', msg);
     } finally {
       this.isPolling = false;
     }
   }
 
-  private static async processJob(job: any) {
+  private static async processJob(job: any): Promise<void> {
     const ctx = `[Email Queue] Job ${job.id} (template=${job.templateName || 'none'}, to=${job.to}, subject=${job.subject})`;
-    console.log(`${ctx} Processing...`);
-
+    
     try {
       await db.emailLog.update({
         where: { id: job.id },
-        data: { status: 'sending' }
+        data: { status: 'processing' }
       });
 
       if (!job.html) {
-        console.warn(`${ctx} has null/undefined html body. Marking as failed.`);
-        await this.handleFailure(job, 'Missing HTML body');
+        await this.handleFailure(job, new Error('Missing HTML body'));
         return;
       }
 
@@ -143,7 +184,8 @@ export class EmailQueue {
         to: job.to,
         subject: job.subject,
         html: job.html,
-        plainText: job.plainText || undefined
+        plainText: job.plainText || undefined,
+        smtpConfigId: undefined // uses default SmtpConfig
       });
 
       if (result.success) {
@@ -153,58 +195,64 @@ export class EmailQueue {
             status: 'sent',
             messageId: result.messageId || null,
             sentAt: new Date(),
-            nextRetryAt: null
+            nextRetryAt: null,
+            metadata: result.metadata || job.metadata
           }
         });
-        console.log(`${ctx} Sent OK (${result.messageId || 'no id'})`);
       } else {
-        console.warn(`${ctx} Send failed: ${result.error}`);
-        await this.handleFailure(job, result.error || 'Unknown error');
+        await this.handleFailure(job, new Error(result.error || 'SMTP delivery failed'));
       }
-    } catch (err: any) {
-      console.error(`${ctx} Exception: ${err.message}`);
-      if (err.stack) console.error(err.stack);
-      await this.handleFailure(job, err.message || 'Unknown error');
+    } catch (err: unknown) {
+      const errorObj = err instanceof Error ? err : new Error('Unknown sending exception');
+      await this.handleFailure(job, errorObj);
     }
   }
 
-  private static async handleFailure(job: any, error: string) {
+  private static async handleFailure(job: any, error: Error): Promise<void> {
     const nextAttempt = job.retryCount + 1;
-    const isDeadLetter = nextAttempt >= job.maxRetries;
-    const delaySec = BACKOFF_DELAYS[Math.min(job.retryCount, BACKOFF_DELAYS.length - 1)] || 3600;
+    const isPermanent = EmailService.isPermanentSmtpError(error.message);
+    const isDeadLetter = isPermanent || nextAttempt >= job.maxRetries;
+
+    const delaySec = BACKOFF_DELAYS[Math.min(job.retryCount, BACKOFF_DELAYS.length - 1)] || 1800;
     const retryAfter = isDeadLetter ? null : new Date(Date.now() + delaySec * 1000);
+
+    const metadataObj = job.metadata ? JSON.parse(job.metadata) : {};
+    const updatedMetadata = JSON.stringify({
+      ...metadataObj,
+      error: error.message,
+      stackTrace: error.stack || '',
+      attemptCount: nextAttempt,
+      timestamp: new Date().toISOString(),
+      smtpResponse: error.message
+    });
 
     await db.emailLog.update({
       where: { id: job.id },
       data: {
-        status: isDeadLetter ? 'failed' : 'queued',
+        status: isDeadLetter ? 'dead_letter' : 'failed',
         retryCount: nextAttempt,
-        error: error.substring(0, 500),
-        nextRetryAt: retryAfter
+        error: error.message.substring(0, 500),
+        nextRetryAt: retryAfter,
+        metadata: updatedMetadata
       }
     });
 
-    console.warn(`[Email Queue] Failed delivery (${nextAttempt}/${job.maxRetries}): ${job.subject} -> ${job.to}: ${error}`);
+    if (isDeadLetter) {
+      console.error(`[Email Queue] DLQ Delivery failure (${nextAttempt}/${job.maxRetries}): ${job.subject} -> ${job.to}: ${error.message} (Permanent: ${isPermanent})`);
+    } else {
+      console.warn(`[Email Queue] Transient delivery failure (${nextAttempt}/${job.maxRetries}). Retrying in ${delaySec}s: ${error.message}`);
+    }
   }
 
-  public static async getStats(): Promise<{
-    queued: number;
-    sending: number;
-    sent: number;
-    failed: number;
-    bounced: number;
-    total: number;
-    sentToday: number;
-    deliveryRate: number;
-  }> {
+  public static async getStats(): Promise<QueueStats> {
     const [
-      queued, sending, sent, failed, bounced, total, sentToday
+      pending, processing, sent, failed, deadLetter, total, sentToday
     ] = await Promise.all([
-      db.emailLog.count({ where: { status: 'queued' } }),
-      db.emailLog.count({ where: { status: 'sending' } }),
+      db.emailLog.count({ where: { status: 'pending' } }),
+      db.emailLog.count({ where: { status: 'processing' } }),
       db.emailLog.count({ where: { status: 'sent' } }),
       db.emailLog.count({ where: { status: 'failed' } }),
-      db.emailLog.count({ where: { status: 'bounced' } }),
+      db.emailLog.count({ where: { status: 'dead_letter' } }),
       db.emailLog.count(),
       db.emailLog.count({
         where: {
@@ -214,11 +262,15 @@ export class EmailQueue {
       })
     ]);
 
-    const delivered = sent + bounced;
     return {
-      queued, sending, sent, failed, bounced, total,
+      pending,
+      processing,
+      sent,
+      failed,
+      deadLetter,
+      total,
       sentToday,
-      deliveryRate: total > 0 ? (delivered / total) * 100 : 100
+      deliveryRate: total > 0 ? (sent / total) * 100 : 100
     };
   }
 
@@ -229,7 +281,7 @@ export class EmailQueue {
     await db.emailLog.update({
       where: { id: jobId },
       data: {
-        status: 'queued',
+        status: 'pending',
         retryCount: 0,
         error: null,
         nextRetryAt: new Date()
@@ -242,11 +294,50 @@ export class EmailQueue {
     const result = await db.emailLog.updateMany({
       where: { status: 'failed' },
       data: {
-        status: 'queued',
+        status: 'pending',
         retryCount: 0,
         error: null,
         nextRetryAt: new Date()
       }
+    });
+    return result.count;
+  }
+
+  public static async retryDeadLetters(): Promise<number> {
+    const result = await db.emailLog.updateMany({
+      where: { status: 'dead_letter' },
+      data: {
+        status: 'pending',
+        retryCount: 0,
+        error: null,
+        nextRetryAt: new Date()
+      }
+    });
+    return result.count;
+  }
+
+  public static async purgeQueue(): Promise<number> {
+    const result = await db.emailLog.deleteMany({
+      where: { status: { in: ['pending', 'processing', 'failed'] } }
+    });
+    return result.count;
+  }
+
+  public static async cancelPending(): Promise<number> {
+    const result = await db.emailLog.updateMany({
+      where: { status: 'pending' },
+      data: {
+        status: 'dead_letter',
+        error: 'Cancelled by Administrator',
+        nextRetryAt: null
+      }
+    });
+    return result.count;
+  }
+
+  public static async clearDeadLetters(): Promise<number> {
+    const result = await db.emailLog.deleteMany({
+      where: { status: 'dead_letter' }
     });
     return result.count;
   }

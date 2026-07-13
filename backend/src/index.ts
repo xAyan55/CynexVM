@@ -7,6 +7,7 @@ import { SchedulerService } from './services/automation/SchedulerService';
 import { EmailQueue } from './services/email/emailQueue';
 import { EmailTemplateService } from './services/email/emailTemplateService';
 import { EmailBrandingService } from './services/email/emailBrandingService';
+import { EmailService } from './services/email/emailService';
 
 // Startup guard — prevents accidental duplicate initialization
 declare global {
@@ -34,6 +35,7 @@ async function main() {
     }
     await EmailQueue.initialize();
     console.log('[Email] Templates seeded, queue initialized.');
+    await EmailService.startupVerify();
 
     // Start background notification processors
     NotificationDispatcher.startPoller();

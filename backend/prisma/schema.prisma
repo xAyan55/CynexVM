@@ -467,6 +467,7 @@ model SmtpConfig {
   replyTo           String?
   isDefault         Boolean  @default(false)
   isVerified        Boolean  @default(false)
+  enableIpv6        Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
