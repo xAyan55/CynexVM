@@ -1,8 +1,15 @@
 import dns from 'dns';
+import net from 'net';
 import nodemailer from 'nodemailer';
+import { promisify } from 'util';
 import { db } from '../../db';
 import { CryptoService } from '../cryptoService';
 import { EmailBrandingService } from './emailBrandingService';
+
+// Prefer IPv4 globally for all DNS lookups (Node 17+)
+try { dns.setDefaultResultOrder('ipv4first'); } catch {} 
+
+const dnsLookup = promisify(dns.lookup);
 
 export interface SmtpConfigData {
   id: string;
@@ -48,30 +55,37 @@ export class EmailService {
     }
   }
 
-  public static createTransporter(config: SmtpConfigData, forceIPv4 = true): nodemailer.Transporter {
-    const cacheKey = config.id;
-    const cached = this.transporterCache.get(cacheKey);
-    if (cached) return cached;
+  private static async resolveSmtpHost(host: string): Promise<string> {
+    // Already an IP address — use as-is
+    if (net.isIP(host)) return host;
 
+    try {
+      const result = await dnsLookup(host, { family: 4, hints: dns.ADDRCONFIG });
+      return result.address;
+    } catch {
+      // Fallback to original hostname if resolution fails
+      return host;
+    }
+  }
+
+  public static async createTransporter(config: SmtpConfigData): Promise<nodemailer.Transporter> {
     const pass = this.decryptPassword(config);
     const secure = config.encryption === 'tls';
     const requireTls = config.encryption === 'starttls' || config.encryption === 'tls';
 
-    // Force IPv4-only DNS lookup to avoid ENETUNREACH on servers without IPv6
-    const lookup = forceIPv4
-      ? (hostname: string, opts: any, cb: (err: Error | null, address?: string, family?: number) => void) => {
-          dns.lookup(hostname, { ...(opts || {}), family: 4, hints: dns.ADDRCONFIG }, cb);
-        }
-      : undefined;
+    // Resolve hostname to IPv4 address to avoid ENETUNREACH on IPv6-only DNS
+    const resolvedHost = await this.resolveSmtpHost(config.host);
+    const cacheKey = `${config.id}::${resolvedHost}`;
+    const cached = this.transporterCache.get(cacheKey);
+    if (cached) return cached;
 
     const transporter = nodemailer.createTransport({
-      host: config.host,
+      host: resolvedHost,
       port: config.port,
       secure,
       requireTls,
       auth: { user: config.username, pass },
       tls: { rejectUnauthorized: false },
-      lookup,
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 15000
@@ -91,7 +105,7 @@ export class EmailService {
 
   public static async testConnection(config: SmtpConfigData): Promise<{ success: boolean; message: string }> {
     try {
-      const transporter = this.createTransporter(config);
+      const transporter = await this.createTransporter(config);
       const result = await transporter.verify();
       return { success: true, message: 'SMTP connection verified successfully' };
     } catch (err: any) {
@@ -119,7 +133,7 @@ export class EmailService {
     }
 
     try {
-      const transporter = this.createTransporter(config);
+      const transporter = await this.createTransporter(config);
       const branding = await EmailBrandingService.getBranding();
       const brandingVars = await EmailBrandingService.getBrandingVariables();
       const panelName = brandingVars.panel_name;
