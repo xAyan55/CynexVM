@@ -1,7 +1,11 @@
+import dns from 'dns';
 import nodemailer from 'nodemailer';
 import { db } from '../../db';
 import { CryptoService } from '../cryptoService';
 import { EmailBrandingService } from './emailBrandingService';
+
+// Prefer IPv4 when SMTP hostname resolves to both A and AAAA records
+try { dns.setDefaultResultOrder('ipv4first'); } catch {} 
 
 export interface SmtpConfigData {
   id: string;
