@@ -42,13 +42,13 @@ const DEFAULT_EVENT_PREFERENCES: Record<string, any> = {
 
 // Simple event mapping names for human-readable display
 const EVENT_LABELS: Record<string, string> = {
-  'instance.created': 'VPS Created',
-  'instance.deleted': 'VPS Destroyed',
-  'instance.started': 'VPS Started',
-  'instance.stopped': 'VPS Stopped',
-  'instance.rebooted': 'VPS Restarted',
-  'instance.killed': 'VPS Force Killed',
-  'instance.suspended': 'VPS Suspended',
+  'instance.created': 'Container Created',
+  'instance.deleted': 'Container Destroyed',
+  'instance.started': 'Container Started',
+  'instance.stopped': 'Container Stopped',
+  'instance.rebooted': 'Container Restarted',
+  'instance.killed': 'Container Force Killed',
+  'instance.suspended': 'Container Suspended',
   'deployment.started': 'Deployment Started',
   'deployment.completed': 'Deployment Completed',
   'deployment.failed': 'Deployment Failed',

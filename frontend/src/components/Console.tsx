@@ -140,8 +140,8 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
 
   const reconnectAllSessions = useCallback(() => {
     if (!socket) return;
-    // Create or attach to the backend session for this VM.
-    // The ConsoleSessionManager reuses existing virsh console / lxc exec PTY.
+      // Create or attach to the backend terminal session for this container.
+      // The TerminalSessionManager reuses the existing lxc exec PTY.
     const token = getToken();
     for (const [tabId, inst] of xtermInstances.current) {
       if (!inst.sessionId) {
@@ -328,8 +328,8 @@ export const Console: React.FC<ConsoleProps> = ({ instanceId, status, onPowerAct
     socket.on('disconnect', onDisconnect);
     socket.on('connect', onConnect);
 
-    // Create or attach to backend session. ConsoleSessionManager reuses
-    // existing virsh console / lxc exec PTY for this VM.
+    // Create or attach to backend terminal session. TerminalSessionManager reuses
+    // existing lxc exec PTY for this container.
     connectSession('main');
 
     return () => {

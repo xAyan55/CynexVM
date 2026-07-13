@@ -10,7 +10,7 @@ export interface NotificationTemplateDef {
 
 export const templates: Record<string, NotificationTemplateDef> = {
   'instance.created': {
-    title: 'VPS Created',
+    title: 'Container Created',
     message: 'Instance {{instance}} has been successfully created.',
     category: 'Instance',
     priority: 'Success',
@@ -19,7 +19,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
     actionUrl: '/instances/{{instanceId}}'
   },
   'instance.deleted': {
-    title: 'VPS Destroyed',
+    title: 'Container Destroyed',
     message: 'Instance {{instance}} has been permanently deleted.',
     category: 'Instance',
     priority: 'Warning',
@@ -28,7 +28,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
     actionUrl: '/'
   },
   'instance.started': {
-    title: 'VPS Started',
+    title: 'Container Started',
     message: 'Instance {{instance}} has successfully started.',
     category: 'Instance',
     priority: 'Success',
@@ -37,7 +37,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
     actionUrl: '/instances/{{instanceId}}'
   },
   'instance.stopped': {
-    title: 'VPS Stopped',
+    title: 'Container Stopped',
     message: 'Instance {{instance}} has stopped.',
     category: 'Instance',
     priority: 'Warning',
@@ -46,7 +46,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
     actionUrl: '/instances/{{instanceId}}'
   },
   'instance.rebooted': {
-    title: 'VPS Restarted',
+    title: 'Container Restarted',
     message: 'Instance {{instance}} has successfully rebooted.',
     category: 'Instance',
     priority: 'Success',
@@ -55,7 +55,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
     actionUrl: '/instances/{{instanceId}}'
   },
   'instance.killed': {
-    title: 'VPS Force Killed',
+    title: 'Container Force Killed',
     message: 'Instance {{instance}} was forcefully terminated.',
     category: 'Instance',
     priority: 'Critical',
@@ -64,7 +64,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
     actionUrl: '/instances/{{instanceId}}'
   },
   'instance.suspended': {
-    title: 'VPS Suspended',
+    title: 'Container Suspended',
     message: 'Instance {{instance}} has been suspended by system controls.',
     category: 'Instance',
     priority: 'Warning',
@@ -128,7 +128,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
   },
   'snapshot.created': {
     title: 'Snapshot Created',
-    message: 'Snapshot checkpoint {{snapshot}} created for VPS {{instance}}.',
+    message: 'Snapshot checkpoint {{snapshot}} created for container {{instance}}.',
     category: 'Snapshot',
     priority: 'Success',
     icon: 'Camera',
@@ -137,7 +137,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
   },
   'snapshot.restored': {
     title: 'Snapshot Restored',
-    message: 'VPS {{instance}} filesystem restored to snapshot {{snapshot}}.',
+    message: 'Container {{instance}} filesystem restored to snapshot {{snapshot}}.',
     category: 'Snapshot',
     priority: 'Warning',
     icon: 'RefreshCw',
@@ -146,7 +146,7 @@ export const templates: Record<string, NotificationTemplateDef> = {
   },
   'snapshot.deleted': {
     title: 'Snapshot Deleted',
-    message: 'Snapshot checkpoint {{snapshot}} deleted from VPS {{instance}}.',
+    message: 'Snapshot checkpoint {{snapshot}} deleted from container {{instance}}.',
     category: 'Snapshot',
     priority: 'Info',
     icon: 'Trash',

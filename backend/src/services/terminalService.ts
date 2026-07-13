@@ -6,10 +6,9 @@ import { SocketService } from './socketService';
 
 const pty = require('node-pty');
 
-interface ConsoleSession {
+interface TerminalSession {
   domainName: string;
   vmid: number;
-  type: 'lxc' | 'kvm' | 'qemu';
   pty: any;
   userId: string;
   socketIds: Set<string>;
@@ -20,8 +19,8 @@ interface ConsoleSession {
   rows: number;
 }
 
-class ConsoleSessionManager {
-  private sessions: Map<string, ConsoleSession> = new Map();
+class TerminalSessionManager {
+  private sessions: Map<string, TerminalSession> = new Map();
   private socketToDomain: Map<string, string> = new Map();
   private readonly CLEANUP_DELAY = 60000;
   private readonly SESSION_TIMEOUT = 30 * 60 * 1000;
@@ -31,10 +30,6 @@ class ConsoleSessionManager {
     setInterval(() => this.cleanupExpired(), this.CLEANUP_INTERVAL);
   }
 
-  /**
-   * Create a new session (spawn PTY) or attach to an existing one.
-   * Returns the domainName as the sessionId.
-   */
   async createOrAttach(
     socket: Socket,
     instanceId: string,
@@ -66,54 +61,38 @@ class ConsoleSessionManager {
     }
 
     const domainName = `cynex-${instance.vmid}`;
-    const type = (instance.type || 'LXC').toLowerCase() as 'lxc' | 'kvm' | 'qemu';
 
-    // Check for existing session
     const existing = this.sessions.get(domainName);
     if (existing && !existing.pty.destroyed) {
-      // Attach this socket to the existing session
       this.attachSocket(domainName, socket.id);
       socket.emit('terminal.ready', { sessionId: domainName, containerName: domainName });
       return { sessionId: domainName };
     }
 
-    // Session exists but PTY is dead — clean it up
     if (existing) {
       this.destroySession(domainName);
     }
 
-    // Spawn new PTY based on type
-    let term: any;
-    if (type === 'lxc') {
-      const lxcBinary = this.findBinary(['/snap/bin/lxc', '/usr/bin/lxc'], '/snap/bin/lxc');
-      term = pty.spawn(lxcBinary, [
-        'exec', domainName,
-        '--env', 'TERM=xterm-256color',
-        '--env', 'HOME=/root',
-        '--env', 'LANG=en_US.UTF-8',
-        '--env', 'LC_ALL=en_US.UTF-8',
-        '--env', 'COLORTERM=truecolor',
-        '--', '/bin/login', '-f', 'root',
-      ], {
-        name: 'xterm-256color',
-        cols: cols || 80,
-        rows: rows || 24,
-        cwd: '/root',
-        env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
-      });
-    } else {
-      const virshBinary = this.findBinary(['/usr/bin/virsh', '/usr/local/bin/virsh'], '/usr/bin/virsh');
-      term = pty.spawn(virshBinary, ['console', domainName], {
-        name: 'xterm-256color',
-        cols: cols || 80,
-        rows: rows || 24,
-      });
-    }
+    const lxcBinary = this.findBinary(['/snap/bin/lxc', '/usr/bin/lxc'], '/snap/bin/lxc');
+    const term = pty.spawn(lxcBinary, [
+      'exec', domainName,
+      '--env', 'TERM=xterm-256color',
+      '--env', 'HOME=/root',
+      '--env', 'LANG=en_US.UTF-8',
+      '--env', 'LC_ALL=en_US.UTF-8',
+      '--env', 'COLORTERM=truecolor',
+      '--', '/bin/login', '-f', 'root',
+    ], {
+      name: 'xterm-256color',
+      cols: cols || 80,
+      rows: rows || 24,
+      cwd: '/root',
+      env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+    });
 
-    const session: ConsoleSession = {
+    const session: TerminalSession = {
       domainName,
       vmid: instance.vmid,
-      type,
       pty: term,
       userId: user.id,
       socketIds: new Set(),
@@ -129,7 +108,6 @@ class ConsoleSessionManager {
 
     const io = SocketService.getIo();
 
-    // Forward PTY output to ALL attached sockets
     term.onData((data: string) => {
       session.lastActivity = new Date();
       for (const sid of session.socketIds) {
@@ -137,7 +115,6 @@ class ConsoleSessionManager {
       }
     });
 
-    // On PTY exit, notify all attached sockets then clean up
     term.onExit(({ exitCode, signal }: { exitCode: number; signal: number }) => {
       for (const sid of session.socketIds) {
         io?.to(sid).emit('terminal.exit', { sessionId: domainName, exitCode, signal });
@@ -150,9 +127,6 @@ class ConsoleSessionManager {
     return { sessionId: domainName };
   }
 
-  /**
-   * Attach a socket to an existing session.
-   */
   attachSocket(domainName: string, socketId: string): void {
     const session = this.sessions.get(domainName);
     if (!session) return;
@@ -160,17 +134,12 @@ class ConsoleSessionManager {
     session.socketIds.add(socketId);
     this.socketToDomain.set(socketId, domainName);
 
-    // Cancel any pending cleanup
     if (session.cleanupTimer) {
       clearTimeout(session.cleanupTimer);
       session.cleanupTimer = null;
     }
   }
 
-  /**
-   * Detach a socket from its session.
-   * If no sockets remain, start a 60s cleanup timer.
-   */
   detachSocket(socketId: string): void {
     const domainName = this.socketToDomain.get(socketId);
     if (!domainName) return;
@@ -188,9 +157,6 @@ class ConsoleSessionManager {
     }
   }
 
-  /**
-   * Write data to the PTY for a session (addressed by domainName).
-   */
   write(domainName: string, data: string): boolean {
     const session = this.sessions.get(domainName);
     if (!session || !session.pty || session.pty.destroyed) return false;
@@ -199,9 +165,6 @@ class ConsoleSessionManager {
     return true;
   }
 
-  /**
-   * Resize the PTY for a session.
-   */
   resize(domainName: string, cols: number, rows: number): boolean {
     const session = this.sessions.get(domainName);
     if (!session || !session.pty || session.pty.destroyed) return false;
@@ -215,16 +178,10 @@ class ConsoleSessionManager {
     }
   }
 
-  /**
-   * Return the domainName for the session a socket is attached to.
-   */
   getDomainForSocket(socketId: string): string | undefined {
     return this.socketToDomain.get(socketId);
   }
 
-  /**
-   * Return session info for a socket (for terminal.sessions event).
-   */
   listSessions(socketId?: string): any[] {
     if (socketId) {
       const domainName = this.socketToDomain.get(socketId);
@@ -235,7 +192,6 @@ class ConsoleSessionManager {
         id: domainName,
         instanceId: session.domainName,
         containerName: session.domainName,
-        type: session.type,
         createdAt: session.createdAt,
         lastActivity: session.lastActivity,
         cols: session.cols,
@@ -246,7 +202,6 @@ class ConsoleSessionManager {
       id,
       instanceId: s.domainName,
       containerName: s.domainName,
-      type: s.type,
       createdAt: s.createdAt,
       lastActivity: s.lastActivity,
       cols: s.cols,
@@ -254,9 +209,6 @@ class ConsoleSessionManager {
     }));
   }
 
-  /**
-   * Get session info by domainName.
-   */
   getSession(domainName: string): any | null {
     const session = this.sessions.get(domainName);
     if (!session) return null;
@@ -264,7 +216,6 @@ class ConsoleSessionManager {
       sessionId: domainName,
       instanceId: session.domainName,
       containerName: session.domainName,
-      type: session.type,
       createdAt: session.createdAt,
       lastActivity: session.lastActivity,
       cols: session.cols,
@@ -273,9 +224,6 @@ class ConsoleSessionManager {
     };
   }
 
-  /**
-   * Migrate a socket to an existing session (for reconnect).
-   */
   migrateSession(socket: Socket, domainName: string): boolean {
     const session = this.sessions.get(domainName);
     if (!session || session.pty.destroyed) return false;
@@ -283,7 +231,6 @@ class ConsoleSessionManager {
     const decoded = this.verifyTokenFromSocket(socket);
     if (!decoded || !decoded.userId || session.userId !== decoded.userId) return false;
 
-    // Detach from old session (if any) and attach to new
     this.detachSocket(socket.id);
     this.attachSocket(domainName, socket.id);
 
@@ -292,25 +239,19 @@ class ConsoleSessionManager {
     return true;
   }
 
-  /**
-   * Destroy a session: kill PTY, clear timers, remove mappings.
-   */
   destroySession(domainName: string): void {
     const session = this.sessions.get(domainName);
     if (!session) return;
 
-    // Kill PTY
     if (session.pty && !session.pty.destroyed) {
       try { session.pty.kill(); } catch (_) {}
     }
 
-    // Clear cleanup timer
     if (session.cleanupTimer) {
       clearTimeout(session.cleanupTimer);
       session.cleanupTimer = null;
     }
 
-    // Remove socket→domain mappings for this session
     for (const [sid, dn] of this.socketToDomain) {
       if (dn === domainName) this.socketToDomain.delete(sid);
     }
@@ -318,9 +259,6 @@ class ConsoleSessionManager {
     this.sessions.delete(domainName);
   }
 
-  /**
-   * Destroy all sessions for a socket (used on disconnect).
-   */
   destroySocketSessions(socketId: string): void {
     const domainName = this.socketToDomain.get(socketId);
     if (domainName) {
@@ -357,4 +295,4 @@ class ConsoleSessionManager {
   }
 }
 
-export const consoleManager = new ConsoleSessionManager();
+export const terminalManager = new TerminalSessionManager();

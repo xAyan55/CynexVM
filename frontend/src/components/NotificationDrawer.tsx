@@ -326,7 +326,7 @@ export const NotificationDrawer: React.FC<{ isOpen: boolean; onClose: () => void
               <Search size={14} className="absolute left-3 top-3 text-neutral-500" />
               <input 
                 type="text" 
-                placeholder="Search events, VPS or messages..."
+                placeholder="Search events, instances or messages..."
                 className="w-full pl-9 pr-4 py-2 bg-neutral-900 border border-neutral-800 rounded-xl text-xs text-white focus:outline-none focus:border-neutral-700 transition"
                 value={search}
                 onChange={e => setSearch(e.target.value)}

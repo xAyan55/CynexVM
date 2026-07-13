@@ -6,7 +6,7 @@ export interface TaskLog {
 
 export interface Task {
   id: string;
-  name: string; // e.g. "Deploy VPS", "Backup Container"
+  name: string; // e.g. "Deploy Container", "Backup Container"
   vmid?: number;
   instanceId?: string;
   userId?: string;

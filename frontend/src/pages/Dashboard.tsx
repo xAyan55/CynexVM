@@ -192,7 +192,7 @@ export const Dashboard: React.FC = () => {
               onClick={() => setShowDeployWizard(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow transition"
             >
-              <Plus size={14} /> Deploy VPS
+              <Plus size={14} /> Deploy Container
             </button>
           </div>
         )}
@@ -205,7 +205,7 @@ export const Dashboard: React.FC = () => {
       ) : instances.length === 0 ? (
         <div className="flex flex-col items-center justify-center mt-32 text-center">
           <Server className="h-16 w-16 text-neutral-200 dark:text-neutral-800 mb-4" />
-          <h2 className="text-base font-medium text-neutral-800 dark:text-white">It's quiet here — deploy a VPS to get started.</h2>
+          <h2 className="text-base font-medium text-neutral-800 dark:text-white">It's quiet here — deploy a container to get started.</h2>
         </div>
       ) : (
         <>

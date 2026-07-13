@@ -275,11 +275,11 @@ Returns a list of instances owned by the user.
 
 ---
 
-## 4. VPS / Instance System (CORE SECTION)
+## 4. Container / Instance System (CORE SECTION)
 
-The LXD daemon is the single source of truth. All virtual machine operations correspond to real container events on the hypervisor nodes.
+The LXD daemon is the single source of truth. All container operations correspond to real container events on the hypervisor nodes.
 
-### VPS Lifecycle Diagram
+### Lifecycle Diagram
 ```mermaid
 stateDiagram-v2
     [*] --> Enqueued : POST /instances/create
@@ -314,7 +314,7 @@ Submits a container deployment task to the distributed job queue.
 * **Response (202 Accepted):**
 ```json
 {
-  "message": "VPS deployment enqueued.",
+  "message": "Container deployment enqueued.",
   "taskId": "K4LU1J2QF",
   "vmid": 112
 }
@@ -570,7 +570,7 @@ Lists available instance templates/plans.
 [
   {
     "id": "plan_starter",
-    "name": "Starter VPS",
+    "name": "Starter Container",
     "cores": 1,
     "memoryMb": 1024,
     "storageGb": 15,

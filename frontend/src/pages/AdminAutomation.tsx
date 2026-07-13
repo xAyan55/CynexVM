@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const TASK_TYPE_LABELS: Record<string, string> = {
-  POWER_START: 'Start VPS', POWER_STOP: 'Stop VPS', POWER_RESTART: 'Restart VPS',
+  POWER_START: 'Start Container', POWER_STOP: 'Stop Container', POWER_RESTART: 'Restart Container',
   POWER_FORCE_STOP: 'Force Stop', POWER_FREEZE: 'Freeze', POWER_UNFREEZE: 'Unfreeze',
   STORAGE_BACKUP: 'Create Backup', STORAGE_SNAPSHOT: 'Create Snapshot',
   STORAGE_DELETE_OLD_BACKUPS: 'Delete Old Backups', STORAGE_DELETE_OLD_SNAPSHOTS: 'Delete Old Snapshots',

@@ -250,10 +250,10 @@ export const AdminSettings: React.FC = () => {
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block text-neutral-400 mb-1">VPS Message of the Day (MOTD)</label>
+                    <label className="block text-neutral-400 mb-1">Container Message of the Day (MOTD)</label>
                     <textarea 
                       rows={3} 
-                      placeholder="Welcome to your CynexVM VPS! Managed by system administrator."
+                      placeholder="Welcome to your CynexVM container! Managed by system administrator."
                       className="w-full al-input resize-none"
                       value={vpsMotd}
                       onChange={e => setVpsMotd(e.target.value)}

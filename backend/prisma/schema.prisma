@@ -185,7 +185,7 @@ model Secret {
   updatedAt          DateTime       @updatedAt
 }
 
-// Virtualization Infrastructure
+// LXC Infrastructure
 model Node {
   id              String      @id @default(uuid())
   name            String      @unique
@@ -202,21 +202,12 @@ model Node {
   clusterName     String?
   maintenanceMode Boolean     @default(false)
   supportsLxc           Boolean     @default(true)
-  supportsQemu          Boolean     @default(false)
-  supportsNestedVirt    Boolean     @default(false)
-  supportsUefi          Boolean     @default(false)
-  supportsSecureBoot    Boolean     @default(false)
-  supportsGpuPassthrough Boolean     @default(false)
-  supportsPciPassthrough Boolean     @default(false)
   storagePools          String      @default("[\"default\"]") // JSON array of pools
-  isoLibrary            String      @default("[]") // JSON array of ISO paths/names
   templates             String      @default("[]") // JSON array of templates
-  cloudImages           String      @default("[]") // JSON array of images
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   instances       Instance[]
   tags            NodeTag[]
-  isos            Iso[]
 }
 
 model Instance {
@@ -226,7 +217,6 @@ model Instance {
   vmid             Int
   name             String
   status           String          @default("stopped") // "running" | "stopped" | "suspended" | "starting" | "stopping"
-  type             String          @default("LXC") // "LXC" | "QEMU" | "KVM"
   cpuCores         Int             @default(1)
   memoryMb         Int             @default(512)
   storageGb        Int             @default(10)
@@ -246,71 +236,9 @@ model Instance {
   firewallRules    FirewallRule[]
   tags             InstanceTag[]
   automationTasks  AutomationTask[]
-  vmConfig         VmConfiguration?
   lxcConfig        LxcConfiguration?
-  cloudInit        CloudInit?
   networkInterfaces NetworkInterface[]
   disks            Disk[]
-  pciDevices       PciDevice[]
-  lastHealthCheckAt      DateTime?
-  lastHealthStatus       String?          @default("unknown")
-  lastHealthCheckDetails String?          @default("{}")
-  guestType              String?          @default("Linux")
-  linuxDistribution      String?          @default("Unknown")
-  healthEvents           HealthEvent[]
-}
-
-model VirtualizationType {
-  id          String   @id @default(uuid())
-  name        String   @unique // e.g. "LXC", "QEMU", "KVM"
-  displayName String
-  description String?
-}
-
-model VmConfiguration {
-  id                   String   @id @default(uuid())
-  instanceId           String   @unique
-  instance             Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  cpuThreads           Int      @default(1)
-  cpuSockets           Int      @default(1)
-  cpuModel             String   @default("host") // "host-passthrough" | "host-model" | "qemu64" | "custom"
-  cpuFlags             String   @default("[]") // JSON array
-  numa                 Boolean  @default(false)
-  cpuPinning           String?
-  cpuAffinity          String?
-  nestedVirtualization Boolean  @default(false)
-  hypervisorBit        Boolean  @default(true)
-  hideHypervisor       Boolean  @default(false)
-  cpuHotplug           Boolean  @default(false)
-  cpuMode              String   @default("host-passthrough")
-  customCpuModelId     String?
-  smbiosManufacturer   String?
-  smbiosProductName    String?
-  smbiosVersion        String?
-  smbiosSerialNumber   String?
-  smbiosSku            String?
-  smbiosFamily         String?
-  smbiosUuid           String?
-  smbiosOemStrings     String   @default("[]") // JSON array
-  bootOrder            String   @default("[\"disk\"]") // JSON array
-  uefi                 Boolean  @default(false)
-  legacyBios           Boolean  @default(false)
-  secureBoot           Boolean  @default(false)
-  tpm                  Boolean  @default(false)
-  machineType          String   @default("q35") // "q35" | "i440fx"
-  efiVariables         String?
-  bootDelay            Int      @default(0)
-  graphicsType         String   @default("vnc") // "vnc" | "spice" | "serial"
-  graphicsResolution   String   @default("1024x768")
-  gpuType              String   @default("vga") // "virtio" | "qxl" | "vga"
-  exposeDevKvm         Boolean  @default(true)
-  enableIntelVtx       Boolean  @default(true)
-  enableAmdV           Boolean  @default(true)
-  enableIommu          Boolean  @default(false)
-  hugePages            Boolean  @default(false)
-  memoryBallooning     Boolean  @default(true)
-  watchdog             String?  // "default" | "reset" | "poweroff"
-  guestAgent           Boolean  @default(true)
 }
 
 model LxcConfiguration {
@@ -319,25 +247,6 @@ model LxcConfiguration {
   instance             Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   privileged           Boolean  @default(false)
   nesting              Boolean  @default(true)
-}
-
-model Iso {
-  id        String   @id @default(uuid())
-  name      String
-  path      String
-  sizeBytes BigInt?
-  nodeId    String
-  node      Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-}
-
-model CloudInit {
-  id            String   @id @default(uuid())
-  instanceId    String   @unique
-  instance      Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  enabled       Boolean  @default(false)
-  userData      String?
-  metaData      String?
-  networkConfig String?
 }
 
 model NetworkInterface {
@@ -350,7 +259,6 @@ model NetworkInterface {
   firewallEnabled   Boolean  @default(false)
   bandwidthLimitIn  Int?
   bandwidthLimitOut Int?
-  nicModel          String   @default("virtio") // "virtio", "e1000", "rtl8139", "vmxnet3"
   ipv4Address       String?
   ipv6Address       String?
   gateway           String?
@@ -363,24 +271,8 @@ model Disk {
   instance      Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   name          String
   sizeGb        Int
-  type          String   @default("virtio") // "virtio", "sata", "scsi", "ide", "nvme"
   cacheMode     String   @default("none")
   discard       Boolean  @default(true)
-  ioThreads     Boolean  @default(false)
-  ssdEmulation  Boolean  @default(false)
-  isIso         Boolean  @default(false)
-  isoPath       String?
-}
-
-model PciDevice {
-  id          String   @id @default(uuid())
-  instanceId  String
-  instance    Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  name        String
-  type        String
-  hostAddress String
-  vendorId    String?
-  deviceId    String?
 }
 
 model Tag {
@@ -650,14 +542,4 @@ model AutomationLog {
   @@index([timestamp])
 }
 
-model HealthEvent {
-  id         String   @id @default(uuid())
-  instanceId String
-  status     String   // e.g. "Healthy", "Warning", "Critical"
-  message    String?
-  timestamp  DateTime @default(now())
-  instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-
-  @@index([instanceId])
-  @@index([timestamp])
-}
+// KVM models removed: VirtualizationType, VmConfiguration, Iso, CloudInit, PciDevice, HealthEvent

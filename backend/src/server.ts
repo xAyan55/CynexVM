@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 import path from 'path';
 import { CONFIG } from './config';
 import { apiLimiter } from './middleware/rateLimit';
-import { consoleManager } from './services/terminalService';
+import { terminalManager } from './services/terminalService';
 
 // Routes imports
 import authRoutes from './routes/auth';
@@ -25,136 +25,11 @@ import { LxdService } from './services/lxdService';
 import { ReconciliationService } from './services/reconciliation';
 import { db } from './db';
 import { SocketService } from './services/socketService';
-import url from 'url';
-import net from 'net';
-import ws from 'ws';
-import { CryptoService } from './services/cryptoService';
-import { VirtualizationProviderFactory } from './services/virtualization/provider';
+import { lxcProvider } from './services/lxd/lxcProvider';
 
 const app = express();
 app.set('trust proxy', true);
 const server = http.createServer(app);
-
-// Mount upgrade listener for VM Console WebSocket proxies
-server.on('upgrade', async (req, socket, head) => {
-  const parsedUrl = url.parse(req.url || '', true);
-  const pathname = parsedUrl.pathname || '';
-  
-  const vncMatch = pathname.match(/^\/api\/v1\/instances\/([^\/]+)\/vnc$/);
-  const serialMatch = pathname.match(/^\/api\/v1\/instances\/([^\/]+)\/serial$/);
-  
-  if (!vncMatch && !serialMatch) {
-    return; // Let socket.io handle other paths like /socket.io/
-  }
-  
-  // Authenticate token
-  const token = (parsedUrl.query?.token as string) || '';
-  let userId = '';
-  try {
-    const decoded = jwt.verify(token, CONFIG.JWT_SECRET) as any;
-    userId = decoded.userId;
-  } catch (_) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-  
-  const instanceId = vncMatch ? vncMatch[1] : (serialMatch ? serialMatch[1] : '');
-  const instance = await db.instance.findUnique({
-    where: { id: instanceId },
-    include: { node: true }
-  });
-  
-  if (!instance) {
-    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-  
-  // Authorization check (Admin or Owner)
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    include: { roles: { include: { role: true } } }
-  });
-  const roleName = user?.roles[0]?.role.name || 'User';
-  if (roleName !== 'Admin' && instance.userId !== userId) {
-    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  // Create ws Server to handle the upgraded socket connection
-  const wss = new ws.Server({ noServer: true });
-  wss.handleUpgrade(req, socket, head, async (wsConn) => {
-    try {
-      const node = instance.node;
-      const isLocal = node.hostname === 'localhost' || node.apiUrl.includes('localhost') || node.apiUrl.includes('127.0.0.1');
-      
-      if (isLocal) {
-        if (vncMatch) {
-          // Pipe local TCP port directly
-          const vncPort = 5900 + (instance.vmid % 100);
-          const tcpSocket = net.connect(vncPort, '127.0.0.1');
-          
-          wsConn.on('message', (msg) => {
-            if (tcpSocket.writable) tcpSocket.write(msg as Buffer);
-          });
-          tcpSocket.on('data', (data) => {
-            if (wsConn.readyState === ws.OPEN) wsConn.send(data);
-          });
-          wsConn.on('close', () => tcpSocket.end());
-          tcpSocket.on('close', () => wsConn.close());
-          wsConn.on('error', () => tcpSocket.end());
-          tcpSocket.on('error', () => wsConn.close());
-        } else {
-          // Pipe local serial child process
-          const { spawn } = require('child_process');
-          const proc = spawn('virsh', ['console', `cynex-${instance.vmid}`]);
-          
-          wsConn.on('message', (msg) => {
-            if (proc.stdin.writable) proc.stdin.write(msg as Buffer);
-          });
-          proc.stdout.on('data', (data: any) => {
-            if (wsConn.readyState === ws.OPEN) wsConn.send(data);
-          });
-          wsConn.on('close', () => proc.kill());
-          proc.on('close', () => wsConn.close());
-          wsConn.on('error', () => proc.kill());
-          proc.on('error', () => wsConn.close());
-        }
-      } else {
-        // Pipe remote websocket proxy to node daemon CynexD
-        let decryptedToken = 'local-token';
-        if (node.apiToken && node.apiToken !== 'local-token') {
-          decryptedToken = CryptoService.decrypt(node.apiToken);
-        }
-        const protocol = node.apiUrl.startsWith('https') ? 'wss' : 'ws';
-        const rawNodeUrl = node.apiUrl.replace(/^https?:\/\//, '');
-        const targetType = vncMatch ? 'vnc' : 'serial';
-        const remoteUrl = `${protocol}://${rawNodeUrl}/api/v1/${targetType}/${instance.vmid}?token=${decryptedToken}`;
-        
-        const remoteWs = new ws(remoteUrl);
-        
-        remoteWs.on('open', () => {
-          wsConn.on('message', (msg) => {
-            if (remoteWs.readyState === ws.OPEN) remoteWs.send(msg as any);
-          });
-          remoteWs.on('message', (msg) => {
-            if (wsConn.readyState === ws.OPEN) wsConn.send(msg as any);
-          });
-        });
-        
-        wsConn.on('close', () => remoteWs.close());
-        remoteWs.on('close', () => wsConn.close());
-        remoteWs.on('error', () => remoteWs.close());
-        remoteWs.on('error', () => wsConn.close());
-      }
-    } catch (err: any) {
-      console.error('[Console Handshake Proxy Error]:', err.message);
-      wsConn.close();
-    }
-  });
-});
 
 // Socket.IO configuration
 const io = new Server(server, {
@@ -287,7 +162,7 @@ io.on('connection', (socket: Socket) => {
     cols?: number;
     rows?: number;
   }) => {
-    const result = await consoleManager.createOrAttach(
+    const result = await terminalManager.createOrAttach(
       socket,
       params.instanceId,
       params.token,
@@ -301,32 +176,32 @@ io.on('connection', (socket: Socket) => {
 
   // Input goes to the PTY for the socket's attached session
   socket.on('terminal.input', (params: { data: string }) => {
-    const domain = consoleManager.getDomainForSocket(socket.id);
+    const domain = terminalManager.getDomainForSocket(socket.id);
     if (!domain) { socket.emit('terminal.error', { message: 'Session not found or closed' }); return; }
-    const ok = consoleManager.write(domain, params.data);
+    const ok = terminalManager.write(domain, params.data);
     if (!ok) socket.emit('terminal.error', { message: 'Session not found or closed' });
   });
 
   socket.on('terminal.resize', (params: { cols: number; rows: number }) => {
-    const domain = consoleManager.getDomainForSocket(socket.id);
+    const domain = terminalManager.getDomainForSocket(socket.id);
     if (!domain) { socket.emit('terminal.error', { message: 'Session not found for resize' }); return; }
-    consoleManager.resize(domain, params.cols, params.rows);
+    terminalManager.resize(domain, params.cols, params.rows);
   });
 
   // Close detaches the socket; session persists if other sockets remain
   socket.on('terminal.close', () => {
-    consoleManager.detachSocket(socket.id);
+    terminalManager.detachSocket(socket.id);
   });
 
   // List active sessions for this socket
   socket.on('terminal.sessions', () => {
-    const sessions = consoleManager.listSessions(socket.id);
+    const sessions = terminalManager.listSessions(socket.id);
     socket.emit('terminal.sessions', sessions);
   });
 
   // Get info about a specific session
   socket.on('terminal.session.info', (params: { sessionId: string }) => {
-    const info = consoleManager.getSession(params.sessionId);
+    const info = terminalManager.getSession(params.sessionId);
     if (info) {
       socket.emit('terminal.session.info', info);
     } else {
@@ -336,9 +211,9 @@ io.on('connection', (socket: Socket) => {
 
   // Reconnect: migrate socket to an existing session
   socket.on('terminal.reconnect', (params: { sessionId: string }) => {
-    const ok = consoleManager.migrateSession(socket, params.sessionId);
+    const ok = terminalManager.migrateSession(socket, params.sessionId);
     if (ok) {
-      const info = consoleManager.getSession(params.sessionId);
+      const info = terminalManager.getSession(params.sessionId);
       socket.emit('terminal.ready', info);
     } else {
       socket.emit('terminal.error', { message: 'Cannot reconnect: session not found or unauthorized' });
@@ -367,8 +242,7 @@ io.on('connection', (socket: Socket) => {
 
         if (!instance) return;
 
-        const provider = VirtualizationProviderFactory.getProvider(instance.type);
-        const live = await provider.metrics(instance.node, instance);
+        const live = await lxcProvider.metrics(instance.node, instance);
 
         // Compute CPU utilization as rate (0..1 per core)
         let cpu = 0;
@@ -458,7 +332,7 @@ io.on('connection', (socket: Socket) => {
     if (metricsInterval) clearInterval(metricsInterval);
     // Detach socket — session persists for 60s in case of reconnect,
     // then auto-cleans up if no sockets reattach.
-    consoleManager.detachSocket(socket.id);
+    terminalManager.detachSocket(socket.id);
     console.log(`[Socket] Client disconnected: ${socket.id}`);
   });
 });

@@ -38,16 +38,14 @@ echo -e "${YELLOW}[2/4] Initializing /var/www/cynexd...${NC}"
 mkdir -p /var/www/cynexd
 cd /var/www/cynexd
 npm init -y || true
-npm install ws || true
+true
 
 # Write Node daemon index.js
 cat << 'EOF' > index.js
 const http = require('http');
-const { exec, spawn } = require('child_process');
+const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
-const ws = require('ws');
-const net = require('net');
 
 const execAsync = promisify(exec);
 
@@ -90,16 +88,11 @@ const server = http.createServer(async (req, res) => {
   try {
     if (method === 'GET' && url === '/api/v1/test') {
       let lxcVer = 'unknown';
-      let virshVer = 'unknown';
       try {
         const { stdout } = await execAsync('lxc --version');
         lxcVer = stdout.trim();
       } catch (_) {}
-      try {
-        const { stdout } = await execAsync('virsh --version');
-        virshVer = stdout.trim();
-      } catch (_) {}
-      return sendJson(200, { success: true, lxcVersion: lxcVer, virshVersion: virshVer });
+      return sendJson(200, { success: true, lxcVersion: lxcVer });
     }
 
     if (method === 'GET' && url === '/api/v1/status') {
@@ -203,69 +196,6 @@ const server = http.createServer(async (req, res) => {
   } catch (err) {
     sendJson(500, { error: err.message });
   }
-});
-
-// Configure WebSocket Server for VM VNC / Serial proxies
-const wss = new ws.Server({ noServer: true });
-
-wss.on('connection', (wsConn, req) => {
-  const url = req.url;
-  const vncMatch = url.match(/^\/api\/v1\/vnc\/(\d+)$/);
-  const serialMatch = url.match(/^\/api\/v1\/serial\/(\d+)$/);
-
-  if (vncMatch) {
-    const vmid = parseInt(vncMatch[1], 10);
-    const vncPort = 5900 + (vmid % 100);
-    const tcpSocket = net.connect(vncPort, '127.0.0.1');
-
-    wsConn.on('message', (msg) => {
-      if (tcpSocket.writable) tcpSocket.write(msg);
-    });
-
-    tcpSocket.on('data', (data) => {
-      if (wsConn.readyState === ws.OPEN) wsConn.send(data);
-    });
-
-    wsConn.on('close', () => tcpSocket.end());
-    tcpSocket.on('close', () => wsConn.close());
-    wsConn.on('error', () => tcpSocket.end());
-    tcpSocket.on('error', () => wsConn.close());
-    tcpSocket.on('error', (err) => console.error('[VNC TCP Error]:', err.message));
-  }
-
-  if (serialMatch) {
-    const vmid = parseInt(serialMatch[1], 10);
-    const proc = spawn('virsh', ['console', `cynex-${vmid}`]);
-
-    wsConn.on('message', (msg) => {
-      if (proc.stdin.writable) proc.stdin.write(msg);
-    });
-
-    proc.stdout.on('data', (data) => {
-      if (wsConn.readyState === ws.OPEN) wsConn.send(data);
-    });
-
-    wsConn.on('close', () => proc.kill());
-    proc.on('close', () => wsConn.close());
-    wsConn.on('error', () => proc.kill());
-    proc.on('error', () => wsConn.close());
-  }
-});
-
-server.on('upgrade', (req, socket, head) => {
-  // Validate token from queries
-  const urlObj = new URL(req.url, `http://${req.headers.host}`);
-  const queryToken = urlObj.searchParams.get('token');
-  
-  if (TOKEN && queryToken !== TOKEN) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  wss.handleUpgrade(req, socket, head, (wsConn) => {
-    wss.emit('connection', wsConn, req);
-  });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

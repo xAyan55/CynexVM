@@ -32,7 +32,7 @@ export const TemplatesImages: React.FC = () => {
         <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-sm space-y-4">
           <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Upload OS Image</h3>
           <p className="text-xs text-neutral-500 leading-relaxed">
-            Drag and drop or select an OS installer ISO or LXC bootstrap template file (.iso, .tar.zst, .tar.gz) to transfer to local hypervisor storage.
+            Drag and drop or select an LXC bootstrap template file (.tar.zst, .tar.gz) to transfer to local hypervisor storage.
           </p>
           <div className="border border-dashed border-neutral-700 rounded-xl p-8 text-center cursor-pointer hover:bg-white/5 transition">
             <Upload className="mx-auto text-neutral-500 mb-2" size={24} />

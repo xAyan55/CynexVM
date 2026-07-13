@@ -91,7 +91,7 @@ export const Instances: React.FC = () => {
             onClick={() => setShowDeployWizard(true)}
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-btn text-xs font-bold transition-all"
           >
-            <Plus size={16} /> Deploy VPS
+            <Plus size={16} /> Deploy Container
           </button>
         </div>
       </div>
@@ -110,7 +110,7 @@ export const Instances: React.FC = () => {
 
       {/* Grid of Instances */}
       {loading ? (
-        <div className="p-12 text-center text-gray-500 text-sm">Loading VPS instances...</div>
+        <div className="p-12 text-center text-gray-500 text-sm">Loading instances...</div>
       ) : filtered.length === 0 ? (
         <div className="p-12 text-center text-gray-500 text-xs border border-borderSubtle rounded-card bg-white/5">
           No instances match the filter criteria.

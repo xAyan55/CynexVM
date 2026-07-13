@@ -1,27 +1,20 @@
-import { VirtualizationProvider } from './provider';
 import { NodeClient } from './nodeClient';
 import { ProvisioningEngine } from '../provisioningEngine';
-import { LxdFileService } from '../lxd/lxdFileService';
+import { LxdFileService } from './lxdFileService';
 
-export class LXCProvider implements VirtualizationProvider {
+export class LXCProvider {
   private getContainerName(vmid: number): string {
     return `cynex-${vmid}`;
   }
 
   public async create(node: any, instance: any, data: any): Promise<void> {
     const containerName = this.getContainerName(instance.vmid);
-
-    // Get active storage pool
     const pools = await NodeClient.requestLxd(node.id, '/1.0/storage-pools', 'GET');
     const poolNames = pools.map((url: string) => url.split('/').pop());
     const poolName = poolNames.includes('default') ? 'default' : poolNames[0] || 'default';
-
-    // Resolve OS template
     const ostemplate = data.osTemplate || instance.osTemplate;
-    const { LxdImageService } = require('../lxd/lxdImageService');
+    const { LxdImageService } = require('./lxdImageService');
     const { serverUrl, alias } = LxdImageService.resolveImageConfig(ostemplate);
-
-    // Generate user-data
     const userData = ProvisioningEngine.generateCloudConfig({
       hostname: data.hostname || instance.hostname,
       password: data.password || instance.password,
@@ -29,8 +22,6 @@ export class LXCProvider implements VirtualizationProvider {
       timezone: data.timezone,
       locale: data.locale,
     });
-
-    // Create call
     await NodeClient.requestLxd(node.id, '/1.0/instances', 'POST', {
       name: containerName,
       source: {
@@ -55,8 +46,6 @@ export class LXCProvider implements VirtualizationProvider {
       },
       profiles: ['default'],
     });
-
-    // Start container
     await this.start(node, instance);
   }
 
@@ -202,14 +191,6 @@ export class LXCProvider implements VirtualizationProvider {
     });
   }
 
-  public async attachISO(node: any, instance: any, isoPath: string): Promise<void> {
-    // LXC containers do not have ISO cdrom mounting
-  }
-
-  public async detachISO(node: any, instance: any): Promise<void> {
-    // No-op
-  }
-
   public async attachNetwork(node: any, instance: any, network: any): Promise<void> {
     const containerName = this.getContainerName(instance.vmid);
     await NodeClient.requestLxd(node.id, `/1.0/instances/${containerName}`, 'PATCH', {
@@ -227,7 +208,6 @@ export class LXCProvider implements VirtualizationProvider {
 
   public async detachNetwork(node: any, instance: any, nicId: string): Promise<void> {
     const containerName = this.getContainerName(instance.vmid);
-    // Fetch configuration first, remove device, and patch back
     const info = await NodeClient.requestLxd(node.id, `/1.0/instances/${containerName}`, 'GET');
     const devices = info.devices || {};
     delete devices[nicId];
@@ -251,21 +231,15 @@ export class LXCProvider implements VirtualizationProvider {
     await NodeClient.requestLxd(node.id, `/1.0/instances/${containerName}/backups/${backupId}/restore`, 'POST');
   }
 
-  public async console(node: any, instance: any, socket: any, token: string): Promise<any> {
-    // LXC Console: uses Socket.IO terminal stream
-  }
-
   public async metrics(node: any, instance: any): Promise<any> {
     const containerName = this.getContainerName(instance.vmid);
     try {
       const state = await NodeClient.requestLxd(node.id, `/1.0/instances/${containerName}/state`, 'GET');
       const info = await NodeClient.requestLxd(node.id, `/1.0/instances/${containerName}`, 'GET');
-
       const cpuLimit = info.config?.['limits.cpu'] ? parseInt(info.config['limits.cpu'], 10) : 1;
       const ramLimitRaw = info.config?.['limits.memory'] || '512MB';
       const ramLimit = parseInt(ramLimitRaw.replace(/[^0-9]/g, ''), 10);
       const diskLimit = instance.storageGb;
-
       return {
         cpu: (state.cpu?.usage || 0) / 1e9,
         maxcpu: cpuLimit,
@@ -313,10 +287,6 @@ export class LXCProvider implements VirtualizationProvider {
     }
   }
 
-  public async terminal(node: any, instance: any, socket: any, cols: number, rows: number, token: string): Promise<any> {
-    // Spawns/attaches standard LXC terminal (managed in terminalService.ts via node-pty / daemon)
-  }
-
   public async powerState(node: any, instance: any): Promise<string> {
     const containerName = this.getContainerName(instance.vmid);
     const state = await NodeClient.requestLxd(node.id, `/1.0/instances/${containerName}/state`, 'GET');
@@ -333,3 +303,5 @@ export class LXCProvider implements VirtualizationProvider {
     return this.metrics(node, instance);
   }
 }
+
+export const lxcProvider = new LXCProvider();

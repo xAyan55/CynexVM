@@ -7,7 +7,7 @@ import { FileManager } from '../components/FileManager';
 import { AutomationPage } from './AutomationPage';
 import { 
   Terminal as TermIcon, Folder, Globe, ShieldCheck, Settings as SetIcon,
-  ArrowLeft, Trash2, Cpu, HardDrive, Shield, RefreshCw, Layers, ListFilter, 
+  ArrowLeft, Trash2, Cpu, HardDrive, RefreshCw, 
   ClipboardCheck, Tag, Activity, Clock, Wifi, WifiOff, ArrowDownToLine, ArrowUpFromLine,
   Play, Square, RotateCcw, Skull, Pause, Timer
 } from 'lucide-react';
@@ -87,7 +87,6 @@ export const InstanceDetails: React.FC = () => {
   const [snapshots, setSnapshots] = useState<any[]>([]);
   const [backups, setBackups] = useState<any[]>([]);
   const [newSnapshotName, setNewSnapshotName] = useState('');
-  const [isoPath, setIsoPath] = useState('/var/lib/libvirt/images/templates/ubuntu-22.04.iso');
 
   // Settings & Custom properties
   const [notes, setNotes] = useState('');
@@ -105,99 +104,6 @@ export const InstanceDetails: React.FC = () => {
     { name: 'Debian 12 Bookworm', path: 'images:debian/12' },
     { name: 'Alpine 3.19 Standard', path: 'images:alpine/3.19' }
   ];
-
-  // Diagnostics & Host health metrics
-  const [diagnostics, setDiagnostics] = useState<any | null>(null);
-  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
-  const [healthHistory, setHealthHistory] = useState<any[]>([]);
-  const [nodeDiagnostics, setNodeDiagnostics] = useState<any | null>(null);
-  const [nodeDiagnosticsLoading, setNodeDiagnosticsLoading] = useState(false);
-  const [repairingConsole, setRepairingConsole] = useState(false);
-  const [repairingNetwork, setRepairingNetwork] = useState(false);
-
-  const fetchDiagnostics = async () => {
-    setDiagnosticsLoading(true);
-    try {
-      const token = localStorage.getItem('accessToken');
-      const headers = { 'Authorization': `Bearer ${token}` };
-      const res = await fetch(`/api/v1/instances/${id}/health`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setDiagnostics(data);
-      }
-    } catch (_) {}
-    setDiagnosticsLoading(false);
-  };
-
-  const fetchHealthHistory = async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const headers = { 'Authorization': `Bearer ${token}` };
-      const res = await fetch(`/api/v1/instances/${id}/health-history`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setHealthHistory(data);
-      }
-    } catch (_) {}
-  };
-
-  const fetchNodeDiagnostics = async (nodeId: string) => {
-    setNodeDiagnosticsLoading(true);
-    try {
-      const token = localStorage.getItem('accessToken');
-      const headers = { 'Authorization': `Bearer ${token}` };
-      const res = await fetch(`/api/v1/nodes/${nodeId}/diagnostics`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setNodeDiagnostics(data);
-      }
-    } catch (_) {}
-    setNodeDiagnosticsLoading(false);
-  };
-
-  const handleRepairConsole = async () => {
-    setRepairingConsole(true);
-    try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/v1/instances/${id}/repair-console`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        alert('Console repair process completed successfully!');
-        fetchDiagnostics();
-        fetchHealthHistory();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Failed to repair console');
-      }
-    } catch (_) {
-      alert('Failed to repair console');
-    }
-    setRepairingConsole(false);
-  };
-
-  const handleRepairNetwork = async () => {
-    setRepairingNetwork(true);
-    try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/v1/instances/${id}/repair-network`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        alert('Network repair process completed successfully!');
-        fetchDiagnostics();
-        fetchHealthHistory();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Failed to repair network');
-      }
-    } catch (_) {
-      alert('Failed to repair network');
-    }
-    setRepairingNetwork(false);
-  };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -230,7 +136,7 @@ export const InstanceDetails: React.FC = () => {
   const handleReinstall = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reinstallTemplate) return;
-    if (!confirm('CRITICAL WARNING: Reinstalling will wipe the entire guest VM/container disk! This action is irreversible. Are you sure you want to proceed?')) return;
+    if (!confirm('CRITICAL WARNING: Reinstalling will wipe the entire container disk! This action is irreversible. Are you sure you want to proceed?')) return;
     setReinstalling(true);
     try {
       const token = localStorage.getItem('accessToken');
@@ -258,14 +164,6 @@ export const InstanceDetails: React.FC = () => {
   useEffect(() => {
     fetchInstanceDetails();
   }, [id]);
-
-  useEffect(() => {
-    if (activeTab === 'diagnostics' && instance) {
-      fetchDiagnostics();
-      fetchHealthHistory();
-      fetchNodeDiagnostics(instance.nodeId);
-    }
-  }, [activeTab, instance?.id]);
 
   // Live Socket metrics feed
   useEffect(() => {
@@ -501,45 +399,6 @@ export const InstanceDetails: React.FC = () => {
     } catch (_) {}
   };
 
-  const handleMountIso = async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/v1/instances/${id}/mount-iso`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ isoPath })
-      });
-      if (res.ok) {
-        alert('ISO CDROM mounted successfully!');
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Failed to mount ISO');
-      }
-    } catch (_) {
-      alert('Failed to mount ISO');
-    }
-  };
-
-  const handleEjectIso = async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/v1/instances/${id}/eject-iso`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        alert('ISO CDROM ejected successfully!');
-      } else {
-        alert('Failed to eject ISO');
-      }
-    } catch (_) {
-      alert('Failed to eject ISO');
-    }
-  };
-
   const handleAddTag = (e: React.FormEvent) => {
     e.preventDefault();
     if (newTag && !tags.includes(newTag)) {
@@ -554,7 +413,7 @@ export const InstanceDetails: React.FC = () => {
 
   const handleDeleteInstance = async () => {
     if (!instance) return;
-    if (!confirm('CRITICAL WARNING: Are you sure you want to permanently destroy this VPS? All storage disks, backups and snapshot data will be destroyed.')) return;
+    if (!confirm('CRITICAL WARNING: Are you sure you want to permanently destroy this container? All storage disks, backups and snapshot data will be destroyed.')) return;
     
     try {
       const token = localStorage.getItem('accessToken');
@@ -576,7 +435,6 @@ export const InstanceDetails: React.FC = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Activity },
-    { id: 'diagnostics', label: 'Diagnostics', icon: Shield },
     { id: 'console', label: 'Console', icon: TermIcon },
     { id: 'files', label: 'Files', icon: Folder },
     { id: 'network', label: 'Networking', icon: Globe },
@@ -661,13 +519,13 @@ export const InstanceDetails: React.FC = () => {
             </button>
           )}
 
-          {/* Admin Destroy VPS button */}
+          {/* Admin Destroy Container button */}
           {user?.role === 'Admin' && (
             <button 
               onClick={handleDeleteInstance}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-semibold transition ml-2"
             >
-              <Trash2 size={13} /> Destroy VPS
+              <Trash2 size={13} /> Destroy Container
             </button>
           )}
         </div>
@@ -770,26 +628,7 @@ export const InstanceDetails: React.FC = () => {
               </p>
             </div>
 
-            {/* Guest Agent */}
-            {(instance.type === 'KVM' || instance.type === 'QEMU') && (
-              <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-neutral-200 dark:border-neutral-800/30">
-                <div className="flex items-center gap-2 mb-2">
-                  {liveMetrics?.guestAgent === true ? <Wifi size={14} className="text-emerald-400" /> :
-                   liveMetrics?.guestAgent === false ? <WifiOff size={14} className="text-red-400" /> :
-                   <span className="w-3.5 h-3.5 rounded-full bg-neutral-500" />}
-                  <span className="text-[10px] text-neutral-500 uppercase font-semibold">Guest Agent</span>
-                </div>
-                <p className={`text-lg font-semibold ${
-                  liveMetrics?.guestAgent === true ? 'text-emerald-400' :
-                  liveMetrics?.guestAgent === false ? 'text-red-400' :
-                  'text-neutral-500'
-                }`}>
-                  {liveMetrics?.guestAgent === true ? 'Connected' :
-                   liveMetrics?.guestAgent === false ? 'Not Installed' :
-                   '—'}
-                </p>
-              </div>
-            )}
+
           </div>
 
           {/* Instance Configuration Details */}
@@ -841,264 +680,7 @@ export const InstanceDetails: React.FC = () => {
         </div>
       )}
 
-      {/* DIAGNOSTICS TAB */}
-      {activeTab === 'diagnostics' && (
-        <div className="space-y-6 text-neutral-800 dark:text-neutral-200">
-          {/* Top Panel: Summary & Repair */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 flex flex-col justify-between gap-4">
-              <div>
-                <h3 className="text-base font-semibold text-neutral-800 dark:text-white mb-2">VM Diagnostics Summary</h3>
-                <p className="text-neutral-500 dark:text-neutral-400 text-xs leading-relaxed">
-                  CynexVM monitors the active guest state continuously. If your serial console, ssh daemon, or virtualization interfaces fail, use the repair tool below to automatically restore serial getty service configurations.
-                </p>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  onClick={fetchDiagnostics}
-                  disabled={diagnosticsLoading}
-                  className="px-4 py-2 bg-white/5 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-800 dark:text-white rounded-xl text-xs font-semibold transition"
-                >
-                  {diagnosticsLoading ? 'Running checks...' : 'Rerun Diagnostics'}
-                </button>
-                {instance.guestType === 'Linux' && (
-                  <>
-                    <button
-                      onClick={handleRepairConsole}
-                      disabled={repairingConsole}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
-                    >
-                      {repairingConsole ? 'Repairing console...' : 'Repair Serial Console'}
-                    </button>
-                    <button
-                      onClick={handleRepairNetwork}
-                      disabled={repairingNetwork}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition"
-                    >
-                      {repairingNetwork ? 'Repairing network...' : 'Repair Network'}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Quick Status Cards */}
-            <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-              <h4 className="text-xs font-semibold uppercase text-neutral-500">Live Status Details</h4>
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <span className="block text-neutral-500 uppercase text-[9px] mb-0.5">Guest Type</span>
-                  <span className="text-neutral-800 dark:text-white font-medium">{instance.guestType} ({instance.linuxDistribution})</span>
-                </div>
-                <div>
-                  <span className="block text-neutral-500 uppercase text-[9px] mb-0.5">Boot Diagnostics</span>
-                  <span className={`font-semibold ${diagnostics?.boot?.status === 'Healthy' ? 'text-emerald-500' : 'text-amber-500'}`}>
-                    {diagnostics?.boot?.status || 'Unknown'}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-neutral-500 uppercase text-[9px] mb-0.5">SSH latency</span>
-                  <span className="text-neutral-800 dark:text-white font-medium">
-                    {diagnostics?.ssh?.reachable ? `${diagnostics.ssh.latency}ms` : '—'}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-neutral-500 uppercase text-[9px] mb-0.5">Console Mode</span>
-                  <span className="text-neutral-800 dark:text-white font-medium">{diagnostics?.console?.type || 'serial'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Detailed Lists */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* VM Health Checklist */}
-            <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-              <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">VM Health Checklist</h3>
-              <div className="space-y-2.5">
-                {diagnostics?.healthCheckResults ? (
-                  Object.entries(diagnostics.healthCheckResults).map(([key, val]: any) => (
-                    <div key={key} className="flex items-center justify-between text-xs py-1 border-b border-neutral-200 dark:border-white/5">
-                      <span className="capitalize text-neutral-500 dark:text-neutral-400 font-mono">{key.replace(/_/g, ' ')}</span>
-                      <span className={`font-bold ${val ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {val ? '✓ Pass' : '✗ Fail'}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center text-neutral-500 py-6 text-xs">Run diagnostics to load checklist.</div>
-                )}
-              </div>
-            </div>
-
-            {/* Guest Agent Capabilities & SSH */}
-            <div className="space-y-6">
-              <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-                <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Guest Agent Details</h3>
-                <div className="text-xs space-y-2">
-                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
-                    <span className="text-neutral-500 dark:text-neutral-400">Agent Status</span>
-                    <span className={`font-semibold capitalize ${diagnostics?.guestAgent?.status === 'connected' ? 'text-emerald-500' : 'text-neutral-500'}`}>
-                      {diagnostics?.guestAgent?.status || 'Unknown'}
-                    </span>
-                  </div>
-                  {diagnostics?.guestAgent?.status === 'connected' && (
-                    <>
-                      <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
-                        <span className="text-neutral-500 dark:text-neutral-400">Version</span>
-                        <span className="text-neutral-800 dark:text-white font-mono">{diagnostics.guestAgent.version}</span>
-                      </div>
-                      <div>
-                        <span className="block text-neutral-500 dark:text-neutral-400 mb-1.5">Capabilities</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {diagnostics.guestAgent.capabilities?.map((c: string) => (
-                            <span key={c} className="bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-white/5 text-[9px] px-2 py-0.5 rounded text-neutral-600 dark:text-neutral-300 font-mono">
-                              ✓ {c}
-                            </span>
-                          )) || 'None'}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* SSH Diagnostics */}
-              <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-                <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">SSH Server Status</h3>
-                <div className="text-xs space-y-2">
-                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
-                    <span className="text-neutral-500 dark:text-neutral-400">Reachable</span>
-                    <span className={`font-semibold ${diagnostics?.ssh?.reachable ? 'text-emerald-500' : 'text-neutral-500'}`}>
-                      {diagnostics?.ssh?.reachable ? 'Yes' : 'No'}
-                    </span>
-                  </div>
-                  {diagnostics?.ssh?.reachable && (
-                    <div className="flex justify-between">
-                      <span className="text-neutral-500 dark:text-neutral-400">Daemon Banner</span>
-                      <span className="text-neutral-700 dark:text-neutral-300 font-mono text-[10px] truncate max-w-[150px]">{diagnostics.ssh.banner}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Bandwidth & Interface Metrics */}
-              <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-                <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Bandwidth & NIC Statistics</h3>
-                <div className="text-xs space-y-2">
-                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
-                    <span className="text-neutral-500 dark:text-neutral-400">Host interface dev</span>
-                    <span className="text-neutral-800 dark:text-white font-mono font-medium">{diagnostics?.networkStats?.interface || '—'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
-                    <span className="text-neutral-500 dark:text-neutral-400">Total RX</span>
-                    <span className="text-neutral-800 dark:text-white font-mono font-medium">
-                      {diagnostics?.networkStats ? `${(diagnostics.networkStats.rxBytes / (1024 * 1024)).toFixed(2)} MB` : '—'} 
-                      <span className="text-[10px] text-neutral-500 ml-1">({diagnostics?.networkStats?.rxPackets || 0} pkts)</span>
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
-                    <span className="text-neutral-500 dark:text-neutral-400">Total TX</span>
-                    <span className="text-neutral-800 dark:text-white font-mono font-medium">
-                      {diagnostics?.networkStats ? `${(diagnostics.networkStats.txBytes / (1024 * 1024)).toFixed(2)} MB` : '—'} 
-                      <span className="text-[10px] text-neutral-500 ml-1">({diagnostics?.networkStats?.txPackets || 0} pkts)</span>
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-b border-neutral-200 dark:border-white/5 pb-2">
-                    <span className="text-neutral-500 dark:text-neutral-400">Dropped Packets</span>
-                    <span className={`font-mono font-medium ${diagnostics?.networkStats?.rxDrop > 0 ? 'text-amber-500' : 'text-neutral-800 dark:text-white'}`}>
-                      RX: {diagnostics?.networkStats?.rxDrop || 0} / TX: {diagnostics?.networkStats?.txDrop || 0}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500 dark:text-neutral-400">Error Packets</span>
-                    <span className={`font-mono font-medium ${diagnostics?.networkStats?.rxErrors > 0 ? 'text-rose-500' : 'text-neutral-800 dark:text-white'}`}>
-                      RX: {diagnostics?.networkStats?.rxErrors || 0} / TX: {diagnostics?.networkStats?.txErrors || 0}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Health History Timeline */}
-            <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-              <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Health Event History</h3>
-              <div className="space-y-4 overflow-y-auto max-h-[300px] pr-1">
-                {healthHistory.length > 0 ? (
-                  healthHistory.map((evt) => (
-                    <div key={evt.id} className="relative pl-4 border-l-2 border-neutral-300 dark:border-neutral-700/50 space-y-1 py-0.5">
-                      <span className={`absolute -left-1.5 top-1.5 w-2.5 h-2.5 rounded-full ${
-                        evt.status === 'Healthy' ? 'bg-emerald-500' :
-                        evt.status === 'Warning' ? 'bg-amber-500' : 'bg-rose-500'
-                      }`} />
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="font-semibold text-neutral-800 dark:text-white">{evt.status}</span>
-                        <span className="text-neutral-500">{new Date(evt.timestamp).toLocaleTimeString()}</span>
-                      </div>
-                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-normal">{evt.message}</p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center text-neutral-500 py-6 text-xs">No recent health shifts.</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Node Diagnostics (Host Health) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-              <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Hypervisor Host Node Diagnostics</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {nodeDiagnostics ? (
-                  Object.entries(nodeDiagnostics).map(([key, val]: any) => {
-                    if (Array.isArray(val)) return null;
-                    return (
-                      <div key={key} className="p-3 bg-neutral-100 dark:bg-neutral-900/50 border border-neutral-200 dark:border-white/5 rounded-xl text-center space-y-1">
-                        <span className="block text-[9px] uppercase text-neutral-500 tracking-wider font-semibold">{key.replace(/_/g, ' ')}</span>
-                        <span className={`block text-xs font-bold ${typeof val === 'boolean' ? (val ? 'text-emerald-500' : 'text-rose-500') : 'text-neutral-600 dark:text-neutral-300'}`}>
-                          {typeof val === 'boolean' ? (val ? '✓ Active' : '✗ Missing') : val}
-                        </span>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="col-span-4 text-center text-neutral-500 text-xs py-4">Loading node diagnostic parameters...</div>
-                )}
-              </div>
-            </div>
-
-            {/* Host Networks List */}
-            <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800/30 space-y-4">
-              <h3 className="text-sm font-semibold text-neutral-800 dark:text-white">Host Networking Discovery</h3>
-              <div className="text-xs space-y-3">
-                <div>
-                  <span className="block text-neutral-500 uppercase text-[9px] font-semibold mb-1">Available Bridges</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {nodeDiagnostics?.available_bridges?.map((b: string) => (
-                      <span key={b} className="bg-blue-600/10 border border-blue-500/20 text-blue-500 text-[10px] px-2 py-0.5 rounded font-mono font-medium">
-                        {b}
-                      </span>
-                    )) || <span className="text-neutral-500">None detected</span>}
-                  </div>
-                </div>
-                <div>
-                  <span className="block text-neutral-500 uppercase text-[9px] font-semibold mb-1">Libvirt NAT Networks</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {nodeDiagnostics?.available_networks?.map((n: string) => (
-                      <span key={n} className="bg-emerald-600/10 border border-emerald-500/20 text-emerald-500 text-[10px] px-2 py-0.5 rounded font-mono font-medium">
-                        {n}
-                      </span>
-                    )) || <span className="text-neutral-500">None detected</span>}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 1. CONSOLE TAB */}
+      {/* CONSOLE TAB */}
       {activeTab === 'console' && (
         <div className="bg-white dark:bg-white/5 rounded-xl p-6 border border-neutral-300 dark:border-neutral-800/20 shadow-lg">
           <Console 
@@ -1328,7 +910,7 @@ export const InstanceDetails: React.FC = () => {
               <SetIcon size={16} className="text-blue-500" /> Change Root Password
             </h2>
             <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Instantly update the root user account password inside the guest VM/container. The VPS must be running to apply this change.
+               Instantly update the root user account password inside the container. The container must be running to apply this change.
             </p>
             <form onSubmit={handleChangePassword} className="space-y-3 text-xs">
               <div className="space-y-1">
@@ -1358,7 +940,7 @@ export const InstanceDetails: React.FC = () => {
               <RefreshCw size={16} /> Reinstall Operating System
             </h2>
             <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed font-semibold">
-              CRITICAL: Reinstalling deletes the VM/container filesystem root and recreates it from the selected OS template. All user files, data, and configurations will be permanently destroyed.
+              CRITICAL: Reinstalling deletes the container filesystem root and recreates it from the selected OS template. All user files, data, and configurations will be permanently destroyed.
             </p>
             <form onSubmit={handleReinstall} className="space-y-3 text-xs">
               <div className="space-y-1">
@@ -1386,43 +968,6 @@ export const InstanceDetails: React.FC = () => {
             </form>
           </div>
 
-          {/* ISO Media Mount Manager (Only for VM / KVM types) */}
-          {(instance.type === 'KVM' || instance.type === 'QEMU') && (
-            <div className="bg-white dark:bg-white/5 border border-neutral-350 dark:border-neutral-800/20 rounded-2xl p-6 shadow-sm col-span-1 md:col-span-2 space-y-4">
-              <h2 className="text-sm font-semibold text-neutral-850 dark:text-white flex items-center gap-2">
-                <Layers size={16} className="text-blue-500" /> Virtual ISO CDROM Media Manager
-              </h2>
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                Mount or eject ISO optical disk media templates into the virtual machine's CDROM drive.
-              </p>
-              <div className="space-y-3 text-xs">
-                <div className="space-y-1">
-                  <label className="text-neutral-500 dark:text-neutral-400 font-medium">ISO Path on Hypervisor</label>
-                  <input 
-                    type="text" 
-                    value={isoPath} 
-                    onChange={e => setIsoPath(e.target.value)}
-                    placeholder="/var/lib/libvirt/images/templates/ubuntu-22.04.iso"
-                    className="w-full al-input font-mono"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={handleMountIso}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition"
-                  >
-                    Mount ISO Image
-                  </button>
-                  <button 
-                    onClick={handleEjectIso}
-                    className="px-4 py-2 bg-neutral-600 hover:bg-neutral-700 text-white rounded-xl font-medium transition"
-                  >
-                    Eject CDROM
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

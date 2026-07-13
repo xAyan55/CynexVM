@@ -23,9 +23,9 @@ export type TaskType =
   | 'EXECUTION_SHELL_COMMAND';
 
 export const TASK_TYPE_LABELS: Record<TaskType, string> = {
-  POWER_START: 'Start VPS',
-  POWER_STOP: 'Stop VPS',
-  POWER_RESTART: 'Restart VPS',
+  POWER_START: 'Start Container',
+  POWER_STOP: 'Stop Container',
+  POWER_RESTART: 'Restart Container',
   POWER_FORCE_STOP: 'Force Stop',
   POWER_FREEZE: 'Freeze',
   POWER_UNFREEZE: 'Unfreeze',
@@ -62,7 +62,7 @@ export interface ITaskTemplate {
 export const TASK_TEMPLATES: ITaskTemplate[] = [
   {
     name: 'Weekly Backup',
-    description: 'Creates a full backup of the VPS every week',
+    description: 'Creates a full backup of the container every week',
     taskType: 'STORAGE_BACKUP',
     scheduleType: 'WEEKLY',
     cronExpression: '0 3 * * 0',
@@ -73,7 +73,7 @@ export const TASK_TEMPLATES: ITaskTemplate[] = [
   },
   {
     name: 'Nightly Restart',
-    description: 'Restarts the VPS every night at 04:00',
+    description: 'Restarts the container every night at 04:00',
     taskType: 'POWER_RESTART',
     scheduleType: 'DAILY',
     cronExpression: '0 4 * * *',

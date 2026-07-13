@@ -62,7 +62,7 @@ export const AdminInstances: React.FC = () => {
   };
 
   const handleDeleteInstance = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to permanently delete VPS "${name}"? All virtual disk data will be destroyed.`)) return;
+    if (!confirm(`Are you sure you want to permanently delete Container "${name}"? All container disk data will be destroyed.`)) return;
     try {
       const token = localStorage.getItem('accessToken');
       const res = await fetch(`/api/v1/instances/${id}`, {
@@ -94,7 +94,7 @@ export const AdminInstances: React.FC = () => {
         })
       });
       if (res.ok) {
-        alert('VPS hardware specifications updated successfully');
+        alert('Container hardware specifications updated successfully');
         setEditingInstance(null);
         fetchInstances();
       } else {
@@ -218,7 +218,7 @@ export const AdminInstances: React.FC = () => {
           onClick={() => setShowDeployWizard(true)}
           className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow transition"
         >
-          <Plus size={14} /> Deploy VPS
+          <Plus size={14} /> Deploy Container
         </button>
       </div>
 
@@ -276,7 +276,7 @@ export const AdminInstances: React.FC = () => {
 
             <form onSubmit={handleUpdateSpecs} className="space-y-4">
               <div>
-                <label className="text-[10px] text-neutral-400 block mb-1">Rename VPS Label</label>
+                <label className="text-[10px] text-neutral-400 block mb-1">Rename Container Label</label>
                 <input type="text" className="w-full al-input" value={editingInstance.name} required disabled />
               </div>
               <div className="space-y-1">

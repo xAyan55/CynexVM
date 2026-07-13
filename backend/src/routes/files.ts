@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { authenticate, requirePermission, AuthenticatedRequest } from '../middleware/auth';
-import { VirtualizationProviderFactory } from '../services/virtualization/provider';
+import { lxcProvider } from '../services/lxd/lxcProvider';
 
 const router = Router({ mergeParams: true });
 
@@ -36,7 +36,7 @@ router.get('/list', authenticate, requirePermission('instance.files'), verifyCon
   const dirPath = (req.query.path as string) || '/root';
   const instance = req.instanceMetadata;
   try {
-    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    const provider = lxcProvider;
     const list = await provider.files(instance.node, instance, 'list', dirPath);
     return res.status(200).json(list);
   } catch (err: any) {
@@ -54,7 +54,7 @@ router.get('/read', authenticate, requirePermission('instance.files'), verifyCon
   if (!filePath) return res.status(400).json({ error: 'Path is required' });
 
   try {
-    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    const provider = lxcProvider;
     const data = await provider.files(instance.node, instance, 'read', filePath);
     return res.status(200).json({ content: data });
   } catch (err: any) {
@@ -74,7 +74,7 @@ router.post('/write', authenticate, requirePermission('instance.files'), verifyC
   }
 
   try {
-    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    const provider = lxcProvider;
     await provider.files(instance.node, instance, 'write', filePath, { content });
     return res.status(200).json({ success: true, message: 'File written successfully' });
   } catch (err: any) {
@@ -92,7 +92,7 @@ router.delete('/delete', authenticate, requirePermission('instance.files'), veri
   if (!filePath) return res.status(400).json({ error: 'Path is required' });
 
   try {
-    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    const provider = lxcProvider;
     await provider.files(instance.node, instance, 'delete', filePath);
     return res.status(200).json({ success: true, message: 'File deleted successfully' });
   } catch (err: any) {
@@ -113,7 +113,7 @@ router.post('/upload', authenticate, requirePermission('instance.files'), verify
 
   try {
     const buffer = Buffer.from(base64Content, 'base64');
-    const provider = VirtualizationProviderFactory.getProvider(instance.type);
+    const provider = lxcProvider;
     await provider.files(instance.node, instance, 'write', filePath, { content: buffer });
     return res.status(200).json({ success: true, message: 'File uploaded successfully' });
   } catch (err: any) {

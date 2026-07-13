@@ -3,9 +3,9 @@ import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const TASK_TYPE_LABELS: Record<string, string> = {
-  POWER_START: 'Start VPS',
-  POWER_STOP: 'Stop VPS',
-  POWER_RESTART: 'Restart VPS',
+  POWER_START: 'Start Container',
+  POWER_STOP: 'Stop Container',
+  POWER_RESTART: 'Restart Container',
   POWER_FORCE_STOP: 'Force Stop',
   POWER_FREEZE: 'Freeze',
   POWER_UNFREEZE: 'Unfreeze',
@@ -34,8 +34,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const TASK_TEMPLATES = [
-  { name: 'Weekly Backup', description: 'Full VPS backup every week', taskType: 'STORAGE_BACKUP', scheduleType: 'WEEKLY', cronExpression: '0 3 * * 0' },
-  { name: 'Nightly Restart', description: 'Restart VPS nightly at 04:00', taskType: 'POWER_RESTART', scheduleType: 'DAILY', cronExpression: '0 4 * * *' },
+  { name: 'Weekly Backup', description: 'Full container backup every week', taskType: 'STORAGE_BACKUP', scheduleType: 'WEEKLY', cronExpression: '0 3 * * 0' },
+  { name: 'Nightly Restart', description: 'Restart container nightly at 04:00', taskType: 'POWER_RESTART', scheduleType: 'DAILY', cronExpression: '0 4 * * *' },
   { name: 'Daily apt update', description: 'Run apt update & upgrade daily', taskType: 'EXECUTION_SHELL_COMMAND', scheduleType: 'DAILY', cronExpression: '0 3 * * *', shellCommand: 'apt update && apt upgrade -y' },
   { name: 'Weekly Docker Cleanup', description: 'Clean unused Docker resources', taskType: 'EXECUTION_SHELL_COMMAND', scheduleType: 'WEEKLY', cronExpression: '0 2 * * 0', shellCommand: 'docker system prune -af --volumes' },
   { name: 'Monthly Snapshot', description: 'Monthly snapshot checkpoint', taskType: 'STORAGE_SNAPSHOT', scheduleType: 'MONTHLY', cronExpression: '0 2 1 * *' },
@@ -243,7 +243,7 @@ export const AutomationPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-white">Automation</h2>
-          <p className="text-sm text-neutral-400">Schedule and manage automated VPS tasks</p>
+          <p className="text-sm text-neutral-400">Schedule and manage automated container tasks</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => { resetForm(); setShowCreateDialog(true); }} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition">
