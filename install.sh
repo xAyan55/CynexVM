@@ -546,7 +546,7 @@ show_system_info() {
 # Dependency Validation
 # ────────────────────────────────────────────────────────────────────────────
 REQUIRED_PKGS="curl wget git build-essential ca-certificates gnupg lsb-release sqlite3"
-OPTIONAL_PKGS="nginx certbot python3-certbot-nginx"
+OPTIONAL_PKGS=""
 
 MISSING_PKGS=()
 ALREADY_INSTALLED=()
@@ -676,7 +676,7 @@ show_config_summary() {
   echo -e "  ${C_GRAY}Repository:${C_RESET}          ${REPO}"
   echo -e "  ${C_GRAY}Node.js:${C_RESET}             20.x LTS"
   echo -e "  ${C_GRAY}Database:${C_RESET}             SQLite (default)"
-  echo -e "  ${C_GRAY}Reverse Proxy:${C_RESET}        Nginx"
+  echo -e "  ${C_GRAY}Process Manager:${C_RESET}      PM2"
   echo -e "  ${C_GRAY}Container Runtime:${C_RESET}    LXD"
   echo -e "  ${C_GRAY}Service Name:${C_RESET}         cynexvm"
   echo -e "  ${C_GRAY}System User:${C_RESET}          root"
@@ -914,82 +914,35 @@ setup_database() {
   cd "$INSTALL_DIR"
 }
 
-create_systemd_service() {
-  spinner_start "Creating systemd service..."
-  cat > /etc/systemd/system/cynexvm.service <<EOF
-[Unit]
-Description=CynexVM Virtualization Panel
-After=network.target lxd.service
-Wants=lxd.service
+setup_pm2() {
+  if command -v pm2 &>/dev/null; then
+    log_info "PM2 already installed"
+  else
+    spinner_start "Installing PM2 process manager..."
+    npm install -g pm2 > /dev/null 2>&1
+    spinner_stop
+    log_info "PM2 installed globally"
+  fi
 
-[Service]
-Type=simple
-WorkingDirectory=${INSTALL_DIR}/backend
-ExecStart=/usr/bin/node dist/index.js
-Restart=always
-RestartSec=5
-User=root
-Environment=NODE_ENV=production
-Environment=PORT=${PANEL_PORT}
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  systemctl daemon-reload
-  systemctl enable cynexvm > /dev/null 2>&1
-  systemctl restart cynexvm
+  spinner_start "Configuring PM2..."
+  mkdir -p /var/log/cynexvm
+  cd "$INSTALL_DIR"
+  pm2 start ecosystem.config.js > /dev/null 2>&1
+  pm2 save > /dev/null 2>&1
   spinner_stop
-  log_info "CynexVM service installed and started"
+  log_info "CynexVM started via PM2"
+
+  spinner_start "Enabling PM2 startup on boot..."
+  pm2 startup systemd -u root --hp /root > /dev/null 2>&1 || true
+  spinner_stop
+  log_info "PM2 startup on boot enabled"
 }
 
 setup_nginx_proxy() {
-  if ! command -v nginx &>/dev/null; then
-    warning "Nginx not installed, skipping reverse proxy setup"
-    log_warn "Nginx not available, proxy skipped"
-    return 0
-  fi
-
-  spinner_start "Configuring Nginx..."
-  cat > /etc/nginx/sites-available/cynexvm <<EOF
-server {
-    listen 80;
-    server_name _;
-
-    location / {
-        root ${INSTALL_DIR}/frontend/dist;
-        try_files \$uri \$uri/ /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:${PANEL_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 86400;
-    }
-
-    location /socket.io/ {
-        proxy_pass http://127.0.0.1:${PANEL_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_read_timeout 86400;
-    }
-}
-EOF
-
-  ln -sf /etc/nginx/sites-available/cynexvm /etc/nginx/sites-enabled/cynexvm
-  rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
-  nginx -t > /dev/null 2>&1
-  systemctl reload nginx
-  spinner_stop
-  log_info "Nginx reverse proxy configured"
+  info "Frontend is served directly by the backend Express server on port ${PANEL_PORT}."
+  info "Nginx reverse proxy is not required — access the panel at http://YOUR_IP:${PANEL_PORT}"
+  info "If you need a reverse proxy, configure it separately (e.g., Nginx, Caddy, Cloudflare Tunnel)."
+  log_info "Nginx proxy skipped — backend serves frontend directly"
 }
 
 install_cynexd_daemon() {
@@ -1049,30 +1002,18 @@ verify_installation() {
     failed=1
   fi
 
-  # Nginx check
-  if command -v nginx &>/dev/null; then
-    if nginx -t > /dev/null 2>&1; then
-      success "Nginx configuration valid"
+  # PM2 process check
+  if command -v pm2 &>/dev/null; then
+    if pm2 pid cynexvm > /dev/null 2>&1; then
+      success "PM2: cynexvm process is running"
     else
-      warning "Nginx configuration has issues"
+      warning "PM2: cynexvm process is not running (run: pm2 start ecosystem.config.js)"
     fi
-    if systemctl is-active --quiet nginx; then
-      success "Nginx is running"
-    else
-      warning "Nginx is not running"
-    fi
-  fi
-
-  # CynexVM service check
-  if systemctl is-active --quiet cynexvm; then
-    success "CynexVM service is running"
-  else
-    warning "CynexVM service is not running (will start on boot)"
   fi
 
   # HTTP endpoint check
-  if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${PANEL_PORT}/api/v1/test 2>/dev/null | grep -q "200"; then
-    success "API endpoint responding"
+  if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${PANEL_PORT}/health 2>/dev/null | grep -q "200"; then
+    success "API endpoint responding on port ${PANEL_PORT}"
   else
     warning "API endpoint not yet responding (service may still be starting)"
   fi
@@ -1142,9 +1083,10 @@ show_success_screen() {
   # Useful commands
   echo -e "  ${C_GRAY}Useful Commands${C_RESET}"
   echo -e "  ${C_GRAY}━━━━━━━━━━━━━━━${C_RESET}"
-  echo -e "  ${C_GREEN}\$${C_RESET} systemctl status cynexvm"
-  echo -e "  ${C_GREEN}\$${C_RESET} systemctl restart cynexvm"
-  echo -e "  ${C_GREEN}\$${C_RESET} journalctl -u cynexvm -f"
+  echo -e "  ${C_GREEN}\$${C_RESET} pm2 list"
+  echo -e "  ${C_GREEN}\$${C_RESET} pm2 logs cynexvm --lines 50"
+  echo -e "  ${C_GREEN}\$${C_RESET} pm2 restart cynexvm"
+  echo -e "  ${C_GREEN}\$${C_RESET} pm2 monit"
   echo -e "  ${C_GREEN}\$${C_RESET} lxc list"
   echo -e "  ${C_GREEN}\$${C_RESET} lxc info"
   echo ""
@@ -1216,8 +1158,7 @@ main() {
   progress_add_stage "Environment"             4
   progress_add_stage "Build"                  20
   progress_add_stage "Database"               10
-  progress_add_stage "Systemd Service"         6
-  progress_add_stage "Nginx"                   6
+  progress_add_stage "PM2 Setup"              12
   progress_add_stage "CynexD"                  4
   progress_add_stage "Verification"            4
 
@@ -1265,19 +1206,15 @@ main() {
   _STAGE_COMPLETED_INDEX=8
   _render_progress "Database initialized"
 
-  create_systemd_service
+  setup_pm2
+  setup_nginx_proxy
   _STAGE_COMPLETED_WEIGHT=$((_STAGE_COMPLETED_WEIGHT + _STAGE_WEIGHTS[8]))
   _STAGE_COMPLETED_INDEX=9
-  _render_progress "Systemd service created"
-
-  setup_nginx_proxy
-  _STAGE_COMPLETED_WEIGHT=$((_STAGE_COMPLETED_WEIGHT + _STAGE_WEIGHTS[9]))
-  _STAGE_COMPLETED_INDEX=10
-  _render_progress "Nginx configured"
+  _render_progress "PM2 configured"
 
   install_cynexd_daemon
-  _STAGE_COMPLETED_WEIGHT=$((_STAGE_COMPLETED_WEIGHT + _STAGE_WEIGHTS[10]))
-  _STAGE_COMPLETED_INDEX=11
+  _STAGE_COMPLETED_WEIGHT=$((_STAGE_COMPLETED_WEIGHT + _STAGE_WEIGHTS[9]))
+  _STAGE_COMPLETED_INDEX=10
   _render_progress "CynexD daemon installed"
 
   echo ""
