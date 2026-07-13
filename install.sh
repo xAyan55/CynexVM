@@ -746,16 +746,22 @@ install_system_deps() {
 }
 
 install_nodejs() {
-  if command -v node &>/dev/null && [[ "$(node -v)" == v20* || "$(node -v)" == v22* ]]; then
+  if command -v node &>/dev/null && command -v npm &>/dev/null && [[ "$(node -v)" == v20* || "$(node -v)" == v22* ]]; then
     log_info "Node.js $(node -v) already installed, skipping"
     return 0
   fi
 
   spinner_start "Installing Node.js 20 LTS..."
   with_retries bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -" > /dev/null 2>&1
-  DEBIAN_FRONTEND=noninteractive with_retries apt-get install -y -qq nodejs > /dev/null 2>&1
+  DEBIAN_FRONTEND=noninteractive with_retries apt-get install -y -qq nodejs npm > /dev/null 2>&1
   spinner_stop
-  log_info "Node.js $(node -v) installed"
+
+  if ! command -v npm &>/dev/null; then
+    warning "npm not found after Node.js install — installing separately..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq npm
+  fi
+
+  log_info "Node.js $(node -v) with npm $(npm -v) installed"
 }
 
 install_lxd() {
@@ -867,14 +873,14 @@ setup_database() {
   local seed_output
   seed_output=$(node -e "
     const { PrismaClient } = require('@prisma/client');
-    const bcrypt = require('bcryptjs');
+    const { hash } = require('argon2');
     const db = new PrismaClient();
     (async () => {
       const count = await db.user.count();
       if (count === 0) {
-        const hash = await bcrypt.hash('admin', 12);
+        const passwordHash = await hash('admin');
         const user = await db.user.create({
-          data: { username: 'admin', email: 'admin@cynexvm.local', passwordHash: hash, emailVerified: true }
+          data: { username: 'admin', email: 'admin@cynexvm.local', passwordHash, emailVerified: true }
         });
         let role = await db.role.findFirst({ where: { name: 'Admin' } });
         if (!role) role = await db.role.create({ data: { name: 'Admin', description: 'Full administrator access' } });
@@ -919,7 +925,7 @@ setup_pm2() {
     log_info "PM2 already installed"
   else
     spinner_start "Installing PM2 process manager..."
-    npm install -g pm2 > /dev/null 2>&1
+    npm install -g pm2
     spinner_stop
     log_info "PM2 installed globally"
   fi
@@ -927,13 +933,13 @@ setup_pm2() {
   spinner_start "Configuring PM2..."
   mkdir -p /var/log/cynexvm
   cd "$INSTALL_DIR"
-  pm2 start ecosystem.config.js > /dev/null 2>&1
-  pm2 save > /dev/null 2>&1
+  pm2 start ecosystem.config.js || true
+  pm2 save || true
   spinner_stop
   log_info "CynexVM started via PM2"
 
   spinner_start "Enabling PM2 startup on boot..."
-  pm2 startup systemd -u root --hp /root > /dev/null 2>&1 || true
+  pm2 startup systemd -u root --hp /root || true
   spinner_stop
   log_info "PM2 startup on boot enabled"
 }
