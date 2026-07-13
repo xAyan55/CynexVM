@@ -66,7 +66,7 @@ router.post('/', authenticate, requirePermission('node.create'), async (req, res
   try {
     const node = await db.node.create({
       data: {
-        name, hostname, apiUrl: '',
+        name, hostname,
         cpuCores: parseInt(cpuCores || '0', 10),
         memoryMb: parseInt(memoryMb || '0', 10),
         storageGb: parseInt(storageGb || '0', 10),

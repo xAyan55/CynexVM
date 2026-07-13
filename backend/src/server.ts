@@ -25,6 +25,7 @@ import { db } from './db';
 import { SocketService } from './services/socketService';
 import { ConnectionManager } from './services/node/ConnectionManager';
 import { HeartbeatMonitor } from './services/node/HeartbeatMonitor';
+import { lxcProvider } from './services/lxd/lxcProvider';
 
 const app = express();
 app.set('trust proxy', true);

@@ -190,8 +190,8 @@ model Node {
   id              String      @id @default(uuid())
   name            String      @unique
   hostname        String
-  apiUrl          String
-  apiToken        String
+  apiUrl          String?
+  apiToken        String?
   sslFingerprint  String?
   cpuCores        Int         @default(0)
   memoryMb        Int         @default(0)
