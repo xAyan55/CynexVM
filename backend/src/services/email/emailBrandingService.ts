@@ -87,12 +87,12 @@ export class EmailBrandingService {
         logoUrl: panel.logo_url || null,
         faviconUrl: panel.favicon_url || null,
         supportEmail: panel.support_email || null,
-        primaryColor: '#2563eb',
-        secondaryColor: '#6b7280',
-        accentColor: '#059669',
-        backgroundColor: '#f4f5f7',
-        buttonColor: '#2563eb',
-        borderRadius: '8px',
+        primaryColor: '#e5e5e5',
+        secondaryColor: '#8a8a8a',
+        accentColor: '#22c55e',
+        backgroundColor: '#0f0f0f',
+        buttonColor: '#e5e5e5',
+        borderRadius: '12px',
         unsubscribeText: 'You received this email because you have an account with this service.'
       }
     });
@@ -124,12 +124,12 @@ export class EmailBrandingService {
       company_name: branding?.companyName || '',
       logo: resolve(branding?.logoUrl, 'logo_url', ''),
       favicon: resolve(branding?.faviconUrl, 'favicon_url', ''),
-      primary_color: branding?.primaryColor || '#2563eb',
-      secondary_color: branding?.secondaryColor || '#6b7280',
-      accent_color: branding?.accentColor || '#059669',
-      background_color: branding?.backgroundColor || '#f4f5f7',
-      button_color: branding?.buttonColor || '#2563eb',
-      border_radius: branding?.borderRadius || '8px',
+      primary_color: branding?.primaryColor || '#e5e5e5',
+      secondary_color: branding?.secondaryColor || '#8a8a8a',
+      accent_color: branding?.accentColor || '#22c55e',
+      background_color: branding?.backgroundColor || '#0f0f0f',
+      button_color: branding?.buttonColor || '#e5e5e5',
+      border_radius: branding?.borderRadius || '12px',
       support_email: resolve(branding?.supportEmail, 'support_email', ''),
       website: branding?.websiteUrl || '',
       address: branding?.companyAddress || '',
@@ -148,84 +148,129 @@ export class EmailBrandingService {
     return vars;
   }
 
+  private static getContrastText(bgColor: string): string {
+    const hex = bgColor.replace('#', '');
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? '#0f0f0f' : '#ffffff';
+  }
+
   public static wrapWithBranding(
     contentHtml: string,
     branding: BrandingData,
     meta: { panelName: string; subject: string }
   ): string {
-    const primaryColor = branding.primaryColor || '#2563eb';
-    const logo = branding.logoUrl
-      ? `<img src="${branding.logoUrl}" alt="${meta.panelName}" style="max-height:48px;margin-bottom:24px" />`
-      : `<h1 style="font-size:24px;font-weight:700;color:#1a1a1a;margin:0 0 24px 0">${meta.panelName}</h1>`;
+    const panelName = meta.panelName;
+    const buttonColor = branding.buttonColor || '#e5e5e5';
+    const btnTextColor = this.getContrastText(buttonColor);
 
-    let socialLinks = '';
-    const socials: { url?: string | null; label: string; icon: string }[] = [
-      { url: branding.twitterUrl, label: 'X', icon: '𝕏' },
-      { url: branding.facebookUrl, label: 'Facebook', icon: 'f' },
-      { url: branding.linkedinUrl, label: 'LinkedIn', icon: 'in' },
-      { url: branding.githubUrl, label: 'GitHub', icon: 'GH' },
-      { url: branding.discordUrl, label: 'Discord', icon: 'DC' },
-      { url: branding.instagramUrl, label: 'Instagram', icon: 'IG' },
+    const logoHtml = branding.logoUrl
+      ? `<div style="text-align:center;margin-bottom:28px"><img src="${branding.logoUrl}" alt="${panelName}" style="max-height:36px;border:0;outline:none;display:inline-block" /></div>`
+      : `<div style="text-align:center;margin-bottom:28px"><span style="font-size:17px;font-weight:700;color:#f0f0f0;letter-spacing:-0.3px">${panelName}</span></div>`;
+
+    const socialItems: { url?: string | null; label: string }[] = [
+      { url: branding.twitterUrl, label: 'X' },
+      { url: branding.githubUrl, label: 'GitHub' },
+      { url: branding.facebookUrl, label: 'Facebook' },
+      { url: branding.linkedinUrl, label: 'LinkedIn' },
+      { url: branding.discordUrl, label: 'Discord' },
+      { url: branding.instagramUrl, label: 'Instagram' },
     ];
-    const validSocials = socials.filter(s => s.url);
-    if (validSocials.length > 0) {
-      socialLinks = validSocials.map(s =>
-        `<a href="${s.url}" style="color:#6b7280;text-decoration:none;margin:0 6px;font-size:12px">${s.icon}</a>`
-      ).join('');
-    }
-
-    const footerHtml = branding.footerHtml
-      ? branding.footerHtml
+    const validSocials = socialItems.filter(s => s.url);
+    const socialHtml = validSocials.length > 0
+      ? `<p style="margin:16px 0 0 0">${validSocials.map(s => `<a href="${s.url}" style="color:#5a5a5a;text-decoration:none;margin:0 8px;font-size:13px">${s.label}</a>`).join('')}</p>`
       : '';
 
-    const companyInfo = branding.companyName
-      ? `<p style="margin:4px 0;font-size:12px;color:#6b7280">${branding.companyName}${branding.companyAddress ? ` &middot; ${branding.companyAddress}` : ''}</p>`
+    const customFooter = branding.footerHtml || '';
+    const supportHtml = branding.supportEmail
+      ? `<p style="margin:0 0 4px 0"><a href="mailto:${branding.supportEmail}" style="color:#8a8a8a;text-decoration:none">${branding.supportEmail}</a></p>`
       : '';
-
-    const copyright = branding.copyrightText
-      ? `<p style="margin:4px 0;font-size:11px;color:#9ca3af">${branding.copyrightText}</p>`
+    const websiteHtml = branding.websiteUrl
+      ? `<p style="margin:0 0 4px 0"><a href="${branding.websiteUrl}" style="color:#8a8a8a;text-decoration:none">${branding.websiteUrl.replace(/^https?:\/\//, '')}</a></p>`
       : '';
-
+    const companyHtml = branding.companyName
+      ? `<p style="margin:0 0 4px 0;color:#5a5a5a">${branding.companyName}${branding.companyAddress ? ` &middot; ${branding.companyAddress}` : ''}</p>`
+      : '';
+    const copyrightText = branding.copyrightText || `&copy; ${new Date().getFullYear()} ${panelName}. All rights reserved.`;
     const unsubscribeHtml = branding.unsubscribeText
-      ? `<p style="margin:16px 0 0 0;font-size:11px;color:#9ca3af">${branding.unsubscribeText}</p>`
+      ? `<p style="margin:16px 0 0 0;font-size:11px;color:#4a4a4a">${branding.unsubscribeText}</p>`
       : '';
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="color-scheme" content="light" />
-  <style>
-    @media only screen and (max-width:600px){.container{width:100%!important}.content{padding:24px 16px!important}}
-    body{margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<meta name="color-scheme" content="dark" />
+<meta name="format-detection" content="telephone=no" />
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{margin:0;padding:0;background-color:#0f0f0f;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  h1{font-size:28px;font-weight:700;color:#f0f0f0;margin:0 0 8px 0;line-height:1.3;letter-spacing:-0.5px}
+  h2{font-size:20px;font-weight:600;color:#f0f0f0;margin:0 0 12px 0;line-height:1.4;letter-spacing:-0.3px}
+  h3{font-size:16px;font-weight:600;color:#f0f0f0;margin:0 0 8px 0}
+  p{font-size:16px;line-height:1.7;color:#b5b5b5;margin:0 0 16px 0}
+  a{color:#f0f0f0}
+  .muted{font-size:14px;color:#8a8a8a;line-height:1.6}
+  .meta{font-size:13px;color:#5a5a5a;line-height:1.5}
+  .info-card{background-color:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:20px;margin:24px 0}
+  .info-card table{width:100%;border-collapse:collapse}
+  .info-card tr:not(:last-child) td{border-bottom:1px solid #1f1f1f}
+  .info-card td{padding:8px 0;font-size:14px;line-height:1.5;vertical-align:top}
+  .info-card .label{color:#8a8a8a;width:35%;padding-right:12px}
+  .info-card .value{color:#f0f0f0}
+  .alert{border-radius:12px;padding:16px 20px;margin:24px 0;font-size:14px;line-height:1.6}
+  .alert-success{background-color:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);color:#22c55e}
+  .alert-warning{background-color:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);color:#f59e0b}
+  .alert-danger{background-color:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#ef4444}
+  .alert-info{background-color:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);color:#b5b5b5}
+  .divider{height:1px;background-color:#2a2a2a;border:none;margin:28px 0}
+  code{font-family:'SF Mono','Fira Code','Fira Mono',Menlo,Consolas,monospace;font-size:13px;background-color:#141414;border:1px solid #2a2a2a;border-radius:6px;padding:2px 6px;color:#e5e5e5;word-break:break-all}
+  .code-block{background-color:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:16px 20px;font-family:'SF Mono','Fira Code','Fira Mono',Menlo,Consolas,monospace;font-size:14px;line-height:1.6;color:#e5e5e5;word-break:break-all;margin:24px 0}
+  @media only screen and (max-width:600px){
+    .card{padding:0!important}
+    .content{padding:24px 16px!important}
+    .info-card td{display:block;width:100%!important;padding:4px 0!important;border:none!important}
+    .info-card .label{padding-bottom:0!important}
+  }
+</style>
 </head>
-<body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif">
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f4f5f7;padding:40px 0">
-    <tr>
-      <td align="center">
-        <table class="container" role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
-          <tr>
-            <td class="content" style="padding:32px 40px">
-              ${logo}
-              ${contentHtml}
-            </td>
-          </tr>
-          <tr>
-            <td style="background-color:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center">
-              ${footerHtml}
-              ${companyInfo}
-              ${copyright}
-              ${socialLinks ? `<p style="margin:12px 0 0 0">${socialLinks}</p>` : ''}
-              ${unsubscribeHtml}
-            </td>
-          </tr>
-        </table>
-        <p style="font-size:11px;color:#9ca3af;margin-top:12px;text-align:center">&copy; ${new Date().getFullYear()} ${meta.panelName}. All rights reserved.</p>
-      </td>
-    </tr>
-  </table>
+<body>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#0f0f0f;padding:40px 0">
+<tr>
+<td align="center">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%">
+<tr>
+<td>
+<div style="background-color:#1a1a1a;border-radius:16px;border:1px solid #2a2a2a;box-shadow:0 4px 24px rgba(0,0,0,0.4)">
+<div style="padding:32px">
+${logoHtml}
+${contentHtml}
+</div>
+<div style="padding:24px 32px;border-top:1px solid #2a2a2a">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+<tr>
+<td style="text-align:center;font-size:13px;color:#5a5a5a">
+${customFooter}
+${supportHtml}
+${websiteHtml}
+${companyHtml}
+${socialHtml}
+<p style="margin:12px 0 0 0;font-size:11px;color:#4a4a4a">${copyrightText}</p>
+${unsubscribeHtml}
+</td>
+</tr>
+</table>
+</div>
+</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
 </body>
 </html>`;
   }

@@ -95,7 +95,20 @@ export class EmailService {
     }
   }
 
+  private static validateEmailOptions(options: SendEmailOptions): string | null {
+    const recipient = options.to;
+    if (!recipient) return 'Recipient email address is missing';
+    if (!options.subject) return `Email to ${recipient} missing subject`;
+    if (!options.html && !options.plainText) return `Email to ${recipient} missing HTML and plain text content`;
+    return null;
+  }
+
   public static async sendEmail(options: SendEmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    const validationError = this.validateEmailOptions(options);
+    if (validationError) {
+      return { success: false, error: validationError };
+    }
+
     const config = options.smtpConfig || await this.getDefaultSmtpConfig();
     if (!config) {
       return { success: false, error: 'No SMTP configuration found' };
@@ -107,8 +120,8 @@ export class EmailService {
       const brandingVars = await EmailBrandingService.getBrandingVariables();
       const panelName = brandingVars.panel_name;
 
-      let html = options.html;
-      if (branding && !html.includes('<!DOCTYPE')) {
+      let html = options.html || '';
+      if (branding && html && !html.includes('<!DOCTYPE')) {
         html = EmailBrandingService.wrapWithBranding(html, branding, {
           panelName,
           subject: options.subject
@@ -149,7 +162,7 @@ export class EmailService {
       return { success: false, error: `Email template '${templateName}' not found` };
     }
 
-    const rendered = EmailTemplateService.render(template, variables);
+    const rendered = await EmailTemplateService.render(template, variables);
     const config = options?.smtpConfigId
       ? await this.getSmtpConfig(options.smtpConfigId)
       : await this.getDefaultSmtpConfig();

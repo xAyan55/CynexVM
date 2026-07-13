@@ -55,4 +55,21 @@ async function main() {
   }
 }
 
+function gracefulShutdown(signal: string) {
+  console.log(`[Server] Received ${signal}. Shutting down gracefully...`);
+  EmailQueue.stop();
+  SchedulerService.stop().catch(() => {});
+  server.close(() => {
+    console.log('[Server] HTTP server closed.');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.error('[Server] Forced shutdown after timeout.');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 main();

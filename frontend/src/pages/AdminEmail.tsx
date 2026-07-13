@@ -761,29 +761,43 @@ function BrandingSection() {
       setTestPreviewHtml(`<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="color-scheme" content="dark" />
 <style>
-  body{margin:0;padding:20px;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
-  .card{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
-  .content{padding:32px 40px}
-  .footer{background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center;font-size:12px;color:#6b7280}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{margin:0;padding:0;background:#0f0f0f;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .card{max-width:600px;margin:40px auto;background:#1a1a1a;border-radius:16px;border:1px solid #2a2a2a;box-shadow:0 4px 24px rgba(0,0,0,0.4);overflow:hidden}
+  .content{padding:32px}
+  .footer{padding:24px 32px;border-top:1px solid #2a2a2a;text-align:center;font-size:13px;color:#5a5a5a}
+  h1{font-size:28px;font-weight:700;color:#f0f0f0;margin:0 0 8px 0;letter-spacing:-0.5px}
+  h2{font-size:20px;font-weight:600;color:#f0f0f0;margin:0 0 12px 0}
+  p{font-size:16px;line-height:1.7;color:#b5b5b5;margin:0 0 16px 0}
+  a{color:#f0f0f0}
+  .info{background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:20px;margin:24px 0;font-size:14px;line-height:1.6;color:#b5b5b5}
+  .info strong{color:#f0f0f0}
+  .tag{display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#0f0f0f;background:' + b.button_color + ';border-radius:12px;text-decoration:none;margin:24px 0}
+  @media only screen and (max-width:600px){.content{padding:24px 16px!important}}
 </style></head>
 <body>
-  <div class="card">
-    <div class="content">
-      ${b.logo ? '<img src="' + b.logo + '" alt="' + b.panel_name + '" style="max-height:48px;margin-bottom:24px"/>' : '<h1 style="font-size:24px;font-weight:700;color:#1a1a1a;margin:0 0 24px 0">' + b.panel_name + '</h1>'}
-      <h2 style="font-size:20px;font-weight:600;color:#1a1a1a;margin:0 0 8px 0">Welcome to ' + b.panel_name + '</h2>
-      <p style="font-size:14px;line-height:1.6;color:#374151;margin:0 0 16px 0">This is a preview showing how your email branding will appear to recipients.</p>
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0"><tr><td align="center" style="background-color:' + b.button_color + ';border-radius:' + b.border_radius + '"><a href="' + b.website + '" style="display:inline-block;padding:12px 32px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">Get Started</a></td></tr></table>
-      <div style="margin-top:24px;padding:16px;background-color:#f9fafb;border-radius:' + b.border_radius + ';font-size:13px;color:#6b7280">
-        <p style="margin:0"><strong>Branding Variables Active:</strong></p>
-        <p style="margin:4px 0 0 0">Panel: ' + b.panel_name + '<br/>Company: ' + (b.company_name || '(not set)') + '<br/>Support: ' + (b.support_email || '(not set)') + '<br/>Website: ' + (b.website || '(not set)') + '</p>
-      </div>
-    </div>
-    <div class="footer">
-      ' + (b.footer || '') + ' ' + (b.copyright || '') + ' ' + (b.company_name ? '<p style="margin:4px 0">' + b.company_name + (b.address ? ' &middot; ' + b.address : '') + '</p>' : '') + ' ' + (b.support_email ? '<p style="margin:4px 0"><a href="mailto:' + b.support_email + '" style="color:#6b7280">' + b.support_email + '</a></p>' : '') + ' ' + (b.twitter || b.facebook || b.linkedin || b.github || b.discord || b.instagram ? '<p style="margin:8px 0 0 0">' + [b.twitter && '<a href="' + b.twitter + '" style="color:#6b7280;text-decoration:none;margin:0 4px">X</a>', b.facebook && '<a href="' + b.facebook + '" style="color:#6b7280;text-decoration:none;margin:0 4px">FB</a>', b.linkedin && '<a href="' + b.linkedin + '" style="color:#6b7280;text-decoration:none;margin:0 4px">IN</a>', b.github && '<a href="' + b.github + '" style="color:#6b7280;text-decoration:none;margin:0 4px">GH</a>', b.discord && '<a href="' + b.discord + '" style="color:#6b7280;text-decoration:none;margin:0 4px">DC</a>', b.instagram && '<a href="' + b.instagram + '" style="color:#6b7280;text-decoration:none;margin:0 4px">IG</a>'].filter(Boolean).join('') + '</p>' : ''} + '
-      <p style="margin:12px 0 0 0;font-size:11px;color:#9ca3af">&copy; ' + b.year + ' ' + b.panel_name + '. All rights reserved.</p>
+<div class="card">
+  <div class="content">
+    ' + (b.logo ? '<div style="text-align:center;margin-bottom:28px"><img src="' + b.logo + '" alt="' + b.panel_name + '" style="max-height:36px;border:0;outline:none;display:inline-block" /></div>' : '<div style="text-align:center;margin-bottom:28px"><span style="font-size:17px;font-weight:700;color:#f0f0f0;letter-spacing:-0.3px">' + b.panel_name + '</span></div>') + '
+    <h1>Welcome to ' + b.panel_name + '</h1>
+    <p>This is a preview showing how your email branding will appear to recipients. The entire design system is reflected here — colors, typography, spacing, and components.</p>
+    <a href="' + (b.website || '#') + '" class="tag">Get Started</a>
+    <div class="info">
+      <strong>Active Branding Variables</strong><br/><br/>
+      Panel: ' + b.panel_name + '<br/>
+      Company: ' + (b.company_name || '(not set)') + '<br/>
+      Support: ' + (b.support_email || '(not set)') + '<br/>
+      Website: ' + (b.website || '(not set)') + '<br/>
+      Button: ' + b.button_color + ' / Radius: ' + (b.border_radius || '12px') + '
     </div>
   </div>
+  <div class="footer">
+    ' + (b.support_email ? '<p style="margin:0 0 4px 0"><a href="mailto:' + b.support_email + '" style="color:#8a8a8a;text-decoration:none">' + b.support_email + '</a></p>' : '') + ' ' + (b.website ? '<p style="margin:0 0 4px 0"><a href="' + b.website + '" style="color:#8a8a8a;text-decoration:none">' + b.website.replace(/^https?:\/\//, '') + '</a></p>' : '') + ' ' + (b.company_name ? '<p style="margin:0 0 4px 0;color:#5a5a5a">' + b.company_name + (b.address ? ' &middot; ' + b.address : '') + '</p>' : '') + ' ' + (b.copyright ? '<p style="margin:0 0 4px 0;color:#5a5a5a">' + b.copyright + '</p>' : '') + ' ' + (b.twitter || b.facebook || b.linkedin || b.github || b.discord || b.instagram ? '<p style="margin:16px 0 0 0">' + [b.twitter && '<a href="' + b.twitter + '" style="color:#5a5a5a;text-decoration:none;margin:0 8px;font-size:13px">X</a>', b.facebook && '<a href="' + b.facebook + '" style="color:#5a5a5a;text-decoration:none;margin:0 8px;font-size:13px">Facebook</a>', b.linkedin && '<a href="' + b.linkedin + '" style="color:#5a5a5a;text-decoration:none;margin:0 8px;font-size:13px">LinkedIn</a>', b.github && '<a href="' + b.github + '" style="color:#5a5a5a;text-decoration:none;margin:0 8px;font-size:13px">GitHub</a>', b.discord && '<a href="' + b.discord + '" style="color:#5a5a5a;text-decoration:none;margin:0 8px;font-size:13px">Discord</a>', b.instagram && '<a href="' + b.instagram + '" style="color:#5a5a5a;text-decoration:none;margin:0 8px;font-size:13px">Instagram</a>'].filter(Boolean).join('') + '</p>' : '') + '
+    <p style="margin:16px 0 0 0;font-size:11px;color:#4a4a4a">&copy; ' + b.year + ' ' + b.panel_name + '. All rights reserved.</p>
+  </div>
+</div>
 </body>
 </html>`);
     } catch {}

@@ -22,6 +22,15 @@ export class EmailQueue {
         nextRetryAt: new Date(Date.now() + 60000)
       }
     });
+
+    // Mark stale jobs (no html body) as failed so they don't pollute the queue
+    const staleCount = await db.emailLog.updateMany({
+      where: { status: 'queued', html: null },
+      data: { status: 'failed', error: 'Stale job: missing HTML body (likely from schema migration)' }
+    });
+    if (staleCount.count > 0) {
+      console.log(`[Email Queue] Marked ${staleCount.count} stale jobs as failed (missing html column).`);
+    }
   }
 
   public static start() {
@@ -51,6 +60,8 @@ export class EmailQueue {
       data: {
         to: options.to,
         subject: options.subject,
+        html: options.html,
+        plainText: options.plainText || null,
         templateName: options.templateName || null,
         userId: options.userId || null,
         status: 'queued',
@@ -113,11 +124,20 @@ export class EmailQueue {
   }
 
   private static async processJob(job: any) {
+    const ctx = `[Email Queue] Job ${job.id} (template=${job.templateName || 'none'}, to=${job.to}, subject=${job.subject})`;
+    console.log(`${ctx} Processing...`);
+
     try {
       await db.emailLog.update({
         where: { id: job.id },
         data: { status: 'sending' }
       });
+
+      if (!job.html) {
+        console.warn(`${ctx} has null/undefined html body. Marking as failed.`);
+        await this.handleFailure(job, 'Missing HTML body');
+        return;
+      }
 
       const result = await EmailService.sendRaw({
         to: job.to,
@@ -136,10 +156,14 @@ export class EmailQueue {
             nextRetryAt: null
           }
         });
+        console.log(`${ctx} Sent OK (${result.messageId || 'no id'})`);
       } else {
+        console.warn(`${ctx} Send failed: ${result.error}`);
         await this.handleFailure(job, result.error || 'Unknown error');
       }
     } catch (err: any) {
+      console.error(`${ctx} Exception: ${err.message}`);
+      if (err.stack) console.error(err.stack);
       await this.handleFailure(job, err.message || 'Unknown error');
     }
   }

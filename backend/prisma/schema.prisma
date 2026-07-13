@@ -491,6 +491,8 @@ model EmailLog {
   user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   to           String
   subject      String
+  html         String?  // Rendered HTML body
+  plainText    String?  // Rendered plain text body
   templateName String?
   status       String   // "queued" | "sending" | "sent" | "failed" | "bounced"
   error        String?
