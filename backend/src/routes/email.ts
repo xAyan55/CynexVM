@@ -219,36 +219,6 @@ router.delete('/smtp-configs/:id', authenticate, async (req: AuthenticatedReques
   }
 });
 
-// Run diagnostics for a specific saved configuration
-router.post('/smtp-configs/:id/test', authenticate, async (req: AuthenticatedRequest, res) => {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  try {
-    const config = await db.smtpConfig.findUnique({ where: { id: req.params.id } });
-    if (!config) return res.status(404).json({ error: 'SMTP config not found' });
-
-    const configData: SmtpConfigData = {
-      ...config,
-      replyTo: config.replyTo || null,
-      enableIpv6: config.enableIpv6
-    };
-
-    const diagnostics = await EmailService.runDiagnostics(configData);
-    const deliverability = await EmailService.runDeliverabilityChecks(config.senderEmail, config.host);
-
-    if (diagnostics.success) {
-      await db.smtpConfig.update({ where: { id: req.params.id }, data: { isVerified: true } });
-    }
-
-    return res.status(200).json({
-      success: diagnostics.success,
-      diagnostics,
-      deliverability
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
 // Run diagnostics for unsaved form settings (Auto-Discovery validation)
 router.post('/smtp-configs/test', authenticate, async (req: AuthenticatedRequest, res) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
@@ -280,27 +250,6 @@ router.post('/smtp-configs/test', authenticate, async (req: AuthenticatedRequest
       diagnostics,
       deliverability
     });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// Send a test email for a saved configuration
-router.post('/smtp-configs/:id/test-send', authenticate, async (req: AuthenticatedRequest, res) => {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  try {
-    const config = await db.smtpConfig.findUnique({ where: { id: req.params.id } });
-    if (!config) return res.status(404).json({ error: 'SMTP config not found' });
-
-    const testEmail = req.body.to || config.senderEmail;
-    const configData: SmtpConfigData = {
-      ...config,
-      replyTo: config.replyTo || null,
-      enableIpv6: config.enableIpv6
-    };
-
-    const result = await EmailService.testSendWithLogs(configData, testEmail);
-    return res.status(200).json(result);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -344,6 +293,57 @@ router.post('/smtp-configs/autodiscover', authenticate, async (req: Authenticate
     if (!email) return res.status(400).json({ error: 'Email address is required' });
     const suggestion = EmailService.autoDiscoverSmtp(email);
     return res.status(200).json({ suggestion });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Run diagnostics for a specific saved configuration
+router.post('/smtp-configs/:id/test', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const config = await db.smtpConfig.findUnique({ where: { id: req.params.id } });
+    if (!config) return res.status(404).json({ error: 'SMTP config not found' });
+
+    const configData: SmtpConfigData = {
+      ...config,
+      replyTo: config.replyTo || null,
+      enableIpv6: config.enableIpv6
+    };
+
+    const diagnostics = await EmailService.runDiagnostics(configData);
+    const deliverability = await EmailService.runDeliverabilityChecks(config.senderEmail, config.host);
+
+    if (diagnostics.success) {
+      await db.smtpConfig.update({ where: { id: req.params.id }, data: { isVerified: true } });
+    }
+
+    return res.status(200).json({
+      success: diagnostics.success,
+      diagnostics,
+      deliverability
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Send a test email for a saved configuration
+router.post('/smtp-configs/:id/test-send', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const config = await db.smtpConfig.findUnique({ where: { id: req.params.id } });
+    if (!config) return res.status(404).json({ error: 'SMTP config not found' });
+
+    const testEmail = req.body.to || config.senderEmail;
+    const configData: SmtpConfigData = {
+      ...config,
+      replyTo: config.replyTo || null,
+      enableIpv6: config.enableIpv6
+    };
+
+    const result = await EmailService.testSendWithLogs(configData, testEmail);
+    return res.status(200).json(result);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
