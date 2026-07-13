@@ -34,15 +34,15 @@ export class LxdClient {
       }
 
       // Check if node is local
-      if (node.hostname === 'localhost' || node.apiUrl.includes('localhost') || node.apiUrl.includes('127.0.0.1')) {
+      if (node.hostname === 'localhost' || node.apiUrl?.includes('localhost') || node.apiUrl?.includes('127.0.0.1')) {
         return this.localRequest(url, method, data);
       }
 
       // Remote Node Daemon connection
       const client = axios.create({
-        baseURL: node.apiUrl,
+        baseURL: node.apiUrl || undefined,
         headers: {
-          'Authorization': `Bearer ${node.apiToken}`,
+          'Authorization': `Bearer ${node.apiToken || ''}`,
           'Content-Type': 'application/json'
         },
         timeout: 25000
