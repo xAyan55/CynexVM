@@ -19,6 +19,7 @@ import settingRoutes from './routes/settings';
 import auditLogRoutes from './routes/auditLogs';
 import notificationRoutes from './routes/notifications';
 import automationRoutes from './routes/automation';
+import emailRoutes from './routes/email';
 
 // Services
 import { db } from './db';
@@ -82,6 +83,7 @@ app.use('/api/v1/settings', settingRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/automation', automationRoutes);
+app.use('/api/v1/email', emailRoutes);
 
 // Folder management API
 app.patch('/api/v1/instances/:id/folder', async (req, res) => {

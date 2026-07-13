@@ -4,6 +4,8 @@ import { db } from './db';
 import { NotificationDispatcher } from './services/notification/notificationDispatcher';
 import { NotificationService } from './services/notification/notificationService';
 import { SchedulerService } from './services/automation/SchedulerService';
+import { EmailQueue } from './services/email/emailQueue';
+import { EmailTemplateService } from './services/email/emailTemplateService';
 
 async function main() {
   try {
@@ -11,8 +13,16 @@ async function main() {
     await db.$connect();
     console.log('[Database] Connection established successfully.');
 
+    // Initialize and ensure builtin email templates exist
+    await EmailTemplateService.ensureBuiltinTemplates();
+    await EmailQueue.initialize();
+    console.log('[Email] Templates seeded, queue initialized.');
+
     // Start background notification processors
     NotificationDispatcher.startPoller();
+
+    // Start the Email Queue background processor
+    EmailQueue.start();
 
     // Start the Automation Scheduler
     await SchedulerService.start();
@@ -21,6 +31,13 @@ async function main() {
     setInterval(() => {
       NotificationService.cleanExpiredNotifications().catch(console.error);
     }, 60 * 60 * 1000);
+
+    // Clean old email logs daily
+    setInterval(async () => {
+      const { EmailLogService } = await import('./services/email/emailLogService');
+      const purged = await EmailLogService.purgeOldLogs(90);
+      if (purged > 0) console.log(`[Email] Purged ${purged} old log entries.`);
+    }, 24 * 60 * 60 * 1000);
 
     server.listen(CONFIG.PORT, () => {
       console.log(`[CynexVM] Panel server running on port ${CONFIG.PORT} in [${CONFIG.NODE_ENV}] mode.`);

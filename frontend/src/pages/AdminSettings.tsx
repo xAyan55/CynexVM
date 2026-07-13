@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Globe, Shield, Settings as SetIcon, Image, Save, Palette } from 'lucide-react';
+import { Globe, Shield, Settings as SetIcon, Image, Save, Palette } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const COLOR_PRESETS: { name: string; colors: string[] }[] = [
@@ -26,12 +26,6 @@ export const AdminSettings: React.FC = () => {
   const [faviconUrl, setFaviconUrl] = useState('');
   const [loginImageUrl, setLoginImageUrl] = useState('');
   const [registerImageUrl, setRegisterImageUrl] = useState('');
-
-  // SMTP Configuration
-  const [smtpHost, setSmtpHost] = useState('smtp.mailgun.org');
-  const [smtpPort, setSmtpPort] = useState(587);
-  const [smtpUser, setSmtpUser] = useState('postmaster@cynexvm.net');
-  const [smtpPass, setSmtpPass] = useState('');
 
   // Discord Configuration
   const [discordId, setDiscordId] = useState('1192837482910283');
@@ -73,12 +67,6 @@ export const AdminSettings: React.FC = () => {
         if (data.favicon_url) setFaviconUrl(data.favicon_url);
         if (data.login_image_url) setLoginImageUrl(data.login_image_url);
         if (data.register_image_url) setRegisterImageUrl(data.register_image_url);
-        
-        // SMTP
-        if (data.smtp_host) setSmtpHost(data.smtp_host);
-        if (data.smtp_port) setSmtpPort(parseInt(data.smtp_port, 10) || 587);
-        if (data.smtp_user) setSmtpUser(data.smtp_user);
-        if (data.smtp_pass) setSmtpPass(data.smtp_pass);
 
         // Discord
         if (data.discord_client_id) setDiscordId(data.discord_client_id);
@@ -126,10 +114,6 @@ export const AdminSettings: React.FC = () => {
           favicon_url: faviconUrl,
           login_image_url: loginImageUrl,
           register_image_url: registerImageUrl,
-          smtp_host: smtpHost,
-          smtp_port: smtpPort,
-          smtp_user: smtpUser,
-          smtp_pass: smtpPass,
           discord_client_id: discordId,
           discord_client_secret: discordSecret,
           color_bg_primary: colorBgPrimary,
@@ -171,7 +155,7 @@ export const AdminSettings: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center pt-5 justify-between gap-4">
         <div>
           <h1 className="text-base font-medium text-neutral-800 dark:text-white">Branding & System Configuration</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">Configure SMTP servers, custom brand aesthetics, user registration policies, and diagnostic webhooks.</p>
+          <p className="mt-0.5 text-sm text-neutral-500">Configure custom brand aesthetics, user registration policies, and diagnostic webhooks. Email/SMTP settings moved to <a href="/admin/email" className="text-blue-400 hover:underline">Email System</a>.</p>
         </div>
         <button 
           type="submit" 
@@ -262,36 +246,11 @@ export const AdminSettings: React.FC = () => {
                 </div>
               </div>
 
-              {/* SMTP Mailer Card */}
-              <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm flex flex-col">
-                <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">
-                  <Mail size={16} /> SMTP Transactional Mailer
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-5 py-5 text-xs flex-1">
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SMTP Hostname</label>
-                    <input type="text" className="w-full al-input" value={smtpHost} onChange={e => setSmtpHost(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SMTP Port</label>
-                    <input type="number" className="w-full al-input" value={smtpPort} onChange={e => setSmtpPort(parseInt(e.target.value, 10))} />
-                  </div>
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SMTP Username</label>
-                    <input type="text" className="w-full al-input" value={smtpUser} onChange={e => setSmtpUser(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SMTP Password</label>
-                    <input type="password" className="w-full al-input" value={smtpPass} onChange={e => setSmtpPass(e.target.value)} placeholder="••••••••••••" />
-                  </div>
-                </div>
-              </div>
-
             </div>
 
             {/* ROW 2: Custom Assets & Discord Single Sign-On (Equally Sized) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-              
+
               {/* Custom Assets Card */}
               <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 shadow-sm flex flex-col">
                 <h2 className="text-[13px] font-medium text-neutral-800 dark:text-white px-5 py-3.5 bg-neutral-50 dark:bg-white/5 rounded-t-xl border-b border-neutral-200 dark:border-white/5 flex items-center gap-2">

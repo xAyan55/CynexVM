@@ -13,7 +13,6 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
-import { EmailVerification } from './pages/EmailVerification';
 
 // User Panel Pages
 import { Dashboard } from './pages/Dashboard';
@@ -33,6 +32,7 @@ import { JobsQueues } from './pages/JobsQueues';
 import { AdminApiKeys } from './pages/AdminApiKeys';
 import { AdminNotifications } from './pages/AdminNotifications';
 import { AdminAutomation } from './pages/AdminAutomation';
+import { AdminEmail } from './pages/AdminEmail';
 
 // Page loading spinner matching Airlink's preparing experience screen
 const LoadingScreen: React.FC = () => {
@@ -148,7 +148,6 @@ export const App: React.FC = () => {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/verify-email" element={<EmailVerification />} />
 
           {/* Secure Panel routes */}
           <Route element={<AppLayout />}>
@@ -169,6 +168,7 @@ export const App: React.FC = () => {
             <Route path="/admin/apikeys" element={<AdminRoute element={<AdminApiKeys />} />} />
             <Route path="/admin/notifications" element={<AdminRoute element={<AdminNotifications />} />} />
             <Route path="/admin/automation" element={<AdminRoute element={<AdminAutomation />} />} />
+            <Route path="/admin/email" element={<AdminRoute element={<AdminEmail />} />} />
           </Route>
 
           {/* Catch-all redirects */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Terminal, Server, Shield, Settings, Users, HardDrive, RotateCw, MonitorPlay } from 'lucide-react';
+import { Search, Terminal, Server, Shield, Settings, Users, HardDrive, RotateCw, MonitorPlay, Mail } from 'lucide-react';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -16,7 +16,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
   const commands = [
     { name: 'Navigate to Instances Dashboard', action: () => navigate('/'), icon: MonitorPlay, category: 'User Panel' },
     { name: 'View Account Settings & Keys', action: () => navigate('/profile'), icon: Settings, category: 'User Panel' },
-    { name: 'Verify Email Address', action: () => navigate('/verify-email'), icon: Shield, category: 'Authentication' },
     { name: 'Forgot Password Retrieval', action: () => navigate('/forgot-password'), icon: Shield, category: 'Authentication' },
     { name: 'Reset Account Password', action: () => navigate('/reset-password'), icon: Shield, category: 'Authentication' },
     
@@ -27,7 +26,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     { name: 'Configure Host Nodes', action: () => navigate('/admin/nodes'), icon: Server, category: 'Admin Panel' },
     { name: 'Registry OS Templates', action: () => navigate('/admin/templates'), icon: HardDrive, category: 'Admin Panel' },
     { name: 'Inspect Security Audit Logs', action: () => navigate('/admin/audit-logs'), icon: Shield, category: 'Admin Panel' },
-    { name: 'Configure Global SMTP & OAuth', action: () => navigate('/admin/settings'), icon: Settings, category: 'Admin Panel' },
+    { name: 'Email System & SMTP Configuration', action: () => navigate('/admin/email'), icon: Mail, category: 'Admin Panel' },
+    { name: 'Configure Global OAuth', action: () => navigate('/admin/settings'), icon: Settings, category: 'Admin Panel' },
     { name: 'Monitor Task Workers Queue', action: () => navigate('/admin/jobs'), icon: RotateCw, category: 'Admin Panel' },
   ];
 

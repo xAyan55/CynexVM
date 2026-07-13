@@ -40,6 +40,7 @@ model User {
   automationTasks    AutomationTask[]
   notifications      Notification[]
   notificationPreference NotificationPreference?
+  emailLogs          EmailLog[]
 }
 
 model Role {
@@ -447,6 +448,82 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+// Email / SMTP Models
+// ============================================================
+
+model SmtpConfig {
+  id                String   @id @default(uuid())
+  name              String   @default("Default")
+  host              String
+  port              Int      @default(587)
+  username          String
+  encryptedPassword String   // AES-256-GCM encrypted
+  encryption        String   @default("starttls") // "none" | "tls" | "starttls"
+  senderName        String
+  senderEmail       String
+  replyTo           String?
+  isDefault         Boolean  @default(false)
+  isVerified        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  subject     String
+  htmlBody    String
+  plainText   String?
+  category    String   @default("system") // "system" | "transactional" | "marketing"
+  isBuiltin   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model EmailLog {
+  id           String   @id @default(uuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  to           String
+  subject      String
+  templateName String?
+  status       String   // "queued" | "sending" | "sent" | "failed" | "bounced"
+  error        String?
+  messageId    String?
+  openedAt     DateTime?
+  retryCount   Int      @default(0)
+  maxRetries   Int      @default(5)
+  nextRetryAt  DateTime?
+  metadata     String?  // JSON
+  sentAt       DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model EmailBranding {
+  id              String   @id @default(uuid())
+  logoUrl         String?
+  primaryColor    String   @default("#2563eb")
+  footerText      String?
+  footerHtml      String?
+  companyName     String?
+  companyAddress  String?
+  twitterUrl      String?
+  facebookUrl     String?
+  linkedinUrl     String?
+  githubUrl       String?
+  unsubscribeText String   @default("You received this email because you have an account with {{panel_name}}. To manage preferences, visit your Profile Settings.")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Notification {

@@ -1,7 +1,8 @@
-import nodemailer from 'nodemailer';
 import { db } from '../../db';
 import { SocketService } from '../socketService';
 import { NotificationPreferences } from './notificationPreferences';
+import { EmailQueue } from '../email/emailQueue';
+import { EmailTemplateService } from '../email/emailTemplateService';
 
 const backoffDelays = [10, 30, 120, 480, 1920]; // backoff delays in seconds (10s, 30s, 2m, 8m, 32m)
 
@@ -126,52 +127,57 @@ export class NotificationDispatcher {
   }
 
   /**
-   * Helper to dispatch SMTP email notifications.
+   * Helper to dispatch SMTP email notifications via the new email queue system.
    */
   private static async sendEmail(notification: any): Promise<boolean> {
-    if (!notification.userId) return true; // Global broadcasts have no singular user email target
+    if (!notification.userId) return true;
 
     const user = await db.user.findUnique({ where: { id: notification.userId } });
     if (!user || !user.email) return false;
 
-    // Load panel-wide SMTP config credentials
-    const host = (await db.setting.findUnique({ where: { key: 'smtp_host' } }))?.value;
-    const port = parseInt((await db.setting.findUnique({ where: { key: 'smtp_port' } }))?.value || '587', 10);
-    const smtpUser = (await db.setting.findUnique({ where: { key: 'smtp_user' } }))?.value;
-    const smtpPass = (await db.setting.findUnique({ where: { key: 'smtp_pass' } }))?.value;
-
-    if (!host || !smtpUser) {
-      throw new Error('SMTP Mailer has not been configured in Admin settings.');
-    }
-
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass || ''
-      }
-    });
-
     const panelName = (await db.setting.findUnique({ where: { key: 'panel_name' } }))?.value || 'CynexVM';
-    const htmlBody = `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
-        <h2 style="color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">${panelName} Alert</h2>
-        <p style="font-size: 16px; font-weight: bold; color: ${notification.color || '#3b82f6'};">${notification.title}</p>
-        <p style="font-size: 14px; color: #555; line-height: 1.5;">${notification.message}</p>
-        ${notification.actionUrl ? `<p style="margin-top: 20px;"><a href="${process.env.APP_URL || 'http://localhost:5173'}${notification.actionUrl}" style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-size: 14px;">Open Console</a></p>` : ''}
-        <hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;" />
-        <p style="font-size: 11px; color: #aaa; text-align: center;">This is an automated operational notification. You can manage alert preferences in your Profile dashboard.</p>
-      </div>
-    `;
+    const actionUrl = notification.actionUrl
+      ? `${process.env.APP_URL || 'http://localhost:5173'}${notification.actionUrl}`
+      : '';
 
-    await transporter.sendMail({
-      from: `"${panelName}" <${smtpUser}>`,
-      to: user.email,
-      subject: `[${notification.category}] ${notification.title}`,
-      html: htmlBody
-    });
+    // Use a notification email template if available, otherwise fall back to inline
+    const template = await EmailTemplateService.getTemplate('notification_alert').catch(() => null);
+    if (template) {
+      const rendered = EmailTemplateService.render(template, {
+        panel_name: panelName,
+        title: notification.title,
+        message: notification.message,
+        category: notification.category,
+        priority: notification.priority,
+        color: notification.color || '#3b82f6',
+        action_url: actionUrl,
+        time: new Date().toISOString()
+      });
+      await EmailQueue.enqueue({
+        to: user.email,
+        subject: rendered.subject,
+        html: rendered.html,
+        plainText: rendered.plainText,
+        templateName: 'notification_alert',
+        userId: user.id,
+        metadata: { notificationId: notification.id, category: notification.category }
+      });
+    } else {
+      const htmlBody = `
+        <h2 style="font-size:20px;font-weight:600;color:#1a1a1a;margin:0 0 8px 0">${notification.title}</h2>
+        <p style="font-size:14px;line-height:1.6;color:#374151;margin:0 0 16px 0">${notification.message}</p>
+        ${actionUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0"><tr><td align="center" style="background-color:#2563eb;border-radius:8px"><a href="${actionUrl}" style="display:inline-block;padding:12px 32px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">View Details</a></td></tr></table>` : ''}
+        <hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0" />
+        <p style="font-size:12px;color:#9ca3af;margin:0">This is an automated notification from ${panelName}. Manage preferences in your Profile settings.</p>
+      `;
+      await EmailQueue.enqueue({
+        to: user.email,
+        subject: `[${notification.category}] ${notification.title}`,
+        html: htmlBody,
+        userId: user.id,
+        metadata: { notificationId: notification.id, category: notification.category }
+      });
+    }
 
     return true;
   }
