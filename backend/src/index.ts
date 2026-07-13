@@ -8,6 +8,16 @@ import { EmailQueue } from './services/email/emailQueue';
 import { EmailTemplateService } from './services/email/emailTemplateService';
 import { EmailBrandingService } from './services/email/emailBrandingService';
 
+// Startup guard — prevents accidental duplicate initialization
+declare global {
+  var __CYNEXVM_STARTED__: boolean | undefined;
+}
+if (global.__CYNEXVM_STARTED__) {
+  console.error('[FATAL] Server already started. Exiting.');
+  process.exit(1);
+}
+global.__CYNEXVM_STARTED__ = true;
+
 async function main() {
   try {
     // Verify database connectivity
@@ -59,6 +69,7 @@ function gracefulShutdown(signal: string) {
   console.log(`[Server] Received ${signal}. Shutting down gracefully...`);
   EmailQueue.stop();
   SchedulerService.stop().catch(() => {});
+  NotificationDispatcher.stopPoller();
   server.close(() => {
     console.log('[Server] HTTP server closed.');
     process.exit(0);
@@ -68,6 +79,13 @@ function gracefulShutdown(signal: string) {
     process.exit(1);
   }, 10000);
 }
+
+// PM2 shutdown message (ecosystem.config.js: shutdown_with_message: true)
+process.on('message', (msg: any) => {
+  if (msg === 'shutdown' || (msg && msg.type === 'shutdown')) {
+    gracefulShutdown('PM2 shutdown message');
+  }
+});
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
