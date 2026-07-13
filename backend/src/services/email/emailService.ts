@@ -4,9 +4,6 @@ import { db } from '../../db';
 import { CryptoService } from '../cryptoService';
 import { EmailBrandingService } from './emailBrandingService';
 
-// Prefer IPv4 when SMTP hostname resolves to both A and AAAA records
-try { dns.setDefaultResultOrder('ipv4first'); } catch {} 
-
 export interface SmtpConfigData {
   id: string;
   host: string;
@@ -51,7 +48,7 @@ export class EmailService {
     }
   }
 
-  public static createTransporter(config: SmtpConfigData): nodemailer.Transporter {
+  public static createTransporter(config: SmtpConfigData, forceIPv4 = true): nodemailer.Transporter {
     const cacheKey = config.id;
     const cached = this.transporterCache.get(cacheKey);
     if (cached) return cached;
@@ -60,18 +57,21 @@ export class EmailService {
     const secure = config.encryption === 'tls';
     const requireTls = config.encryption === 'starttls' || config.encryption === 'tls';
 
+    // Force IPv4-only DNS lookup to avoid ENETUNREACH on servers without IPv6
+    const lookup = forceIPv4
+      ? (hostname: string, opts: any, cb: (err: Error | null, address?: string, family?: number) => void) => {
+          dns.lookup(hostname, { ...(opts || {}), family: 4, hints: dns.ADDRCONFIG }, cb);
+        }
+      : undefined;
+
     const transporter = nodemailer.createTransport({
       host: config.host,
       port: config.port,
       secure,
       requireTls,
-      auth: {
-        user: config.username,
-        pass
-      },
-      tls: {
-        rejectUnauthorized: false
-      },
+      auth: { user: config.username, pass },
+      tls: { rejectUnauthorized: false },
+      lookup,
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 15000
