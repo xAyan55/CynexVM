@@ -946,15 +946,13 @@ setup_nginx_proxy() {
 }
 
 install_cynexd_daemon() {
-  if [ -f "$INSTALL_DIR/scripts/cynexd.sh" ]; then
-    spinner_start "Installing CynexD node daemon..."
-    bash "$INSTALL_DIR/scripts/cynexd.sh" --auto 2>/dev/null || true
-    spinner_stop
-    log_info "CynexD daemon installed"
-  else
-    warning "cynexd.sh not found, skipping daemon install"
-    log_warn "cynexd.sh not found"
-  fi
+  info "CynexD node agent is installed separately on each node server."
+  info "Run the following on each node to connect it to this panel:"
+  info "  curl -fsSL https://raw.githubusercontent.com/xAyan55/CynexVM/main/scripts/cynexd.sh | bash -s -- --panel-url wss://YOUR_PANEL_IP/ws/node --node-id NODE_ID --token NODE_TOKEN"
+  info ""
+  info "To register a node and get credentials, use the panel API:"
+  info "  POST /api/v1/nodes  with { name, hostname }"
+  log_info "CynexD daemon installer available at $INSTALL_DIR/scripts/cynexd.sh"
 }
 
 # ────────────────────────────────────────────────────────────────────────────

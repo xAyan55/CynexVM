@@ -1,96 +1,72 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { authenticate, requirePermission } from '../middleware/auth';
-import { CryptoService } from '../services/cryptoService';
-import { LxdService } from '../services/lxdService';
-import crypto from 'crypto';
+import { NodeAuthService } from '../services/node/AuthService';
+import { ConnectionManager } from '../services/node/ConnectionManager';
+import { MetricsConsumer } from '../services/node/MetricsConsumer';
 
 const router = Router();
 
-/**
- * @route   GET /api/v1/nodes
- * @desc    Lists all configured hypervisor nodes
- */
 router.get('/', authenticate, requirePermission('node.read'), async (req, res) => {
   try {
     const nodes = await db.node.findMany({
       select: {
-        id: true,
-        name: true,
-        hostname: true,
-        apiUrl: true,
-        cpuCores: true,
-        memoryMb: true,
-        storageGb: true,
-        status: true,
-        latency: true,
-        version: true,
-        clusterName: true,
-        maintenanceMode: true,
-        createdAt: true,
+        id: true, name: true, hostname: true, apiUrl: true,
+        cpuCores: true, memoryMb: true, storageGb: true,
+        status: true, latency: true, version: true, agentVersion: true,
+        osName: true, kernel: true, uptime: true, containerCount: true,
+        lastHeartbeat: true, lastSeen: true, connectedAt: true,
+        clusterName: true, maintenanceMode: true, createdAt: true,
+        _count: { select: { jobs: { where: { status: 'running' } } } }
       }
     });
-    return res.status(200).json(nodes);
+
+    const enriched = nodes.map(n => ({
+      ...n,
+      connected: ConnectionManager.isConnected(n.id),
+      jobsRunning: (n as any)._count?.jobs || 0,
+      jobsQueued: 0,
+      _count: undefined
+    }));
+
+    return res.status(200).json(enriched);
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to retrieve nodes' });
   }
 });
 
-/**
- * @route   GET /api/v1/nodes/:id
- * @desc    Retrieves detail view for a specific node
- */
 router.get('/:id', authenticate, requirePermission('node.read'), async (req, res) => {
   try {
     const node = await db.node.findUnique({
       where: { id: req.params.id },
-      select: {
-        id: true,
-        name: true,
-        hostname: true,
-        apiUrl: true,
-        sslFingerprint: true,
-        cpuCores: true,
-        memoryMb: true,
-        storageGb: true,
-        status: true,
-        latency: true,
-        version: true,
-        clusterName: true,
-        maintenanceMode: true
+      include: {
+        _count: { select: { jobs: true, instances: true } }
       }
     });
-
     if (!node) return res.status(404).json({ error: 'Node not found' });
-    return res.status(200).json(node);
+
+    const recentMetrics = await MetricsConsumer.getRecent(node.id, 60);
+
+    return res.status(200).json({
+      ...node,
+      connected: ConnectionManager.isConnected(node.id),
+      metrics: recentMetrics
+    });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to retrieve node' });
   }
 });
 
-/**
- * @route   POST /api/v1/nodes
- * @desc    Adds a new hypervisor node (generates daemon config.json)
- */
 router.post('/', authenticate, requirePermission('node.create'), async (req, res) => {
-  const { name, hostname, location, description, cpuCores, memoryMb, storageGb } = req.body;
+  const { name, hostname, cpuCores, memoryMb, storageGb } = req.body;
   if (!name || !hostname) {
-    return res.status(400).json({ error: 'Name and Hostname (CF Tunnel URL) are required' });
+    return res.status(400).json({ error: 'Name and hostname are required' });
   }
 
   try {
-    // Generate secure random node daemon token
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const encryptedToken = CryptoService.encrypt(rawToken);
-
-    // Save node configurations
     const node = await db.node.create({
       data: {
-        name,
-        hostname,
-        apiUrl: location || 'Local', // Mapping location to apiUrl
-        apiToken: encryptedToken,
-        clusterName: description || 'LXD Daemon node', // Mapping description to clusterName
+        name, hostname, apiUrl: '',
         cpuCores: parseInt(cpuCores || '0', 10),
         memoryMb: parseInt(memoryMb || '0', 10),
         storageGb: parseInt(storageGb || '0', 10),
@@ -98,40 +74,38 @@ router.post('/', authenticate, requirePermission('node.create'), async (req, res
       }
     });
 
-    // Write audit log
+    const { token, raw } = await NodeAuthService.generateToken(node.id);
+
     await db.auditLog.create({
       data: {
         action: 'node.create',
         targetResourceId: node.id,
         targetResourceType: 'Node',
-        details: `Node ${name} registered. Tunnel URL: ${hostname}`,
+        details: `Node ${name} registered`,
         severity: 'info'
       }
     });
 
-    // Generate config.json format
-    const configJson = {
-      nodeId: node.id,
-      token: rawToken,
-      port: 5050
-    };
-
     return res.status(201).json({
-      node,
-      configJson
+      node: {
+        id: node.id, name: node.name, hostname: node.hostname,
+        status: node.status, cpuCores: node.cpuCores,
+        memoryMb: node.memoryMb, storageGb: node.storageGb
+      },
+      registration: {
+        panelUrl: `${req.protocol}://${req.get('host')}/ws/node`,
+        nodeId: node.id,
+        token: raw,
+        tokenFull: token
+      }
     });
   } catch (err: any) {
-    console.error('Node create error:', err);
     return res.status(500).json({ error: 'Failed to register node' });
   }
 });
 
-/**
- * @route   PUT /api/v1/nodes/:id
- * @desc    Updates configuration for a hypervisor node
- */
 router.put('/:id', authenticate, requirePermission('node.write'), async (req, res) => {
-  const { name, hostname, location, description, cpuCores, memoryMb, storageGb, maintenanceMode } = req.body;
+  const { name, hostname, cpuCores, memoryMb, storageGb, maintenanceMode } = req.body;
 
   try {
     const node = await db.node.findUnique({ where: { id: req.params.id } });
@@ -140,8 +114,6 @@ router.put('/:id', authenticate, requirePermission('node.write'), async (req, re
     const updateData: any = {};
     if (name) updateData.name = name;
     if (hostname) updateData.hostname = hostname;
-    if (location) updateData.apiUrl = location;
-    if (description) updateData.clusterName = description;
     if (cpuCores) updateData.cpuCores = parseInt(cpuCores, 10);
     if (memoryMb) updateData.memoryMb = parseInt(memoryMb, 10);
     if (storageGb) updateData.storageGb = parseInt(storageGb, 10);
@@ -149,37 +121,21 @@ router.put('/:id', authenticate, requirePermission('node.write'), async (req, re
 
     const updatedNode = await db.node.update({
       where: { id: req.params.id },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        hostname: true,
-        apiUrl: true,
-        cpuCores: true,
-        memoryMb: true,
-        storageGb: true,
-        status: true,
-        version: true,
-        clusterName: true,
-        maintenanceMode: true,
-      }
+      data: updateData
     });
 
     return res.status(200).json(updatedNode);
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to update node configuration' });
+    return res.status(500).json({ error: 'Failed to update node' });
   }
 });
 
-/**
- * @route   DELETE /api/v1/nodes/:id
- * @desc    Deletes a node configuration
- */
 router.delete('/:id', authenticate, requirePermission('node.delete'), async (req, res) => {
   try {
     const node = await db.node.findUnique({ where: { id: req.params.id } });
     if (!node) return res.status(404).json({ error: 'Node not found' });
 
+    await NodeAuthService.revokeAllTokens(node.id);
     await db.node.delete({ where: { id: req.params.id } });
 
     await db.auditLog.create({
@@ -198,77 +154,34 @@ router.delete('/:id', authenticate, requirePermission('node.delete'), async (req
   }
 });
 
-/**
- * @route   POST /api/v1/nodes/:id/test
- * @desc    Tests live connection to the local/remote LXD container engine
- */
-router.post('/:id/test', authenticate, requirePermission('node.write'), async (req, res) => {
+router.post('/:id/tokens', authenticate, requirePermission('node.write'), async (req, res) => {
   try {
     const node = await db.node.findUnique({ where: { id: req.params.id } });
     if (!node) return res.status(404).json({ error: 'Node not found' });
 
-    const test = await LxdService.testConnection(node);
-
-    if (test.success) {
-      await db.node.update({
-        where: { id: node.id },
-        data: { status: 'online', version: test.version }
-      });
-      return res.status(200).json({ success: true, version: test.version });
-    } else {
-      await db.node.update({
-        where: { id: node.id },
-        data: { status: 'offline' }
-      });
-      return res.status(400).json({ success: false, message: test.message });
-    }
+    const { token, raw } = await NodeAuthService.generateToken(node.id, req.body.name || 'primary');
+    return res.status(201).json({ token, raw, name: req.body.name || 'primary' });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Verification script execution failed' });
+    return res.status(500).json({ error: 'Failed to generate token' });
   }
 });
 
-/**
- * @route   GET /api/v1/nodes/:id/diagnostics
- * @desc    Run hypervisor capability checks (bridge, tools, dhcp, nat)
- */
-router.get('/:id/diagnostics', authenticate, requirePermission('node.read'), async (req, res) => {
-  const { NodeClient } = require('../services/lxd/nodeClient');
+router.delete('/:id/tokens/:tokenName', authenticate, requirePermission('node.write'), async (req, res) => {
   try {
-    const node = await db.node.findUnique({ where: { id: req.params.id } });
-    if (!node) return res.status(404).json({ error: 'Node not found' });
-
-    const checks: any = {
-      bridge: false,
-      dhcp_dns: false,
-      ip_forwarding: false,
-      nat_enabled: false,
-      available_bridges: [],
-      dhcp_leases_count: 0
-    };
-
-    const bridgeInfo = await NodeClient.executeCommand(node.id, "ip link show lxdbr0 2>/dev/null || echo no");
-    checks.bridge = !bridgeInfo.stdout.includes('no') && bridgeInfo.stdout.trim().length > 0;
-
-    const dhcpInfo = await NodeClient.executeCommand(node.id, "systemctl is-active dnsmasq 2>/dev/null || systemctl is-active systemd-resolved 2>/dev/null || echo inactive");
-    checks.dhcp_dns = dhcpInfo.stdout.trim() === 'active';
-
-    const forwardVal = await NodeClient.executeCommand(node.id, "cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0");
-    checks.ip_forwarding = parseInt(forwardVal.stdout.trim(), 10) === 1;
-
-    const natCheck = await NodeClient.executeCommand(node.id, "iptables -t nat -S 2>/dev/null | grep -E 'MASQUERADE|POSTROUTING' || echo no");
-    checks.nat_enabled = !natCheck.stdout.includes('no') && natCheck.stdout.trim().length > 0;
-
-    const bridgesRes = await NodeClient.executeCommand(node.id, "ip -o link show | awk -F': ' '$2 ~ /lxdbr/ {print $2}' || true");
-    if (bridgesRes.exitCode === 0) {
-      checks.available_bridges = bridgesRes.stdout.trim().split('\n').filter(Boolean);
-    }
-
-    const leasesRes = await NodeClient.executeCommand(node.id, "cat /var/lib/misc/dnsmasq.leases /var/lib/dnsmasq/*.leases 2>/dev/null | wc -l || echo 0");
-    checks.dhcp_leases_count = parseInt(leasesRes.stdout.trim(), 10);
-
-    return res.status(200).json(checks);
+    await NodeAuthService.revokeToken(req.params.id, req.params.tokenName);
+    return res.status(200).json({ message: 'Token revoked' });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Failed to run node diagnostics' });
+    return res.status(500).json({ error: 'Failed to revoke token' });
+  }
+});
+
+router.get('/:id/jobs', authenticate, requirePermission('node.read'), async (req, res) => {
+  try {
+    const { JobManager } = require('../services/node/JobManager');
+    const jobs = await JobManager.list(req.params.id, undefined, 100);
+    return res.status(200).json(jobs);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to fetch jobs' });
   }
 });
 

@@ -1,234 +1,117 @@
 #!/bin/bash
-# CynexD - Remote LXD Host Daemon Setup Installer
-# Supported Platforms: Ubuntu, Debian
+# CynexD v3 - Remote Node Agent Installer
+# Usage: bash cynexd.sh --panel-url wss://panel.example.com/ws/node --node-id UUID --token SECRET
 
 set -e
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
 echo -e "${GREEN}==================================================${NC}"
-echo -e "${GREEN}          CynexD Daemon Setup Installer           ${NC}"
+echo -e "${GREEN}      CynexD Node Agent v3.0.0 Installer          ${NC}"
 echo -e "${GREEN}==================================================${NC}"
 
-# Check root permissions
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}[ERROR] Please run this installer script as root.${NC}"
-  exit 1
+  echo -e "${RED}[ERROR] Run as root${NC}"; exit 1
 fi
 
-# 1. Install Dependencies
-echo -e "${YELLOW}[1/4] Installing package dependencies...${NC}"
-apt update -y
-apt remove -y npm || true
-apt install -y curl git snapd || true
+PANEL_URL=""; NODE_ID=""; TOKEN=""; SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Install LXD (container engine)
-if ! command -v lxc &> /dev/null; then
-  echo -e "${YELLOW}[Info] Installing LXD container engine snap...${NC}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --panel-url) PANEL_URL="$2"; shift 2 ;;
+    --node-id) NODE_ID="$2"; shift 2 ;;
+    --token) TOKEN="$2"; shift 2 ;;
+    --auto) PANEL_URL="${PANEL_URL:-http://localhost:5000/ws/node}"; shift ;;
+    *) echo "Unknown: $1"; exit 1 ;;
+  esac
+done
+
+DAEMON_DIR="/opt/cynexd"
+CONFIG_DIR="/etc/cynexd"
+LOG_DIR="/var/log/cynexd"
+
+echo -e "${YELLOW}[1/5] Installing dependencies...${NC}"
+apt-get update -qq
+if ! command -v node &>/dev/null; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y -qq nodejs
+fi
+if ! command -v lxc &>/dev/null; then
   snap install lxd
   lxd init --auto || true
 fi
+echo -e "${GREEN}  OK${NC}"
 
-# 2. Setup Working Directory
-echo -e "${YELLOW}[2/4] Initializing /var/www/cynexd...${NC}"
-mkdir -p /var/www/cynexd
-cd /var/www/cynexd
-npm init -y || true
-true
+echo -e "${YELLOW}[2/5] Installing daemon files...${NC}"
+rm -rf "$DAEMON_DIR"
+mkdir -p "$DAEMON_DIR/services"
 
-# Write Node daemon index.js
-cat << 'EOF' > index.js
-const http = require('http');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const fs = require('fs');
+if [ -d "$SCRIPTS_DIR/cynexd" ]; then
+  cp -r "$SCRIPTS_DIR/cynexd/"* "$DAEMON_DIR/"
+else
+  echo -e "${RED}[ERROR] scripts/cynexd/ not found alongside this installer${NC}"
+  echo -e "${YELLOW}  Clone the repo or copy the scripts/cynexd/ directory${NC}"
+  exit 1
+fi
 
-const execAsync = promisify(exec);
+cd "$DAEMON_DIR"
+npm install --production --no-audit --no-fund
+echo -e "${GREEN}  OK${NC}"
 
-// Load config.json
-let config = {};
-const configPath = '/var/www/config.json';
-try {
-  if (fs.existsSync(configPath)) {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  }
-} catch (err) {
-  console.error('Failed to load config.json:', err.message);
+echo -e "${YELLOW}[3/5] Creating config...${NC}"
+mkdir -p "$CONFIG_DIR" "$LOG_DIR"
+cat > "$CONFIG_DIR/config.json" <<CONFEOF
+{
+  "panelUrl": "${PANEL_URL:-ws://localhost:5000/ws/node}",
+  "nodeId": "${NODE_ID}",
+  "token": "${TOKEN}",
+  "reconnect": true,
+  "maxRetries": -1,
+  "heartbeatInterval": 15000,
+  "reconnectBaseDelay": 1000,
+  "reconnectMaxDelay": 60000,
+  "logDir": "${LOG_DIR}"
 }
+CONFEOF
+echo -e "${GREEN}  OK${NC}"
 
-const PORT = config.port || 5050;
-const TOKEN = config.token || '';
-
-const getSocketPath = () => {
-  if (fs.existsSync('/var/snap/lxd/common/lxd/unix.socket')) {
-    return '/var/snap/lxd/common/lxd/unix.socket';
-  }
-  return '/var/lib/lxd/unix.socket';
-};
-
-const server = http.createServer(async (req, res) => {
-  const sendJson = (statusCode, body) => {
-    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(body));
-  };
-
-  // Authorization check
-  const authHeader = req.headers['authorization'];
-  if (TOKEN && (!authHeader || authHeader !== `Bearer ${TOKEN}`)) {
-    return sendJson(401, { error: 'Unauthorized' });
-  }
-
-  const url = req.url;
-  const method = req.method;
-
-  try {
-    if (method === 'GET' && url === '/api/v1/test') {
-      let lxcVer = 'unknown';
-      try {
-        const { stdout } = await execAsync('lxc --version');
-        lxcVer = stdout.trim();
-      } catch (_) {}
-      return sendJson(200, { success: true, lxcVersion: lxcVer });
-    }
-
-    if (method === 'GET' && url === '/api/v1/status') {
-      let totalMem = 16 * 1024 * 1024 * 1024;
-      let usedMem = 4 * 1024 * 1024 * 1024;
-      try {
-        const { stdout: memOut } = await execAsync('free -b');
-        const lines = memOut.split('\n');
-        const memLine = lines[1].split(/\s+/);
-        totalMem = parseInt(memLine[1], 10);
-        usedMem = parseInt(memLine[2], 10);
-      } catch (_) {}
-
-      let cpuUsage = 0.1;
-      try {
-        const { stdout: cpuOut } = await execAsync("grep 'cpu ' /proc/stat");
-        const cpuFields = cpuOut.split(/\s+/);
-        const idle = parseInt(cpuFields[4], 10);
-        const total = cpuFields.slice(1).reduce((acc, val) => acc + parseInt(val, 10), 0);
-        cpuUsage = 1 - (idle / total);
-      } catch (_) {}
-
-      return sendJson(200, {
-        cpu: cpuUsage,
-        memory: { total: totalMem, used: usedMem, free: totalMem - usedMem },
-        disk: { total: 100 * 1024 * 1024 * 1024, used: 25 * 1024 * 1024 * 1024 }
-      });
-    }
-
-    // Generic command execution
-    if (method === 'POST' && url === '/api/v1/exec') {
-      let bodyStr = '';
-      req.on('data', chunk => { bodyStr += chunk; });
-      req.on('end', async () => {
-        try {
-          const body = JSON.parse(bodyStr || '{}');
-          const { command } = body;
-          if (!command) return sendJson(400, { error: 'Command is required' });
-          
-          const { stdout, stderr } = await execAsync(command);
-          return sendJson(200, { stdout: stdout.trim(), stderr: stderr.trim(), exitCode: 0 });
-        } catch (err) {
-          return sendJson(200, {
-            stdout: err.stdout?.trim() || '',
-            stderr: err.stderr?.trim() || err.message,
-            exitCode: err.code || 1
-          });
-        }
-      });
-      return;
-    }
-
-    // Generic LXD Socket Proxying
-    if (method === 'POST' && url === '/api/v1/lxd') {
-      let bodyStr = '';
-      req.on('data', chunk => { bodyStr += chunk; });
-      req.on('end', async () => {
-        try {
-          const body = JSON.parse(bodyStr || '{}');
-          const { url: lxdUrl, method: lxdMethod, data: lxdData } = body;
-          
-          const options = {
-            socketPath: getSocketPath(),
-            path: lxdUrl,
-            method: lxdMethod,
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          };
-
-          const lxdReq = http.request(options, (lxdRes) => {
-            let resData = '';
-            lxdRes.on('data', (chunk) => { resData += chunk; });
-            lxdRes.on('end', () => {
-              try {
-                const parsed = JSON.parse(resData);
-                sendJson(lxdRes.statusCode, parsed);
-              } catch (_) {
-                res.writeHead(lxdRes.statusCode, { 'Content-Type': 'text/plain' });
-                res.end(resData);
-              }
-            });
-          });
-
-          lxdReq.on('error', (err) => {
-            sendJson(500, { error: err.message });
-          });
-
-          if (lxdData) {
-            lxdReq.write(JSON.stringify(lxdData));
-          }
-          lxdReq.end();
-        } catch (err) {
-          sendJson(500, { error: err.message });
-        }
-      });
-      return;
-    }
-
-    sendJson(404, { error: 'Not Found' });
-  } catch (err) {
-    sendJson(500, { error: err.message });
-  }
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`CynexD Daemon listening on port ${PORT}`);
-});
-EOF
-
-# 3. Setup Systemd Service
-echo -e "${YELLOW}[3/4] Creating systemd service file (/etc/systemd/system/cynexd.service)...${NC}"
-cat <<EOF > /etc/systemd/system/cynexd.service
+echo -e "${YELLOW}[4/5] Creating systemd service...${NC}"
+cat > /etc/systemd/system/cynexd.service <<SERVICEEOF
 [Unit]
-Description=CynexD Host Node daemon service
-After=network.target
+Description=CynexD Node Agent
+After=network.target lxd.service
+Wants=lxd.service
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/var/www/cynexd
+WorkingDirectory=${DAEMON_DIR}
 ExecStart=/usr/bin/node index.js
 Restart=always
+RestartSec=5
+User=root
+Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
-EOF
+SERVICEEOF
 
 systemctl daemon-reload
 systemctl enable cynexd
+systemctl restart cynexd
+echo -e "${GREEN}  OK${NC}"
 
+echo -e "${YELLOW}[5/5] Verifying...${NC}"
+sleep 2
+if systemctl is-active --quiet cynexd; then
+  echo -e "${GREEN}  CynexD is running${NC}"
+else
+  echo -e "${RED}  CynexD failed to start. Check: journalctl -u cynexd -f${NC}"
+fi
+
+echo ""
 echo -e "${GREEN}==================================================${NC}"
-echo -e "${GREEN}          Setup Completed Successfully!           ${NC}"
-echo -e "${GREEN}==================================================${NC}"
-echo -e "${YELLOW}Next Steps:${NC}"
-echo -e " 1. Paste the generated config file contents into: ${GREEN}/var/www/config.json${NC}"
-echo -e " 2. Start the daemon service with: ${GREEN}systemctl start cynexd${NC}"
-echo -e " 3. Verify status with: ${GREEN}systemctl status cynexd${NC}"
+echo -e "${GREEN}  CynexD Agent installed successfully              ${NC}"
+echo -e "${GREEN}  Config: ${CONFIG_DIR}/config.json                 ${NC}"
+echo -e "${GREEN}  Logs:   ${LOG_DIR}/daemon.log                    ${NC}"
+echo -e "${GREEN}  Status: systemctl status cynexd                  ${NC}"
 echo -e "${GREEN}==================================================${NC}"

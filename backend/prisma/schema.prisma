@@ -196,18 +196,85 @@ model Node {
   cpuCores        Int         @default(0)
   memoryMb        Int         @default(0)
   storageGb       Int         @default(0)
-  status          String      @default("offline") // "online" | "offline" | "maintenance"
+  status          String      @default("offline") // "online" | "offline" | "connecting" | "busy" | "maintenance"
   latency         Int         @default(0)
   version         String      @default("unknown")
   clusterName     String?
   maintenanceMode Boolean     @default(false)
-  supportsLxc           Boolean     @default(true)
-  storagePools          String      @default("[\"default\"]") // JSON array of pools
-  templates             String      @default("[]") // JSON array of templates
+  supportsLxc     Boolean     @default(true)
+  storagePools    String      @default("[\"default\"]")
+  templates       String      @default("[]")
+  // New fields for WebSocket architecture
+  agentVersion    String      @default("")
+  osName          String      @default("")
+  kernel          String      @default("")
+  uptime          Int         @default(0)
+  containerCount  Int         @default(0)
+  lastHeartbeat   DateTime?
+  lastSeen        DateTime?
+  connectedAt     DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+
   instances       Instance[]
   tags            NodeTag[]
+  jobs            NodeJob[]
+  tokens          NodeToken[]
+  metrics         NodeMetric[]
+}
+
+model NodeToken {
+  id        String   @id @default(uuid())
+  nodeId    String
+  node      Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  name      String   @default("primary")
+  tokenHash String
+  expiresAt DateTime?
+  lastUsed  DateTime?
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([nodeId])
+  @@index([tokenHash])
+}
+
+model NodeJob {
+  id         String   @id @default(uuid())
+  nodeId     String
+  node       Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  type       String   // "deploy" | "start" | "stop" | "restart" | "delete" | etc.
+  status     String   @default("queued") // "queued" | "running" | "completed" | "failed" | "cancelled" | "timed_out" | "retrying"
+  progress   Int      @default(0)
+  payload    String   // JSON
+  result     String?  // JSON — stdout, exitCode, duration, etc.
+  error      String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  timeout    Int      @default(300000)
+  retries    Int      @default(0)
+  maxRetries Int      @default(3)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([nodeId, status])
+  @@index([createdAt])
+}
+
+model NodeMetric {
+  id             String   @id @default(uuid())
+  nodeId         String
+  node           Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  cpuPct         Float
+  ramMb          Int
+  diskGb         Int
+  rxBytes        BigInt   @default(0)
+  txBytes        BigInt   @default(0)
+  loadAvg        Float    @default(0)
+  containerCount Int      @default(0)
+  recordedAt     DateTime @default(now())
+
+  @@index([nodeId, recordedAt])
 }
 
 model Instance {

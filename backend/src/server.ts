@@ -21,11 +21,10 @@ import notificationRoutes from './routes/notifications';
 import automationRoutes from './routes/automation';
 
 // Services
-import { LxdService } from './services/lxdService';
-import { ReconciliationService } from './services/reconciliation';
 import { db } from './db';
 import { SocketService } from './services/socketService';
-import { lxcProvider } from './services/lxd/lxcProvider';
+import { ConnectionManager } from './services/node/ConnectionManager';
+import { HeartbeatMonitor } from './services/node/HeartbeatMonitor';
 
 const app = express();
 app.set('trust proxy', true);
@@ -39,6 +38,10 @@ const io = new Server(server, {
   }
 });
 SocketService.setIo(io);
+
+// Mount WebSocket gateway for CynexD node daemons
+ConnectionManager.mount(server);
+HeartbeatMonitor.startMonitor();
 
 // Security & Parsing Middleware
 app.use(helmet({
@@ -92,11 +95,6 @@ app.patch('/api/v1/instances/:id/folder', async (req, res) => {
     return res.status(500).json({ error: 'Failed to update folder' });
   }
 });
-
-// Start background reconciliation loop
-setInterval(() => {
-  ReconciliationService.run();
-}, 60000);
 
 // Serve frontend static files
 const frontendDist = path.resolve(__dirname, '../../frontend/dist');
