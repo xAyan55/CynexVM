@@ -746,22 +746,35 @@ install_system_deps() {
 }
 
 install_nodejs() {
-  if command -v node &>/dev/null && command -v npm &>/dev/null && [[ "$(node -v)" == v20* || "$(node -v)" == v22* ]]; then
+  if command -v node &>/dev/null && [[ "$(node -v)" == v20* || "$(node -v)" == v22* ]]; then
     log_info "Node.js $(node -v) already installed, skipping"
     return 0
   fi
 
-  spinner_start "Installing Node.js 20 LTS..."
-  with_retries bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -" > /dev/null 2>&1
-  DEBIAN_FRONTEND=noninteractive with_retries apt-get install -y -qq nodejs npm > /dev/null 2>&1
-  spinner_stop
-
-  if ! command -v npm &>/dev/null; then
-    warning "npm not found after Node.js install — installing separately..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq npm
+  # Remove old system nodejs/npm that might conflict
+  if command -v node &>/dev/null && [[ "$(node -v)" != v20* ]] && [[ "$(node -v)" != v22* ]]; then
+    warning "Removing outdated Node.js $(node -v)..."
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq nodejs npm nodejs-doc 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get autoremove -y -qq 2>/dev/null || true
   fi
 
-  log_info "Node.js $(node -v) with npm $(npm -v) installed"
+  spinner_start "Installing Node.js 20 LTS..."
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+  spinner_stop
+
+  if ! command -v node &>/dev/null; then
+    error "Node.js installation failed"
+    exit 1
+  fi
+
+  if [[ "$(node -v)" != v20* ]] && [[ "$(node -v)" != v22* ]]; then
+    warning "Node.js $(node -v) is not LTS — attempting NodeSource fix..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall nodejs
+  fi
+
+  log_info "Node.js $(node -v) installed"
 }
 
 install_lxd() {
