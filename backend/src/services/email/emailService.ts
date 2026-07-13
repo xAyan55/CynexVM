@@ -104,7 +104,8 @@ export class EmailService {
     try {
       const transporter = this.createTransporter(config);
       const branding = await EmailBrandingService.getBranding();
-      const panelName = (await db.setting.findUnique({ where: { key: 'panel_name' } }))?.value || 'CynexVM';
+      const brandingVars = await EmailBrandingService.getBrandingVariables();
+      const panelName = brandingVars.panel_name;
 
       let html = options.html;
       if (branding && !html.includes('<!DOCTYPE')) {
@@ -124,8 +125,8 @@ export class EmailService {
         text: options.plainText || undefined,
         messageId: options.messageId,
         headers: {
-          'X-Panel': 'CynexVM',
-          'X-Mailer': 'CynexVM-Email'
+          'X-Panel': panelName,
+          'X-Mailer': panelName + '-Email'
         }
       };
 

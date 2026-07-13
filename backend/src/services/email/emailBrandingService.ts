@@ -2,48 +2,150 @@ import { db } from '../../db';
 
 export interface BrandingData {
   id: string;
-  logoUrl?: string | null;
-  primaryColor: string;
-  footerText?: string | null;
-  footerHtml?: string | null;
+  panelName?: string | null;
   companyName?: string | null;
+  logoUrl?: string | null;
+  faviconUrl?: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  buttonColor: string;
+  borderRadius: string;
+  supportEmail?: string | null;
+  websiteUrl?: string | null;
   companyAddress?: string | null;
+  copyrightText?: string | null;
+  footerHtml?: string | null;
   twitterUrl?: string | null;
-  facebookUrl?: string | null;
-  linkedinUrl?: string | null;
+  discordUrl?: string | null;
   githubUrl?: string | null;
+  facebookUrl?: string | null;
+  instagramUrl?: string | null;
+  linkedinUrl?: string | null;
+  footerLinks?: string | null;
+  legalLinks?: string | null;
   unsubscribeText: string;
 }
 
+export interface BrandingVariables {
+  panel_name: string;
+  company_name: string;
+  logo: string;
+  favicon: string;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  background_color: string;
+  button_color: string;
+  border_radius: string;
+  support_email: string;
+  website: string;
+  address: string;
+  copyright: string;
+  footer: string;
+  twitter: string;
+  discord: string;
+  github: string;
+  facebook: string;
+  instagram: string;
+  linkedin: string;
+  year: number;
+}
+
 export class EmailBrandingService {
+  private static cached: BrandingVariables | null = null;
+
+  public static invalidateCache(): void {
+    this.cached = null;
+  }
+
+  private static async loadPanelSettings(): Promise<Record<string, string>> {
+    const rows = await db.setting.findMany({
+      where: { key: { in: ['panel_name', 'logo_url', 'favicon_url', 'support_email'] } }
+    });
+    const map: Record<string, string> = {};
+    for (const row of rows) {
+      map[row.key] = row.value;
+    }
+    return map;
+  }
+
   public static async getBranding(): Promise<BrandingData | null> {
-    const branding = await db.emailBranding.findFirst();
-    return branding;
+    const existing = await db.emailBranding.findFirst();
+    if (!existing) {
+      return this.createDefault();
+    }
+    return existing;
+  }
+
+  public static async createDefault(): Promise<BrandingData> {
+    const panel = await this.loadPanelSettings();
+    return db.emailBranding.create({
+      data: {
+        panelName: panel.panel_name || null,
+        logoUrl: panel.logo_url || null,
+        faviconUrl: panel.favicon_url || null,
+        supportEmail: panel.support_email || null,
+        primaryColor: '#2563eb',
+        secondaryColor: '#6b7280',
+        accentColor: '#059669',
+        backgroundColor: '#f4f5f7',
+        buttonColor: '#2563eb',
+        borderRadius: '8px',
+        unsubscribeText: 'You received this email because you have an account with this service.'
+      }
+    });
   }
 
   public static async upsertBranding(data: Partial<BrandingData> & { id?: string }): Promise<BrandingData> {
+    this.invalidateCache();
     const existing = await db.emailBranding.findFirst();
     if (existing) {
-      return db.emailBranding.update({
-        where: { id: existing.id },
-        data
-      });
+      return db.emailBranding.update({ where: { id: existing.id }, data });
     }
-    return db.emailBranding.create({
-      data: {
-        logoUrl: data.logoUrl || null,
-        primaryColor: data.primaryColor || '#2563eb',
-        footerText: data.footerText || null,
-        footerHtml: data.footerHtml || null,
-        companyName: data.companyName || null,
-        companyAddress: data.companyAddress || null,
-        twitterUrl: data.twitterUrl || null,
-        facebookUrl: data.facebookUrl || null,
-        linkedinUrl: data.linkedinUrl || null,
-        githubUrl: data.githubUrl || null,
-        unsubscribeText: data.unsubscribeText || 'You received this email because you have an account with {{panel_name}}. To manage preferences, visit your Profile Settings.'
-      }
-    });
+    return db.emailBranding.create({ data: { ...data } as any });
+  }
+
+  public static async getBrandingVariables(): Promise<BrandingVariables> {
+    if (this.cached) return this.cached;
+
+    const panel = await this.loadPanelSettings();
+    const branding = await db.emailBranding.findFirst();
+
+    const resolve = (field: string | null | undefined, panelKey: string, def: string): string => {
+      if (field) return field;
+      if (panel[panelKey]) return panel[panelKey];
+      return def;
+    };
+
+    const vars: BrandingVariables = {
+      panel_name: resolve(branding?.panelName, 'panel_name', 'Portal'),
+      company_name: branding?.companyName || '',
+      logo: resolve(branding?.logoUrl, 'logo_url', ''),
+      favicon: resolve(branding?.faviconUrl, 'favicon_url', ''),
+      primary_color: branding?.primaryColor || '#2563eb',
+      secondary_color: branding?.secondaryColor || '#6b7280',
+      accent_color: branding?.accentColor || '#059669',
+      background_color: branding?.backgroundColor || '#f4f5f7',
+      button_color: branding?.buttonColor || '#2563eb',
+      border_radius: branding?.borderRadius || '8px',
+      support_email: resolve(branding?.supportEmail, 'support_email', ''),
+      website: branding?.websiteUrl || '',
+      address: branding?.companyAddress || '',
+      copyright: branding?.copyrightText || '',
+      footer: branding?.footerHtml || '',
+      twitter: branding?.twitterUrl || '',
+      discord: branding?.discordUrl || '',
+      github: branding?.githubUrl || '',
+      facebook: branding?.facebookUrl || '',
+      instagram: branding?.instagramUrl || '',
+      linkedin: branding?.linkedinUrl || '',
+      year: new Date().getFullYear(),
+    };
+
+    this.cached = vars;
+    return vars;
   }
 
   public static wrapWithBranding(
@@ -58,10 +160,12 @@ export class EmailBrandingService {
 
     let socialLinks = '';
     const socials: { url?: string | null; label: string; icon: string }[] = [
-      { url: branding.twitterUrl, label: 'Twitter', icon: '𝕏' },
+      { url: branding.twitterUrl, label: 'X', icon: '𝕏' },
       { url: branding.facebookUrl, label: 'Facebook', icon: 'f' },
       { url: branding.linkedinUrl, label: 'LinkedIn', icon: 'in' },
       { url: branding.githubUrl, label: 'GitHub', icon: 'GH' },
+      { url: branding.discordUrl, label: 'Discord', icon: 'DC' },
+      { url: branding.instagramUrl, label: 'Instagram', icon: 'IG' },
     ];
     const validSocials = socials.filter(s => s.url);
     if (validSocials.length > 0) {
@@ -70,16 +174,20 @@ export class EmailBrandingService {
       ).join('');
     }
 
-    const footerHtml = branding.footerHtml || branding.footerText
-      ? `<p style="margin:4px 0;font-size:12px;color:#6b7280">${branding.footerHtml || branding.footerText}</p>`
+    const footerHtml = branding.footerHtml
+      ? branding.footerHtml
       : '';
 
     const companyInfo = branding.companyName
       ? `<p style="margin:4px 0;font-size:12px;color:#6b7280">${branding.companyName}${branding.companyAddress ? ` &middot; ${branding.companyAddress}` : ''}</p>`
       : '';
 
+    const copyright = branding.copyrightText
+      ? `<p style="margin:4px 0;font-size:11px;color:#9ca3af">${branding.copyrightText}</p>`
+      : '';
+
     const unsubscribeHtml = branding.unsubscribeText
-      ? `<p style="margin:16px 0 0 0;font-size:11px;color:#9ca3af">${branding.unsubscribeText.replace(/\{\{panel_name\}\}/g, meta.panelName)}</p>`
+      ? `<p style="margin:16px 0 0 0;font-size:11px;color:#9ca3af">${branding.unsubscribeText}</p>`
       : '';
 
     return `<!DOCTYPE html>
@@ -108,6 +216,7 @@ export class EmailBrandingService {
             <td style="background-color:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center">
               ${footerHtml}
               ${companyInfo}
+              ${copyright}
               ${socialLinks ? `<p style="margin:12px 0 0 0">${socialLinks}</p>` : ''}
               ${unsubscribeHtml}
             </td>

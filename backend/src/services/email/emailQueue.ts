@@ -72,7 +72,7 @@ export class EmailQueue {
     const template = await EmailTemplateService.getTemplate(templateName);
     if (!template) return null;
 
-    const rendered = EmailTemplateService.render(template, variables);
+    const rendered = await EmailTemplateService.render(template, variables);
     return this.enqueue({
       to,
       subject: rendered.subject,

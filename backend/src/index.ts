@@ -6,6 +6,7 @@ import { NotificationService } from './services/notification/notificationService
 import { SchedulerService } from './services/automation/SchedulerService';
 import { EmailQueue } from './services/email/emailQueue';
 import { EmailTemplateService } from './services/email/emailTemplateService';
+import { EmailBrandingService } from './services/email/emailBrandingService';
 
 async function main() {
   try {
@@ -15,6 +16,12 @@ async function main() {
 
     // Initialize and ensure builtin email templates exist
     await EmailTemplateService.ensureBuiltinTemplates();
+    // Create default branding if none exists (white-label: no hardcoded company name)
+    const existingBranding = await EmailBrandingService.getBranding();
+    if (!existingBranding) {
+      await EmailBrandingService.createDefault();
+      console.log('[Email] Default branding created.');
+    }
     await EmailQueue.initialize();
     console.log('[Email] Templates seeded, queue initialized.');
 

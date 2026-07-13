@@ -1,5 +1,6 @@
 import { db } from '../../db';
 import { builtinTemplates } from './emailBuiltinTemplates';
+import { EmailBrandingService } from './emailBrandingService';
 
 export interface TemplateData {
   id: string;
@@ -17,6 +18,14 @@ export interface RenderedEmail {
   subject: string;
   html: string;
   plainText: string;
+}
+
+function resolvePath(obj: Record<string, any>, path: string): any {
+  return path.split('.').reduce((curr, key) => {
+    if (curr === null || curr === undefined) return undefined;
+    if (typeof curr === 'object' && key in curr) return curr[key];
+    return undefined;
+  }, obj);
 }
 
 export class EmailTemplateService {
@@ -119,25 +128,28 @@ export class EmailTemplateService {
     });
   }
 
-  public static render(template: TemplateData, variables: Record<string, any>): RenderedEmail {
+  public static async render(template: TemplateData, variables: Record<string, any>): Promise<RenderedEmail> {
+    const brandingVars = await EmailBrandingService.getBrandingVariables();
+    const allVars = { ...variables, branding: brandingVars };
+
     const interpolate = (str: string): string => {
-      // Handle conditionals: {{#var}}content{{/var}} - renders content if var is truthy
-      let result = str.replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, key, content) => {
-        if (variables[key] !== undefined && variables[key] !== null && variables[key] !== false && variables[key] !== '') {
-          return this.renderSimple(content, variables);
+      let result = str.replace(/\{\{#([\w.]+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, key, content) => {
+        const val = resolvePath(allVars, key);
+        if (val !== undefined && val !== null && val !== false && val !== '') {
+          return this.renderSimple(content, allVars);
         }
         return '';
       });
-      // Handle inverted conditionals: {{^var}}content{{/var}} - renders content if var is falsy
-      result = result.replace(/\{\{\^(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, key, content) => {
-        if (variables[key] === undefined || variables[key] === null || variables[key] === false || variables[key] === '') {
-          return this.renderSimple(content, variables);
+      result = result.replace(/\{\{^([\w.]+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, key, content) => {
+        const val = resolvePath(allVars, key);
+        if (val === undefined || val === null || val === false || val === '') {
+          return this.renderSimple(content, allVars);
         }
         return '';
       });
-      // Handle simple variable replacement
-      result = result.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-        return variables[key] !== undefined ? String(variables[key]) : `{{${key}}}`;
+      result = result.replace(/\{\{([\w.]+)\}\}/g, (_, key) => {
+        const val = resolvePath(allVars, key);
+        return val !== undefined ? String(val) : `{{${key}}}`;
       });
       return result;
     };
@@ -150,8 +162,9 @@ export class EmailTemplateService {
   }
 
   private static renderSimple(str: string, variables: Record<string, any>): string {
-    return str.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-      return variables[key] !== undefined ? String(variables[key]) : `{{${key}}}`;
+    return str.replace(/\{\{([\w.]+)\}\}/g, (_, key) => {
+      const val = resolvePath(variables, key);
+      return val !== undefined ? String(val) : `{{${key}}}`;
     });
   }
 

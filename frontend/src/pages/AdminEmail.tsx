@@ -198,7 +198,7 @@ function SmtpConfigSection() {
                 <option value="tls">TLS/SSL</option>
               </select></div>
             <div><label className="block text-neutral-400 mb-1">Sender Name *</label>
-              <input type="text" className="w-full al-input" value={form.senderName} onChange={e => setForm({...form, senderName: e.target.value})} placeholder="CynexVM" required /></div>
+              <input type="text" className="w-full al-input" value={form.senderName} onChange={e => setForm({...form, senderName: e.target.value})} placeholder="Your Company" required /></div>
             <div><label className="block text-neutral-400 mb-1">Sender Email *</label>
               <input type="email" className="w-full al-input" value={form.senderEmail} onChange={e => setForm({...form, senderEmail: e.target.value})} placeholder="noreply@example.com" required /></div>
             <div><label className="block text-neutral-400 mb-1">Reply-To</label>
@@ -321,6 +321,12 @@ function TemplatesSection() {
     setPreview(null);
     let vars: Record<string, any> = {};
     try { vars = JSON.parse(previewVars); } catch {}
+    // Merge branding variables for live preview
+    const brandingRes = await api('/api/v1/email/branding/variables');
+    if (brandingRes.ok) {
+      const brandingVars = await brandingRes.json();
+      vars = { ...vars, branding: brandingVars };
+    }
     const res = await api(`/api/v1/email/templates/${tpl.name}/preview`, {
       method: 'POST',
       body: JSON.stringify({ variables: vars })
@@ -437,7 +443,7 @@ function TemplatesSection() {
                 <span className="text-xs text-white">{preview.subject}</span>
               </div>
               <div className="flex gap-2 mb-2">
-                <input type="text" placeholder='{"username": "test", "panel_name": "CynexVM"}' className="flex-1 al-input text-xs font-mono"
+                <input type="text" placeholder='{"username": "test"}' className="flex-1 al-input text-xs font-mono"
                   value={previewVars} onChange={e => setPreviewVars(e.target.value)} />
                 <button onClick={() => handlePreview(templates.find(t => t.name === preview.name)!)}
                   className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs"><RefreshCw size={14} className="inline mr-1" /> Reload</button>
@@ -731,6 +737,7 @@ function BrandingSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [testPreviewHtml, setTestPreviewHtml] = useState('');
 
   const fetchBranding = async () => {
     setLoading(true);
@@ -741,7 +748,46 @@ function BrandingSection() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchBranding(); }, []);
+  useEffect(() => {
+    fetchBranding();
+    generatePreview();
+  }, []);
+
+  const generatePreview = async () => {
+    try {
+      const brandingRes = await api('/api/v1/email/branding/variables');
+      if (!brandingRes.ok) return;
+      const b = await brandingRes.json();
+      setTestPreviewHtml(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+  body{margin:0;padding:20px;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+  .card{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
+  .content{padding:32px 40px}
+  .footer{background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;text-align:center;font-size:12px;color:#6b7280}
+</style></head>
+<body>
+  <div class="card">
+    <div class="content">
+      ${b.logo ? '<img src="' + b.logo + '" alt="' + b.panel_name + '" style="max-height:48px;margin-bottom:24px"/>' : '<h1 style="font-size:24px;font-weight:700;color:#1a1a1a;margin:0 0 24px 0">' + b.panel_name + '</h1>'}
+      <h2 style="font-size:20px;font-weight:600;color:#1a1a1a;margin:0 0 8px 0">Welcome to ' + b.panel_name + '</h2>
+      <p style="font-size:14px;line-height:1.6;color:#374151;margin:0 0 16px 0">This is a preview showing how your email branding will appear to recipients.</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0"><tr><td align="center" style="background-color:' + b.button_color + ';border-radius:' + b.border_radius + '"><a href="' + b.website + '" style="display:inline-block;padding:12px 32px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">Get Started</a></td></tr></table>
+      <div style="margin-top:24px;padding:16px;background-color:#f9fafb;border-radius:' + b.border_radius + ';font-size:13px;color:#6b7280">
+        <p style="margin:0"><strong>Branding Variables Active:</strong></p>
+        <p style="margin:4px 0 0 0">Panel: ' + b.panel_name + '<br/>Company: ' + (b.company_name || '(not set)') + '<br/>Support: ' + (b.support_email || '(not set)') + '<br/>Website: ' + (b.website || '(not set)') + '</p>
+      </div>
+    </div>
+    <div class="footer">
+      ' + (b.footer || '') + ' ' + (b.copyright || '') + ' ' + (b.company_name ? '<p style="margin:4px 0">' + b.company_name + (b.address ? ' &middot; ' + b.address : '') + '</p>' : '') + ' ' + (b.support_email ? '<p style="margin:4px 0"><a href="mailto:' + b.support_email + '" style="color:#6b7280">' + b.support_email + '</a></p>' : '') + ' ' + (b.twitter || b.facebook || b.linkedin || b.github || b.discord || b.instagram ? '<p style="margin:8px 0 0 0">' + [b.twitter && '<a href="' + b.twitter + '" style="color:#6b7280;text-decoration:none;margin:0 4px">X</a>', b.facebook && '<a href="' + b.facebook + '" style="color:#6b7280;text-decoration:none;margin:0 4px">FB</a>', b.linkedin && '<a href="' + b.linkedin + '" style="color:#6b7280;text-decoration:none;margin:0 4px">IN</a>', b.github && '<a href="' + b.github + '" style="color:#6b7280;text-decoration:none;margin:0 4px">GH</a>', b.discord && '<a href="' + b.discord + '" style="color:#6b7280;text-decoration:none;margin:0 4px">DC</a>', b.instagram && '<a href="' + b.instagram + '" style="color:#6b7280;text-decoration:none;margin:0 4px">IG</a>'].filter(Boolean).join('') + '</p>' : ''} + '
+      <p style="margin:12px 0 0 0;font-size:11px;color:#9ca3af">&copy; ' + b.year + ' ' + b.panel_name + '. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`);
+    } catch {}
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -754,55 +800,135 @@ function BrandingSection() {
       if (res.ok) {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 2000);
+        generatePreview();
       }
     } catch {}
     setSaving(false);
   };
 
+  const update = (field: string, value: any) => {
+    setBranding((prev: any) => ({ ...prev, [field]: value }));
+  };
+
   if (loading) return <div className="p-12 text-center text-neutral-500 text-xs">Loading branding...</div>;
 
   return (
-    <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 p-5">
-      <form onSubmit={handleSave} className="space-y-4 text-xs">
-        {success && <p className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl font-semibold">Branding saved!</p>}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Branding Form */}
+      <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 p-5">
+        <form onSubmit={handleSave} className="space-y-4 text-xs">
+          {success && <p className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl font-semibold">Branding saved!</p>}
 
-        <h3 className="text-sm font-medium text-white">Email Branding</h3>
-        <p className="text-xs text-neutral-500">Customize the appearance of all outgoing emails. The branding wrapper is applied to all emails automatically.</p>
+          <h3 className="text-sm font-medium text-white">White-Label Branding</h3>
+          <p className="text-xs text-neutral-500">All changes apply instantly to every email. No hardcoded references remain.</p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className="block text-neutral-400 mb-1">Logo URL</label>
-            <input type="url" className="w-full al-input" value={branding.logoUrl || ''} onChange={e => setBranding({...branding, logoUrl: e.target.value})} placeholder="https://example.com/logo.png" /></div>
-          <div><label className="block text-neutral-400 mb-1">Primary Color</label>
-            <div className="flex gap-2">
-              <input type="color" className="h-9 w-12 rounded-lg cursor-pointer bg-transparent border border-neutral-700" value={branding.primaryColor || '#2563eb'} onChange={e => setBranding({...branding, primaryColor: e.target.value})} />
-              <input type="text" className="flex-1 al-input" value={branding.primaryColor || '#2563eb'} onChange={e => setBranding({...branding, primaryColor: e.target.value})} />
-            </div></div>
-          <div><label className="block text-neutral-400 mb-1">Company Name</label>
-            <input type="text" className="w-full al-input" value={branding.companyName || ''} onChange={e => setBranding({...branding, companyName: e.target.value})} /></div>
-          <div><label className="block text-neutral-400 mb-1">Company Address</label>
-            <input type="text" className="w-full al-input" value={branding.companyAddress || ''} onChange={e => setBranding({...branding, companyAddress: e.target.value})} /></div>
-          <div className="sm:col-span-2"><label className="block text-neutral-400 mb-1">Footer Text (HTML allowed)</label>
-            <textarea className="w-full al-input resize-none" rows={2} value={branding.footerHtml || branding.footerText || ''} onChange={e => setBranding({...branding, footerHtml: e.target.value})} placeholder="Copyright 2026 Your Company. All rights reserved." /></div>
-          <div className="sm:col-span-2"><label className="block text-neutral-400 mb-1">Unsubscribe Message</label>
-            <textarea className="w-full al-input resize-none" rows={2} value={branding.unsubscribeText || ''} onChange={e => setBranding({...branding, unsubscribeText: e.target.value})} /></div>
+          {/* Brand Identity */}
+          <div className="border-b border-neutral-800 pb-3">
+            <h4 className="text-xs font-semibold text-neutral-400 mb-3 uppercase tracking-wider">Brand Identity</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><label className="block text-neutral-400 mb-1">Panel Name</label>
+                <input type="text" className="w-full al-input" value={branding.panelName || ''} onChange={e => update('panelName', e.target.value)} placeholder="Your Panel Name" /></div>
+              <div><label className="block text-neutral-400 mb-1">Company Name</label>
+                <input type="text" className="w-full al-input" value={branding.companyName || ''} onChange={e => update('companyName', e.target.value)} placeholder="Your Company, LLC" /></div>
+              <div><label className="block text-neutral-400 mb-1">Logo URL</label>
+                <input type="url" className="w-full al-input" value={branding.logoUrl || ''} onChange={e => update('logoUrl', e.target.value)} placeholder="https://example.com/logo.png" /></div>
+              <div><label className="block text-neutral-400 mb-1">Favicon URL</label>
+                <input type="url" className="w-full al-input" value={branding.faviconUrl || ''} onChange={e => update('faviconUrl', e.target.value)} placeholder="https://example.com/favicon.ico" /></div>
+            </div>
+          </div>
+
+          {/* Colors */}
+          <div className="border-b border-neutral-800 pb-3">
+            <h4 className="text-xs font-semibold text-neutral-400 mb-3 uppercase tracking-wider">Colors & Styling</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { field: 'primaryColor', label: 'Primary Color', def: '#2563eb' },
+                { field: 'secondaryColor', label: 'Secondary Color', def: '#6b7280' },
+                { field: 'accentColor', label: 'Accent Color', def: '#059669' },
+                { field: 'backgroundColor', label: 'Background Color', def: '#f4f5f7' },
+                { field: 'buttonColor', label: 'Button Color', def: '#2563eb' },
+              ].map(c => (
+                <div key={c.field}>
+                  <label className="block text-neutral-400 mb-1">{c.label}</label>
+                  <div className="flex gap-2">
+                    <input type="color" className="h-9 w-12 rounded-lg cursor-pointer bg-transparent border border-neutral-700"
+                      value={branding[c.field] || c.def} onChange={e => update(c.field, e.target.value)} />
+                    <input type="text" className="flex-1 al-input" value={branding[c.field] || c.def} onChange={e => update(c.field, e.target.value)} />
+                  </div>
+                </div>
+              ))}
+              <div><label className="block text-neutral-400 mb-1">Border Radius</label>
+                <input type="text" className="w-full al-input" value={branding.borderRadius || '8px'} onChange={e => update('borderRadius', e.target.value)} placeholder="8px" /></div>
+            </div>
+          </div>
+
+          {/* Contact */}
+          <div className="border-b border-neutral-800 pb-3">
+            <h4 className="text-xs font-semibold text-neutral-400 mb-3 uppercase tracking-wider">Contact & Web</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><label className="block text-neutral-400 mb-1">Support Email</label>
+                <input type="email" className="w-full al-input" value={branding.supportEmail || ''} onChange={e => update('supportEmail', e.target.value)} placeholder="support@yourpanel.com" /></div>
+              <div><label className="block text-neutral-400 mb-1">Website URL</label>
+                <input type="url" className="w-full al-input" value={branding.websiteUrl || ''} onChange={e => update('websiteUrl', e.target.value)} placeholder="https://yourpanel.com" /></div>
+              <div className="sm:col-span-2"><label className="block text-neutral-400 mb-1">Company Address</label>
+                <input type="text" className="w-full al-input" value={branding.companyAddress || ''} onChange={e => update('companyAddress', e.target.value)} placeholder="123 Main St, City, Country" /></div>
+            </div>
+          </div>
+
+          {/* Social Links */}
+          <div className="border-b border-neutral-800 pb-3">
+            <h4 className="text-xs font-semibold text-neutral-400 mb-3 uppercase tracking-wider">Social Links</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { field: 'twitterUrl', label: 'X (Twitter)' },
+                { field: 'facebookUrl', label: 'Facebook' },
+                { field: 'linkedinUrl', label: 'LinkedIn' },
+                { field: 'githubUrl', label: 'GitHub' },
+                { field: 'discordUrl', label: 'Discord' },
+                { field: 'instagramUrl', label: 'Instagram' },
+              ].map(s => (
+                <div key={s.field}><label className="block text-neutral-400 mb-1">{s.label}</label>
+                  <input type="url" className="w-full al-input" value={branding[s.field] || ''} onChange={e => update(s.field, e.target.value)} placeholder={'https://' + s.label.toLowerCase().replace(/\s/g, '') + '.com/...'} /></div>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="border-b border-neutral-800 pb-3">
+            <h4 className="text-xs font-semibold text-neutral-400 mb-3 uppercase tracking-wider">Footer</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2"><label className="block text-neutral-400 mb-1">Copyright Text</label>
+                <input type="text" className="w-full al-input" value={branding.copyrightText || ''} onChange={e => update('copyrightText', e.target.value)} placeholder="Copyright 2026 Your Company. All rights reserved." /></div>
+              <div className="sm:col-span-2"><label className="block text-neutral-400 mb-1">Custom Footer HTML</label>
+                <textarea className="w-full al-input resize-none font-mono" rows={2} value={branding.footerHtml || ''} onChange={e => update('footerHtml', e.target.value)} placeholder='<p>Custom footer content here</p>' /></div>
+              <div className="sm:col-span-2"><label className="block text-neutral-400 mb-1">Unsubscribe Message</label>
+                <textarea className="w-full al-input resize-none" rows={2} value={branding.unsubscribeText || ''} onChange={e => update('unsubscribeText', e.target.value)} /></div>
+            </div>
+          </div>
+
+          <button type="submit" disabled={saving} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs">
+            <Save size={14} className="inline mr-1" /> {saving ? 'Saving...' : 'Save Branding'}
+          </button>
+        </form>
+      </div>
+
+      {/* Live Preview */}
+      <div className="bg-white dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 p-5 sticky top-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-white">Live Preview</h3>
+          <button onClick={generatePreview} className="p-1.5 text-neutral-500 hover:text-blue-400 transition" title="Refresh Preview"><RefreshCw size={14} /></button>
         </div>
-
-        <h4 className="text-xs font-medium text-neutral-400 pt-2">Social Links (optional)</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className="block text-neutral-400 mb-1">Twitter URL</label>
-            <input type="url" className="w-full al-input" value={branding.twitterUrl || ''} onChange={e => setBranding({...branding, twitterUrl: e.target.value})} /></div>
-          <div><label className="block text-neutral-400 mb-1">Facebook URL</label>
-            <input type="url" className="w-full al-input" value={branding.facebookUrl || ''} onChange={e => setBranding({...branding, facebookUrl: e.target.value})} /></div>
-          <div><label className="block text-neutral-400 mb-1">LinkedIn URL</label>
-            <input type="url" className="w-full al-input" value={branding.linkedinUrl || ''} onChange={e => setBranding({...branding, linkedinUrl: e.target.value})} /></div>
-          <div><label className="block text-neutral-400 mb-1">GitHub URL</label>
-            <input type="url" className="w-full al-input" value={branding.githubUrl || ''} onChange={e => setBranding({...branding, githubUrl: e.target.value})} /></div>
-        </div>
-
-        <button type="submit" disabled={saving} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs">
-          <Save size={14} className="inline mr-1" /> {saving ? 'Saving...' : 'Save Branding'}
-        </button>
-      </form>
+        <p className="text-xs text-neutral-500 mb-4">This preview reflects current branding settings. No refresh needed after save.</p>
+        {testPreviewHtml ? (
+          <div className="border border-white/10 rounded-xl overflow-hidden bg-white">
+            <iframe srcDoc={testPreviewHtml} className="w-full h-[600px]" title="Branding Preview" />
+          </div>
+        ) : (
+          <div className="p-12 text-center text-neutral-500 text-xs border border-dashed border-neutral-700 rounded-xl">
+            Save branding to generate preview.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

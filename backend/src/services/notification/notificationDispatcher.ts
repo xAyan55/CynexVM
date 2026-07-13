@@ -3,6 +3,7 @@ import { SocketService } from '../socketService';
 import { NotificationPreferences } from './notificationPreferences';
 import { EmailQueue } from '../email/emailQueue';
 import { EmailTemplateService } from '../email/emailTemplateService';
+import { EmailBrandingService } from '../email/emailBrandingService';
 
 const backoffDelays = [10, 30, 120, 480, 1920]; // backoff delays in seconds (10s, 30s, 2m, 8m, 32m)
 
@@ -135,7 +136,8 @@ export class NotificationDispatcher {
     const user = await db.user.findUnique({ where: { id: notification.userId } });
     if (!user || !user.email) return false;
 
-    const panelName = (await db.setting.findUnique({ where: { key: 'panel_name' } }))?.value || 'CynexVM';
+    const brandingVars = await EmailBrandingService.getBrandingVariables();
+    const panelName = brandingVars.panel_name;
     const actionUrl = notification.actionUrl
       ? `${process.env.APP_URL || 'http://localhost:5173'}${notification.actionUrl}`
       : '';
@@ -143,7 +145,7 @@ export class NotificationDispatcher {
     // Use a notification email template if available, otherwise fall back to inline
     const template = await EmailTemplateService.getTemplate('notification_alert').catch(() => null);
     if (template) {
-      const rendered = EmailTemplateService.render(template, {
+      const rendered = await EmailTemplateService.render(template, {
         panel_name: panelName,
         title: notification.title,
         message: notification.message,
@@ -166,7 +168,7 @@ export class NotificationDispatcher {
       const htmlBody = `
         <h2 style="font-size:20px;font-weight:600;color:#1a1a1a;margin:0 0 8px 0">${notification.title}</h2>
         <p style="font-size:14px;line-height:1.6;color:#374151;margin:0 0 16px 0">${notification.message}</p>
-        ${actionUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0"><tr><td align="center" style="background-color:#2563eb;border-radius:8px"><a href="${actionUrl}" style="display:inline-block;padding:12px 32px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">View Details</a></td></tr></table>` : ''}
+        ${actionUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0"><tr><td align="center" style="background-color:${brandingVars.button_color};border-radius:${brandingVars.border_radius}"><a href="${actionUrl}" style="display:inline-block;padding:12px 32px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">View Details</a></td></tr></table>` : ''}
         <hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0" />
         <p style="font-size:12px;color:#9ca3af;margin:0">This is an automated notification from ${panelName}. Manage preferences in your Profile settings.</p>
       `;
@@ -193,6 +195,8 @@ export class NotificationDispatcher {
       throw new Error('Discord webhook URL is not configured in user preferences.');
     }
 
+    const bv = await EmailBrandingService.getBrandingVariables();
+
     // Convert hex color string to decimal for Discord Embed parameters
     let colorDecimal = 3447003; // Default blue
     if (notification.color) {
@@ -213,7 +217,7 @@ export class NotificationDispatcher {
           ],
           timestamp: notification.createdAt.toISOString(),
           footer: {
-            text: 'CynexVM Alert Center'
+            text: bv.panel_name + ' Alert Center'
           }
         }
       ]
@@ -246,11 +250,14 @@ export class NotificationDispatcher {
       throw new Error('Generic webhook target URL is not configured in user preferences.');
     }
 
+    const bv = await EmailBrandingService.getBrandingVariables();
+    const headerPrefix = bv.panel_name.replace(/[^a-zA-Z0-9]/g, '');
+
     const res = await fetch(prefs.webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-CynexVM-Event': notification.sourceEvent || 'notification.event'
+        [`X-${headerPrefix}-Event`]: notification.sourceEvent || 'notification.event'
       },
       body: JSON.stringify({
         id: notification.id,

@@ -5,7 +5,7 @@ import { EmailService } from '../services/email/emailService';
 import { EmailTemplateService } from '../services/email/emailTemplateService';
 import { EmailQueue } from '../services/email/emailQueue';
 import { EmailLogService } from '../services/email/emailLogService';
-import { EmailBrandingService } from '../services/email/emailBrandingService';
+import { EmailBrandingService, BrandingData } from '../services/email/emailBrandingService';
 import { EmailRateLimiter } from '../services/email/emailRateLimiter';
 
 const router = Router();
@@ -177,12 +177,13 @@ router.post('/smtp-configs/:id/test-send', authenticate, async (req: Authenticat
     if (!config) return res.status(404).json({ error: 'SMTP config not found' });
 
     const testEmail = req.body.to || config.senderEmail;
-    const panelName = (await db.setting.findUnique({ where: { key: 'panel_name' } }))?.value || 'CynexVM';
+    const branding = await EmailBrandingService.getBrandingVariables();
+    const panelName = branding.panel_name;
 
     const html = `
-      <h2 style="color:#059669;margin:0 0 16px 0">SMTP Test Successful</h2>
+      <h2 style="color:${branding.accent_color};margin:0 0 16px 0">SMTP Test Successful</h2>
       <p style="color:#374151;font-size:14px;line-height:1.6">This test email confirms your SMTP configuration is working.</p>
-      <table style="margin:24px 0;padding:16px;background:#f3f4f6;border-radius:8px;font-size:13px">
+      <table style="margin:24px 0;padding:16px;background:#f3f4f6;border-radius:${branding.border_radius};font-size:13px">
         <tr><td style="color:#6b7280">Server:</td><td style="color:#1a1a1a"> ${config.host}:${config.port}</td></tr>
         <tr><td style="color:#6b7280">Username:</td><td style="color:#1a1a1a"> ${config.username}</td></tr>
         <tr><td style="color:#6b7280">Encryption:</td><td style="color:#1a1a1a"> ${config.encryption}</td></tr>
@@ -404,6 +405,16 @@ router.get('/branding', authenticate, async (req: AuthenticatedRequest, res) => 
     return res.status(200).json(branding || {});
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to fetch branding' });
+  }
+});
+
+router.get('/branding/variables', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const vars = await EmailBrandingService.getBrandingVariables();
+    return res.status(200).json(vars);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to fetch branding variables' });
   }
 });
 

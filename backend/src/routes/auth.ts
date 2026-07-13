@@ -225,7 +225,9 @@ router.post('/2fa/setup', authenticate, async (req: AuthenticatedRequest, res) =
       return res.status(400).json({ error: '2FA is already enabled' });
     }
 
-    const secret = speakeasy.generateSecret({ name: `CynexVM:${user.email}` });
+    const panelNameSetting = await db.setting.findUnique({ where: { key: 'panel_name' } });
+    const panelName = panelNameSetting?.value || 'Portal';
+    const secret = speakeasy.generateSecret({ name: `${panelName}:${user.email}` });
     
     await db.user.update({
       where: { id: user.id },

@@ -511,17 +511,30 @@ model EmailLog {
 
 model EmailBranding {
   id              String   @id @default(uuid())
-  logoUrl         String?
-  primaryColor    String   @default("#2563eb")
-  footerText      String?
-  footerHtml      String?
+  panelName       String?
   companyName     String?
+  logoUrl         String?
+  faviconUrl      String?
+  primaryColor    String   @default("#2563eb")
+  secondaryColor  String   @default("#6b7280")
+  accentColor     String   @default("#059669")
+  backgroundColor String   @default("#f4f5f7")
+  buttonColor     String   @default("#2563eb")
+  borderRadius    String   @default("8px")
+  supportEmail    String?
+  websiteUrl      String?
   companyAddress  String?
+  copyrightText   String?
+  footerHtml      String?
   twitterUrl      String?
-  facebookUrl     String?
-  linkedinUrl     String?
+  discordUrl      String?
   githubUrl       String?
-  unsubscribeText String   @default("You received this email because you have an account with {{panel_name}}. To manage preferences, visit your Profile Settings.")
+  facebookUrl     String?
+  instagramUrl    String?
+  linkedinUrl     String?
+  footerLinks     String?  // JSON array of { label, url }
+  legalLinks      String?  // JSON array of { label, url }
+  unsubscribeText String   @default("You received this email because you have an account with this service.")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
