@@ -510,6 +510,8 @@ model EmailLog {
   @@index([userId])
   @@index([status])
   @@index([createdAt])
+  @@index([nextRetryAt])
+  @@index([status, nextRetryAt])
 }
 
 model EmailBranding {

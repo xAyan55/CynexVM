@@ -33,6 +33,13 @@ export interface SendEmailOptions {
   plainText?: string;
   messageId?: string;
   smtpConfig?: SmtpConfigData;
+  attachments?: Array<{
+    filename: string;
+    content?: any;
+    path?: string;
+    contentType?: string;
+    cid?: string;
+  }>;
 }
 
 export interface AutoDiscoveryConfig {
@@ -153,20 +160,45 @@ export class EmailService {
     return 'Custom SMTP';
   }
 
+  public static classifyError(err: any): 'permanent' | 'transient' {
+    if (!err) return 'permanent';
+    const message = (err.message || '').toLowerCase();
+    const code = (err.code || '').toUpperCase();
+    const responseCode = err.responseCode ? Number(err.responseCode) : null;
+
+    if (responseCode) {
+      if (responseCode >= 400 && responseCode < 500) return 'transient';
+      if (responseCode >= 500) return 'permanent';
+    }
+
+    const transientCodes = [
+      'ETIMEDOUT', 'ECONNRESET', 'EADDRINUSE', 'ECONNREFUSED',
+      'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'ENOTFOUND', 'TIMEOUT'
+    ];
+    if (transientCodes.includes(code)) return 'transient';
+
+    if (
+      message.includes('timeout') ||
+      message.includes('timedout') ||
+      message.includes('socket hang up') ||
+      message.includes('hangup') ||
+      message.includes('connection reset') ||
+      message.includes('dns failure') ||
+      message.includes('temporary') ||
+      message.includes('try again') ||
+      message.includes('421') ||
+      message.includes('450') ||
+      message.includes('451') ||
+      message.includes('452')
+    ) {
+      return 'transient';
+    }
+
+    return 'permanent';
+  }
+
   public static isPermanentSmtpError(errorMsg: string): boolean {
-    const msg = errorMsg.toLowerCase();
-    return (
-      msg.includes('auth') ||
-      msg.includes('535') ||
-      msg.includes('wrong version number') ||
-      msg.includes('certificate') ||
-      msg.includes('cert_') ||
-      msg.includes('host not found') ||
-      msg.includes('invalid hostname') ||
-      msg.includes('starttls required') ||
-      msg.includes('ssl/tls mismatch') ||
-      msg.includes('incorrect username')
-    );
+    return this.classifyError(new Error(errorMsg)) === 'permanent';
   }
 
   public static mapSmtpError(err: Error | { message?: string; code?: string }): string {
@@ -719,11 +751,6 @@ export class EmailService {
   }
 
   public static async sendEmail(options: SendEmailOptions): Promise<{ success: boolean; messageId?: string; error?: string; metadata?: string }> {
-    const recipient = options.to;
-    if (!recipient) return { success: false, error: 'Recipient email address is missing' };
-    if (!options.subject) return { success: false, error: `Email to ${recipient} missing subject` };
-    if (!options.html && !options.plainText) return { success: false, error: `Email to ${recipient} missing body` };
-
     const config = options.smtpConfig || await this.getDefaultSmtpConfig();
     if (!config) return { success: false, error: 'No SMTP configuration found' };
 
@@ -751,6 +778,20 @@ export class EmailService {
         });
       }
 
+      // Assert validation requirements before passing to Nodemailer
+      if (!options.to || typeof options.to !== 'string' || options.to.trim().length === 0 || !options.to.includes('@')) {
+        throw new Error('Email Validation Failed: Invalid Recipient');
+      }
+      if (!options.subject || typeof options.subject !== 'string' || options.subject.trim().length === 0) {
+        throw new Error('Email Validation Failed: Missing Subject');
+      }
+      if (!html || typeof html !== 'string' || html.trim().length === 0) {
+        throw new Error('Email Validation Failed: Missing HTML body');
+      }
+      if (!config.senderEmail || typeof config.senderEmail !== 'string' || config.senderEmail.trim().length === 0) {
+        throw new Error('Email Validation Failed: Invalid Sender');
+      }
+
       const { secure, requireTLS } = this.normalizeSmtpConfig(config);
 
       const info = await transporter.sendMail({
@@ -762,6 +803,7 @@ export class EmailService {
         html,
         text: options.plainText || undefined,
         messageId: options.messageId,
+        attachments: options.attachments,
         headers: {
           'X-Panel': panelName,
           'X-Mailer': `${panelName}-Email`
@@ -794,32 +836,6 @@ export class EmailService {
     }
   }
 
-  public static async sendTemplateEmail(
-    to: string,
-    templateName: string,
-    variables: Record<string, unknown> = {},
-    options?: { cc?: string; bcc?: string; smtpConfigId?: string; userId?: string }
-  ): Promise<{ success: boolean; messageId?: string; error?: string; metadata?: string }> {
-    const { EmailTemplateService } = require('./emailTemplateService');
-    const template = await EmailTemplateService.getTemplate(templateName);
-    if (!template) return { success: false, error: `Email template '${templateName}' not found` };
-
-    const rendered = await EmailTemplateService.render(template, variables);
-    const config = options?.smtpConfigId
-      ? await this.getSmtpConfig(options.smtpConfigId)
-      : await this.getDefaultSmtpConfig();
-
-    return this.sendEmail({
-      to,
-      cc: options?.cc,
-      bcc: options?.bcc,
-      subject: rendered.subject,
-      html: rendered.html,
-      plainText: rendered.plainText,
-      smtpConfig: config || undefined
-    });
-  }
-
   public static async sendRaw(options: {
     to: string;
     cc?: string;
@@ -828,6 +844,13 @@ export class EmailService {
     html: string;
     plainText?: string;
     smtpConfigId?: string;
+    attachments?: Array<{
+      filename: string;
+      content?: any;
+      path?: string;
+      contentType?: string;
+      cid?: string;
+    }>;
   }): Promise<{ success: boolean; messageId?: string; error?: string; metadata?: string }> {
     const config = options.smtpConfigId
       ? await this.getSmtpConfig(options.smtpConfigId)
@@ -840,7 +863,8 @@ export class EmailService {
       subject: options.subject,
       html: options.html,
       plainText: options.plainText,
-      smtpConfig: config || undefined
+      smtpConfig: config || undefined,
+      attachments: options.attachments
     });
   }
 }

@@ -27,6 +27,11 @@ async function main() {
 
     // Initialize and ensure builtin email templates exist
     await EmailTemplateService.ensureBuiltinTemplates();
+    // Preload templates into memory cache
+    await EmailTemplateService.preloadTemplates();
+    // Non-fatal validation of all built-in templates
+    await EmailTemplateService.verifyBuiltinTemplates();
+
     // Create default branding if none exists (white-label: no hardcoded company name)
     const existingBranding = await EmailBrandingService.getBranding();
     if (!existingBranding) {
@@ -67,9 +72,20 @@ async function main() {
   }
 }
 
-function gracefulShutdown(signal: string) {
+async function gracefulShutdown(signal: string) {
   console.log(`[Server] Received ${signal}. Shutting down gracefully...`);
-  EmailQueue.stop();
+  try {
+    await EmailQueue.stop();
+  } catch (err: any) {
+    console.error('Error during EmailQueue shutdown:', err.message);
+  }
+  
+  try {
+    EmailService.clearCache();
+  } catch (err: any) {
+    console.error('Error clearing EmailService cache:', err.message);
+  }
+
   SchedulerService.stop().catch(() => {});
   NotificationDispatcher.stopPoller();
   server.close(() => {
@@ -85,11 +101,15 @@ function gracefulShutdown(signal: string) {
 // PM2 shutdown message (ecosystem.config.js: shutdown_with_message: true)
 process.on('message', (msg: any) => {
   if (msg === 'shutdown' || (msg && msg.type === 'shutdown')) {
-    gracefulShutdown('PM2 shutdown message');
+    gracefulShutdown('PM2 shutdown message').catch(() => process.exit(1));
   }
 });
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => {
+  gracefulShutdown('SIGTERM').catch(() => process.exit(1));
+});
+process.on('SIGINT', () => {
+  gracefulShutdown('SIGINT').catch(() => process.exit(1));
+});
 
 main();
