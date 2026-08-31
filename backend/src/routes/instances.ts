@@ -167,7 +167,17 @@ router.get('/:id', authenticate, requirePermission('instance.read'), async (req:
   try {
     const instance = await getInstance(req.params.id, req.user?.id, req.user?.role === 'Admin');
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
-    return res.status(200).json(instance);
+    
+    try {
+      const { lxcProvider } = require('../services/lxd/lxcProvider');
+      const live = await lxcProvider.metrics(instance.node, instance);
+      return res.status(200).json({
+        ...instance,
+        live
+      });
+    } catch (_) {
+      return res.status(200).json(instance);
+    }
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to fetch instance' });
   }

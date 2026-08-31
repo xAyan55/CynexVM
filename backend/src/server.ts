@@ -130,7 +130,8 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 async function checkSocketAuth(instanceId: string, token?: string): Promise<boolean> {
   if (!token) return false;
   try {
-    const decoded = jwt.verify(token, CONFIG.JWT_SECRET) as any;
+    const cleanToken = token.startsWith('Bearer ') ? token.slice(7) : token;
+    const decoded = jwt.verify(cleanToken, CONFIG.JWT_SECRET) as any;
     if (!decoded || !decoded.userId) return false;
 
     const user = await db.user.findUnique({
@@ -142,8 +143,8 @@ async function checkSocketAuth(instanceId: string, token?: string): Promise<bool
     const instance = await db.instance.findUnique({ where: { id: instanceId } });
     if (!instance) return false;
 
-    const roleName = user.roles[0]?.role.name || 'User';
-    if (roleName === 'Admin') return true;
+    const isAdmin = user.roles.some((r: any) => r.role?.name?.toLowerCase() === 'admin') || (user as any).role === 'Admin';
+    if (isAdmin) return true;
 
     return instance.userId === user.id;
   } catch (_) {
@@ -230,19 +231,18 @@ io.on('connection', (socket: Socket) => {
       return socket.emit('metrics.error', { message: 'Unauthorized metrics subscription' });
     }
 
+    const instance = await db.instance.findUnique({
+      where: { id: params.instanceId },
+      include: { node: true }
+    });
+    if (!instance) return;
+
     // CPU delta tracking — live.cpu is total seconds, not a rate
     let prevCpuSeconds: number | null = null;
     let prevTimestamp: number | null = null;
 
     const emitMetrics = async () => {
       try {
-        const instance = await db.instance.findUnique({
-          where: { id: params.instanceId },
-          include: { node: true }
-        });
-
-        if (!instance) return;
-
         const live = await lxcProvider.metrics(instance.node, instance);
 
         // Compute CPU utilization as rate (0..1 per core)

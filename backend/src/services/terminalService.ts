@@ -48,7 +48,7 @@ class TerminalSessionManager {
     });
     if (!user) return { sessionId: '', error: 'User not found' };
 
-    const roleName = user.roles[0]?.role.name || 'User';
+    const isAdmin = user.roles.some((r: any) => r.role?.name?.toLowerCase() === 'admin') || (user as any).role === 'Admin';
 
     const instance = await db.instance.findUnique({
       where: { id: instanceId },
@@ -56,7 +56,7 @@ class TerminalSessionManager {
     });
     if (!instance) return { sessionId: '', error: 'Instance not found' };
 
-    if (roleName !== 'Admin' && instance.userId !== user.id) {
+    if (!isAdmin && instance.userId !== user.id) {
       return { sessionId: '', error: 'Forbidden: you do not own this instance' };
     }
 
@@ -78,15 +78,15 @@ class TerminalSessionManager {
       'exec', domainName,
       '--env', 'TERM=xterm-256color',
       '--env', 'HOME=/root',
+      '--env', 'USER=root',
       '--env', 'LANG=en_US.UTF-8',
-      '--env', 'LC_ALL=en_US.UTF-8',
       '--env', 'COLORTERM=truecolor',
-      '--', '/bin/login', '-f', 'root',
+      '--', '/bin/bash', '-l',
     ], {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,
-      cwd: '/root',
+      cwd: '/tmp',
       env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
     });
 
@@ -274,7 +274,12 @@ class TerminalSessionManager {
 
   private verifyToken(token?: string): any {
     if (!token) return null;
-    try { return jwt.verify(token, CONFIG.JWT_SECRET); } catch { return null; }
+    try {
+      const clean = token.startsWith('Bearer ') ? token.slice(7) : token;
+      return jwt.verify(clean, CONFIG.JWT_SECRET);
+    } catch {
+      return null;
+    }
   }
 
   private findBinary(candidates: string[], fallback: string): string {
