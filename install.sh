@@ -947,9 +947,53 @@ setup_pm2() {
   mkdir -p /var/log/cynexvm
   cd "$INSTALL_DIR"
   pm2 start ecosystem.config.js || true
+  
+  # Set up local node agent (cynexd) under PM2
+  log_info "Configuring local node agent (cynexd)..."
+  mkdir -p /etc/cynexd /var/log/cynexd
+  
+  local local_token=""
+  local_token=$(node -e "
+    try {
+      const { db } = require('./backend/dist/db');
+      const { NodeAuthService } = require('./backend/dist/services/node/AuthService');
+      
+      async function run() {
+        const token = await NodeAuthService.generateToken('default-lxd-node', 'local-agent');
+        console.log(token.token);
+        process.exit(0);
+      }
+      run().catch(() => process.exit(1));
+    } catch (_) {
+      process.exit(1);
+    }
+  " 2>/dev/null || echo "")
+
+  if [ -n "$local_token" ]; then
+    cat <<CONFEOF > /etc/cynexd/config.json
+{
+  "panelUrl": "ws://localhost:5000/ws/node",
+  "nodeId": "default-lxd-node",
+  "token": "${local_token}",
+  "reconnect": true,
+  "maxRetries": -1,
+  "heartbeatInterval": 15000,
+  "reconnectBaseDelay": 1000,
+  "reconnectMaxDelay": 60000,
+  "logDir": "/var/log/cynexd"
+}
+CONFEOF
+
+    cd "$INSTALL_DIR/scripts/cynexd"
+    npm install --production --no-audit --no-fund
+    
+    cd "$INSTALL_DIR"
+    pm2 start scripts/cynexd/index.js --name cynexd || true
+  fi
+
   pm2 save || true
   spinner_stop
-  log_info "CynexVM started via PM2"
+  log_info "CynexVM panel & agent started via PM2"
 
   spinner_start "Enabling PM2 startup on boot..."
   pm2 startup systemd -u root --hp /root || true

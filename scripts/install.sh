@@ -153,6 +153,68 @@ systemctl daemon-reload
 systemctl enable cynexvm
 systemctl restart cynexvm
 
+# Setup local node agent (cynexd) under systemd
+echo -e "${YELLOW}[Info] Configuring local node agent (cynexd)...${NC}"
+mkdir -p /etc/cynexd /var/log/cynexd
+
+local_token=$(node -e "
+  try {
+    const { db } = require('./backend/dist/db');
+    const { NodeAuthService } = require('./backend/dist/services/node/AuthService');
+    async function run() {
+      const token = await NodeAuthService.generateToken('default-lxd-node', 'local-agent');
+      console.log(token.token);
+      process.exit(0);
+    }
+    run().catch(() => process.exit(1));
+  } catch (_) {
+    process.exit(1);
+  }
+" 2>/dev/null || echo "")
+
+if [ -n "$local_token" ]; then
+  cat <<CONFEOF > /etc/cynexd/config.json
+{
+  "panelUrl": "ws://localhost:5000/ws/node",
+  "nodeId": "default-lxd-node",
+  "token": "${local_token}",
+  "reconnect": true,
+  "maxRetries": -1,
+  "heartbeatInterval": 15000,
+  "reconnectBaseDelay": 1000,
+  "reconnectMaxDelay": 60000,
+  "logDir": "/var/log/cynexd"
+}
+CONFEOF
+
+  cd scripts/cynexd
+  npm install --production --no-audit --no-fund
+  cd ../..
+
+  cat <<EOF > /etc/systemd/system/cynexd.service
+[Unit]
+Description=CynexD Node Agent
+After=network.target lxd.service
+Wants=lxd.service
+
+[Service]
+Type=simple
+WorkingDirectory=$(pwd)/scripts/cynexd
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=5
+User=root
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable cynexd
+  systemctl restart cynexd
+fi
+
 # Setup Nginx Configuration
 cat <<EOF > /etc/nginx/sites-available/cynexvm.conf
 server {
