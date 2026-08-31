@@ -51,7 +51,39 @@ export class JobManager {
       case 'job_stderr':
         break;
 
-      case 'job_complete':
+      case 'job_complete': {
+        try {
+          const job = await db.nodeJob.findUnique({ where: { id: jobId } });
+          if (job) {
+            let payload: any = {};
+            try {
+              payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+            } catch (_) {}
+
+            const instanceId = payload.instanceId;
+            if (instanceId) {
+              if (job.type === 'delete') {
+                await db.instance.delete({ where: { id: instanceId } }).catch(() => {});
+              } else if (job.type === 'deploy' || job.type === 'start' || job.type === 'resume' || job.type === 'reinstall') {
+                await db.instance.update({
+                  where: { id: instanceId },
+                  data: { status: 'running' }
+                }).catch(() => {});
+              } else if (job.type === 'stop') {
+                await db.instance.update({
+                  where: { id: instanceId },
+                  data: { status: 'stopped' }
+                }).catch(() => {});
+              } else if (job.type === 'pause') {
+                await db.instance.update({
+                  where: { id: instanceId },
+                  data: { status: 'frozen' }
+                }).catch(() => {});
+              }
+            }
+          }
+        } catch (_) {}
+
         await db.nodeJob.update({
           where: { id: jobId },
           data: {
@@ -66,8 +98,31 @@ export class JobManager {
           }
         });
         break;
+      }
 
-      case 'job_failed':
+      case 'job_failed': {
+        try {
+          const job = await db.nodeJob.findUnique({ where: { id: jobId } });
+          if (job) {
+            let payload: any = {};
+            try {
+              payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+            } catch (_) {}
+
+            const instanceId = payload.instanceId;
+            if (instanceId) {
+              if (job.type === 'delete') {
+                await db.instance.delete({ where: { id: instanceId } }).catch(() => {});
+              } else if (job.type === 'deploy') {
+                await db.instance.update({
+                  where: { id: instanceId },
+                  data: { status: 'failed' }
+                }).catch(() => {});
+              }
+            }
+          }
+        } catch (_) {}
+
         await db.nodeJob.update({
           where: { id: jobId },
           data: {
@@ -77,6 +132,7 @@ export class JobManager {
           }
         });
         break;
+      }
 
       case 'job_cancelled':
         await db.nodeJob.update({

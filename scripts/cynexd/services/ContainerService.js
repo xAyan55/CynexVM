@@ -113,7 +113,13 @@ class ContainerService {
   }
 
   static delete(containerName) {
-    execSync(`lxc delete -f ${containerName}`, { stdio: 'pipe', timeout: 30000 });
+    try {
+      execSync(`lxc delete -f ${containerName}`, { stdio: 'pipe', timeout: 30000 });
+    } catch (err) {
+      if (!err.message?.includes('not found') && !err.message?.includes('Instance not found')) {
+        throw err;
+      }
+    }
   }
 
   static snapshot(containerName, name) {
