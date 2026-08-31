@@ -7,6 +7,130 @@ import { NotificationService } from '../services/notification/notificationServic
 
 const router = Router();
 
+function mapJobToTask(job: any): any {
+  let payload: any = {};
+  try {
+    payload = typeof job.payload === 'string' ? JSON.parse(job.payload || '{}') : (job.payload || {});
+  } catch (_) {}
+  
+  let currentStage = 'Running';
+  let currentStep = 'Processing job...';
+  
+  if (job.status === 'queued') {
+    currentStage = 'Queued';
+    currentStep = 'Enqueued in job scheduler...';
+  } else if (job.status === 'completed') {
+    currentStage = 'Completed';
+    currentStep = 'Job executed successfully!';
+  } else if (job.status === 'failed') {
+    currentStage = 'Failed';
+    currentStep = job.error || 'Job failed';
+  } else {
+    if (job.type === 'deploy') {
+      currentStage = job.progress < 30 ? 'Downloading image' : job.progress < 60 ? 'Creating container' : job.progress < 85 ? 'Booting' : 'Finalizing';
+      currentStep = job.progress < 30 ? 'Downloading OS template registry...' : job.progress < 60 ? 'Provisioning LXC container limits...' : job.progress < 85 ? 'Starting container OS and configuring networks...' : 'Waiting for IP lease...';
+    } else {
+      currentStage = 'Executing';
+      currentStep = `Executing ${job.type} container action...`;
+    }
+  }
+
+  const logs = [];
+  logs.push({
+    timestamp: job.createdAt,
+    level: 'info',
+    message: `Job ${job.id} (${job.type}) registered.`
+  });
+  if (job.startedAt) {
+    logs.push({
+      timestamp: job.startedAt,
+      level: 'info',
+      message: `Execution started on node ${job.nodeId}.`
+    });
+  }
+  if (job.progress > 0 && job.status === 'running') {
+    logs.push({
+      timestamp: job.updatedAt,
+      level: 'info',
+      message: `Progress: ${job.progress}%`
+    });
+  }
+  if (job.status === 'completed') {
+    logs.push({
+      timestamp: job.finishedAt || job.updatedAt,
+      level: 'info',
+      message: 'Job completed successfully.'
+    });
+  } else if (job.status === 'failed') {
+    logs.push({
+      timestamp: job.finishedAt || job.updatedAt,
+      level: 'error',
+      message: `Job failed: ${job.error || 'Unknown error'}`
+    });
+  }
+
+  return {
+    id: job.id,
+    name: `${job.type.toUpperCase()} Container ${payload.name || payload.containerName || ''}`,
+    vmid: payload.vmid,
+    instanceId: payload.instanceId,
+    userId: payload.userId || 'admin',
+    username: 'System',
+    nodeName: job.nodeId === 'default-lxd-node' ? 'local' : 'remote',
+    status: job.status === 'timed_out' ? 'failed' : job.status,
+    progress: job.progress,
+    currentStage,
+    currentStep,
+    durationMs: job.finishedAt && job.startedAt ? job.finishedAt.getTime() - job.startedAt.getTime() : Date.now() - job.createdAt.getTime(),
+    logs,
+    failedReason: job.error || undefined,
+    createdAt: job.createdAt
+  };
+}
+
+/**
+ * @route   GET /api/v1/instances/tasks
+ * @desc    Lists background tasks mapped from NodeJobs
+ */
+router.get('/tasks', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const where: any = {};
+    if (req.user.role !== 'Admin') {
+      // Filter jobs where payload has owner's userId
+      where.payload = { contains: req.user.id };
+    }
+    const jobs = await db.nodeJob.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+    return res.status(200).json(jobs.map(mapJobToTask));
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to retrieve tasks' });
+  }
+});
+
+/**
+ * @route   GET /api/v1/instances/tasks/:id
+ * @desc    Gets detailed task log mapped from NodeJob
+ */
+router.get('/tasks/:id', authenticate, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const job = await db.nodeJob.findUnique({ where: { id: req.params.id } });
+    if (!job) return res.status(404).json({ error: 'Task not found' });
+    
+    const task = mapJobToTask(job);
+    if (req.user.role !== 'Admin' && task.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    return res.status(200).json(task);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to retrieve task details' });
+  }
+});
+
 async function getInstance(id: string, userId?: string, isAdmin?: boolean) {
   const instance = await db.instance.findUnique({ where: { id }, include: { node: true } });
   if (!instance) return null;
@@ -91,7 +215,8 @@ router.post('/', authenticate, requirePermission('instance.create'), async (req:
     return res.status(202).json({
       message: 'Deployment job created',
       instance: dbInstance,
-      jobId: job.id
+      jobId: job.id,
+      taskId: job.id
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to deploy' });
