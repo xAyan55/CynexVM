@@ -131,6 +131,32 @@ class JobExecutor {
     }
   }
 
+function resolveImage(template) {
+  if (!template) return 'ubuntu:22.04';
+  let t = template.trim();
+  if (t.toLowerCase().includes('ubuntu')) {
+    let ver = '22.04';
+    if (t.includes('20.04') || t.includes('focal')) ver = '20.04';
+    else if (t.includes('24.04') || t.includes('noble')) ver = '24.04';
+    return `ubuntu:${ver}`;
+  }
+  if (t.toLowerCase().includes('alpine')) {
+    let ver = '3.21';
+    if (t.includes('3.19')) ver = '3.19';
+    else if (t.includes('3.20')) ver = '3.20';
+    return `images:alpine/${ver}`;
+  }
+  if (t.toLowerCase().includes('debian')) {
+    let ver = '12';
+    if (t.includes('11') || t.includes('bullseye')) ver = '11';
+    return `images:debian/${ver}`;
+  }
+  if (!t.includes(':')) {
+    return `images:${t}`;
+  }
+  return t;
+}
+
   async deploy(jobId, payload) {
     const send = (type, extra) => this.send(type, { jobId, ...extra });
 
@@ -138,10 +164,11 @@ class JobExecutor {
 
     const { vmid, name, osTemplate, cpuCores, memoryMb, storageGb, hostname, password } = payload;
     const containerName = `cynex-${vmid}`;
+    const imageTarget = resolveImage(osTemplate);
 
-    send('job_progress', { progress: 15, stage: 'Downloading image', message: `Pulling ${osTemplate}...` });
+    send('job_progress', { progress: 15, stage: 'Downloading image', message: `Pulling ${imageTarget}...` });
     const { execSync } = require('child_process');
-    execSync(`lxc init ${osTemplate} ${containerName}`, { stdio: 'pipe', timeout: 120000 });
+    execSync(`lxc init ${imageTarget} ${containerName}`, { stdio: 'pipe', timeout: 120000 });
 
     send('job_progress', { progress: 30, stage: 'Creating container', message: 'Configuring container...' });
     execSync(`lxc config set ${containerName} limits.cpu ${cpuCores || 1}`, { stdio: 'pipe' });

@@ -36,14 +36,14 @@ export const Wizard: React.FC<WizardProps> = ({ onSuccess, onCancel }) => {
   const [users, setUsers] = useState<User[]>([]);
 
   const [templates] = useState([
-    { name: 'Ubuntu 22.04 LTS (Jammy)', path: 'images:ubuntu/22.04' },
+    { name: 'Ubuntu 22.04 LTS (Jammy)', path: 'ubuntu:22.04' },
     { name: 'Debian 12 Bookworm', path: 'images:debian/12' },
-    { name: 'Alpine 3.19 Standard', path: 'images:alpine/3.19' }
+    { name: 'Alpine 3.21 Standard', path: 'images:alpine/3.21' }
   ]);
 
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState('images:ubuntu/22.04');
+  const [selectedTemplate, setSelectedTemplate] = useState('ubuntu:22.04');
   const [cpuCores, setCpuCores] = useState(1);
   const [memoryMb, setMemoryMb] = useState(512);
   const [storageGb, setStorageGb] = useState(10);

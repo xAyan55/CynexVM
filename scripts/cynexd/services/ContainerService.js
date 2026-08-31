@@ -14,15 +14,42 @@ function log(jobId, level, message) {
   } catch (_) {}
 }
 
+function resolveImage(template) {
+  if (!template) return 'ubuntu:22.04';
+  let t = template.trim();
+  if (t.toLowerCase().includes('ubuntu')) {
+    let ver = '22.04';
+    if (t.includes('20.04') || t.includes('focal')) ver = '20.04';
+    else if (t.includes('24.04') || t.includes('noble')) ver = '24.04';
+    return `ubuntu:${ver}`;
+  }
+  if (t.toLowerCase().includes('alpine')) {
+    let ver = '3.21';
+    if (t.includes('3.19')) ver = '3.19';
+    else if (t.includes('3.20')) ver = '3.20';
+    return `images:alpine/${ver}`;
+  }
+  if (t.toLowerCase().includes('debian')) {
+    let ver = '12';
+    if (t.includes('11') || t.includes('bullseye')) ver = '11';
+    return `images:debian/${ver}`;
+  }
+  if (!t.includes(':')) {
+    return `images:${t}`;
+  }
+  return t;
+}
+
 class ContainerService {
   static async create(params) {
     const { vmid, name, osTemplate, cpuCores, memoryMb, storageGb, hostname, password, disks, networkInterfaces } = params;
     const containerName = `cynex-${vmid}`;
+    const imageTarget = resolveImage(osTemplate);
 
-    log(params.jobId || '-', 'info', `Creating container ${containerName} from ${osTemplate}`);
+    log(params.jobId || '-', 'info', `Creating container ${containerName} from ${imageTarget}`);
 
     try {
-      execSync(`lxc init ${osTemplate} ${containerName}`, { stdio: 'pipe', timeout: 120000 });
+      execSync(`lxc init ${imageTarget} ${containerName}`, { stdio: 'pipe', timeout: 120000 });
 
       execSync(`lxc config set ${containerName} limits.cpu ${cpuCores || 1}`, { stdio: 'pipe' });
       execSync(`lxc config set ${containerName} limits.memory ${memoryMb || 512}MB`, { stdio: 'pipe' });
@@ -115,7 +142,8 @@ class ContainerService {
 
   static reinstall(containerName, osTemplate) {
     this.delete(containerName);
-    execSync(`lxc init ${osTemplate} ${containerName}`, { stdio: 'pipe', timeout: 120000 });
+    const imageTarget = resolveImage(osTemplate);
+    execSync(`lxc init ${imageTarget} ${containerName}`, { stdio: 'pipe', timeout: 120000 });
     this.start(containerName);
   }
 

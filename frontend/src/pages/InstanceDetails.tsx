@@ -96,13 +96,13 @@ export const InstanceDetails: React.FC = () => {
   // Password reset & OS Reinstall
   const [newRootPassword, setNewRootPassword] = useState('');
   const [updatingPassword, setUpdatingPassword] = useState(false);
-  const [reinstallTemplate, setReinstallTemplate] = useState('images:ubuntu/22.04');
+  const [reinstallTemplate, setReinstallTemplate] = useState('ubuntu:22.04');
   const [reinstalling, setReinstalling] = useState(false);
 
   const templates = [
-    { name: 'Ubuntu 22.04 LTS (Jammy)', path: 'images:ubuntu/22.04' },
+    { name: 'Ubuntu 22.04 LTS (Jammy)', path: 'ubuntu:22.04' },
     { name: 'Debian 12 Bookworm', path: 'images:debian/12' },
-    { name: 'Alpine 3.19 Standard', path: 'images:alpine/3.19' }
+    { name: 'Alpine 3.21 Standard', path: 'images:alpine/3.21' }
   ];
 
   const handleChangePassword = async (e: React.FormEvent) => {
